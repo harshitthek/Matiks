@@ -17,27 +17,36 @@ import { soundFx } from '../../services/soundFx.js';
 export function ArenaView({
   sessionId,
   questions = [],
+  initialQuestionIndex = 0,
+  initialScore = 0,
+  initialStreak = 0,
   startedAt = 0,
   durationSeconds = 120,
+  initialIsPaused = false,
   teamCode,
   memberToken,
   currentRoll,
   currentName,
+  exitPromptRequested = false,
+  onDismissExitPrompt,
+  onSprintFinishedChange,
   onReturnToLobby,
+  onPlayAgain,
   onViewLeaderboard
 }) {
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(initialQuestionIndex || 0);
   const [currentInput, setCurrentInput] = useState('');
-  const [score, setScore] = useState(0);
-  const [streak, setStreak] = useState(0);
-  const [maxStreak, setMaxStreak] = useState(0);
+  const [score, setScore] = useState(initialScore || 0);
+  const [streak, setStreak] = useState(initialStreak || 0);
+  const [maxStreak, setMaxStreak] = useState(initialStreak || 0);
   const [submissions, setSubmissions] = useState([]);
   const [flashState, setFlashState] = useState(null); // 'correct' | 'incorrect' | null
   const [lastResult, setLastResult] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [isTimeOut, setIsTimeOut] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
+  const [isPaused, setIsPaused] = useState(Boolean(initialIsPaused));
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [submissionError, setSubmissionError] = useState(null);
   const [teammates, setTeammates] = useState([]);
 
@@ -53,11 +62,29 @@ export function ArenaView({
     questionStartTimeRef.current = performance.now();
   }, []);
 
-  // Subscribe to Team SSE Stream for live teammate HUD and admin pauses
+  useEffect(() => {
+    onSprintFinishedChange?.(isFinished);
+  }, [isFinished, onSprintFinishedChange]);
+
+  // Subscribe to Team SSE Stream for live teammate HUD, snapshots, and admin pauses
   useEffect(() => {
     if (!teamCode) return;
 
     const sse = connectTeamStream(teamCode, memberToken, {
+      onSnapshot: (data) => {
+        if (Array.isArray(data?.members)) {
+          setTeammates(
+            data.members.map((m) => ({
+              rollNumber: m.rollNumber,
+              name: m.name,
+              completedQuestions: m.completedQuestions ?? 0,
+              individualScore: m.individualScore ?? 0,
+              streak: m.streak ?? 0,
+              connected: m.connected ?? true
+            }))
+          );
+        }
+      },
       onTeammateProgress: (data) => {
         setTeammates((prev) => {
           const exists = prev.some((m) => m.rollNumber === data.rollNumber);
@@ -146,7 +173,12 @@ export function ArenaView({
       const isCorrect = Boolean(res.isCorrect);
       const points = Number(res.pointsAwarded) || 0;
       const newScore = typeof res.currentScore === 'number' ? res.currentScore : score + points;
-      const newStreak = typeof res.consecutiveStreak === 'number' ? res.consecutiveStreak : (isCorrect ? streak + 1 : 0);
+      const newStreak =
+        typeof res.consecutiveStreak === 'number'
+          ? res.consecutiveStreak
+          : isCorrect
+          ? streak + 1
+          : 0;
 
       // Play audio feedback
       if (isCorrect) {
@@ -208,8 +240,8 @@ export function ArenaView({
       console.warn('[Arena] Answer submission failed:', err);
       const isSprintDone = Boolean(
         err?.data?.isFinished ||
-        err?.data?.errorCode === 'SPRINT_FINISHED' ||
-        /already finished|deadline expired|already completed/i.test(err?.message || '')
+          err?.data?.errorCode === 'SPRINT_FINISHED' ||
+          /already finished|deadline expired|already completed/i.test(err?.message || '')
       );
       if (isSprintDone) {
         if (!isFinishedRef.current) {
@@ -240,13 +272,16 @@ export function ArenaView({
   ]);
 
   // Digits input logic
-  const handleDigit = useCallback((digit) => {
-    if (isFinished || isPaused) return;
-    setCurrentInput((prev) => {
-      if (prev.length >= 3) return prev; // Sums range up to 198 (3 digits max)
-      return prev + digit;
-    });
-  }, [isFinished, isPaused]);
+  const handleDigit = useCallback(
+    (digit) => {
+      if (isFinished || isPaused) return;
+      setCurrentInput((prev) => {
+        if (prev.length >= 3) return prev; // Sums range up to 198 (3 digits max)
+        return prev + digit;
+      });
+    },
+    [isFinished, isPaused]
+  );
 
   const handleClear = useCallback(() => {
     if (isFinished || isPaused) return;
@@ -259,7 +294,9 @@ export function ArenaView({
       if (isFinished || isPaused) return;
 
       const target = e.target;
-      const isEditable = target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+      const isEditable =
+        target &&
+        (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
       if (isEditable) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
@@ -291,7 +328,6 @@ export function ArenaView({
     setIsFinished(true);
     soundFx.playFinish();
 
-    // If an answer submission is currently in flight, wait for it to settle before snapshot
     if (isSubmittingRef.current) {
       let checks = 0;
       while (isSubmittingRef.current && checks < 15) {
@@ -303,7 +339,8 @@ export function ArenaView({
     if (teamCode && memberToken) {
       try {
         const snap = await getTeamSnapshot(teamCode, memberToken);
-        const myData = snap?.team?.members?.find((m) => m.rollNumber === currentRoll);
+        const membersList = snap?.members || snap?.team?.members || [];
+        const myData = membersList.find((m) => m.rollNumber === currentRoll);
         if (myData && typeof myData.individualScore === 'number') {
           setScore(myData.individualScore);
         }
@@ -312,6 +349,11 @@ export function ArenaView({
       }
     }
   }, [teamCode, memberToken, currentRoll]);
+
+  const handleCancelExit = () => {
+    setShowExitConfirm(false);
+    onDismissExitPrompt?.();
+  };
 
   // If sprint is finished, render summary
   if (isFinished) {
@@ -326,6 +368,7 @@ export function ArenaView({
         teamName={teamCode ? `#${teamCode}` : 'Squad'}
         isTimeOut={isTimeOut}
         onReturnToLobby={onReturnToLobby}
+        onPlayAgain={onPlayAgain}
         onViewLeaderboard={onViewLeaderboard}
       />
     );
@@ -336,6 +379,14 @@ export function ArenaView({
       {/* Top Header Telemetry */}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b-2 border-[#2ee58f]/20">
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowExitConfirm(true)}
+            className="font-mono text-xs text-[#aab5ac] hover:text-[#ffe36e] px-2 py-0.5 border border-white/15 hover:border-[#ffe36e] transition-colors cursor-pointer"
+            title="Return to Squad Lobby"
+          >
+            ← LOBBY
+          </button>
           <span className="font-mono text-xs font-bold bg-[#ffe36e] text-[#090c0a] px-2 py-0.5 border border-[#090c0a]">
             #{teamCode || 'SQUAD'}
           </span>
@@ -355,6 +406,34 @@ export function ArenaView({
           </span>
         </div>
       </div>
+
+      {/* Accidental Back / Exit Confirmation Bar */}
+      {(showExitConfirm || exitPromptRequested) && (
+        <div className="border-2 border-[#f5a623] bg-[#f5a623]/15 p-3.5 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-[4px_4px_0_#090c0a]">
+          <div className="font-mono text-xs text-[#e8ece3]">
+            <strong className="text-[#f5a623] uppercase block">
+              ⚠️ SPRINT IN PROGRESS!
+            </strong>
+            Leave the arena and return to the squad lobby?
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleCancelExit}
+              className="px-3 py-1.5 bg-[#2ee58f] border-2 border-[#090c0a] text-[#090c0a] font-mono font-bold text-xs uppercase shadow-[2px_2px_0_#090c0a] cursor-pointer"
+            >
+              STAY IN SPRINT
+            </button>
+            <button
+              type="button"
+              onClick={onReturnToLobby}
+              className="px-3 py-1.5 bg-[#090c0a] border-2 border-[#ff6b5e] text-[#ff6b5e] font-mono font-bold text-xs uppercase cursor-pointer"
+            >
+              EXIT TO LOBBY
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Teammate Live HUD */}
       <div className="mb-4">

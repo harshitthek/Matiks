@@ -7,19 +7,32 @@ import { createTeam, joinTeam } from '../../services/api.js';
 /**
  * Onboarding panel for creating a new squad or joining an existing one.
  */
-export function TeamOnboarding({ onJoinedTeam }) {
+export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam }) {
   const [mode, setMode] = useState('join'); // 'join' | 'create'
   const [teamName, setTeamName] = useState('');
-  const [teamCode, setTeamCode] = useState('');
+  const [teamCode, setTeamCode] = useState(() => (initialTeamCode || '').trim().toUpperCase());
   const [targetSize, setTargetSize] = useState(3);
   const [rollNumber, setRollNumber] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [existingTeamMatch, setExistingTeamMatch] = useState(null);
+
+  const getSavedTokenForRoll = (roll) => {
+    try {
+      const raw = localStorage.getItem('matiks_member_tokens');
+      if (!raw) return undefined;
+      const vault = JSON.parse(raw);
+      return vault?.[roll.trim().toUpperCase()];
+    } catch {
+      return undefined;
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    setExistingTeamMatch(null);
     setLoading(true);
 
     try {
@@ -41,7 +54,8 @@ export function TeamOnboarding({ onJoinedTeam }) {
         if (!rollNumber.trim()) throw new Error('Please enter your roll number.');
         if (!name.trim()) throw new Error('Please enter your name.');
 
-        const res = await joinTeam(teamCode.trim().toUpperCase(), rollNumber.trim(), name.trim());
+        const savedToken = getSavedTokenForRoll(rollNumber);
+        const res = await joinTeam(teamCode.trim().toUpperCase(), rollNumber.trim(), name.trim(), savedToken);
         onJoinedTeam({
           teamCode: teamCode.trim().toUpperCase(),
           memberToken: res.memberToken,
@@ -51,7 +65,36 @@ export function TeamOnboarding({ onJoinedTeam }) {
         });
       }
     } catch (err) {
-      setError(err.message || 'Operation failed. Please check inputs.');
+      const msg = err.message || 'Operation failed. Please check inputs.';
+      setError(msg);
+      const match = msg.match(/already registered in team ([A-Za-z0-9-]+)/i);
+      if (match && match[1]) {
+        setExistingTeamMatch(match[1].toUpperCase());
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleQuickRejoin = async (targetCode) => {
+    setError(null);
+    setExistingTeamMatch(null);
+    setMode('join');
+    setTeamCode(targetCode);
+    if (!rollNumber.trim() || !name.trim()) return;
+    setLoading(true);
+    try {
+      const savedToken = getSavedTokenForRoll(rollNumber);
+      const res = await joinTeam(targetCode, rollNumber.trim(), name.trim(), savedToken);
+      onJoinedTeam({
+        teamCode: targetCode,
+        memberToken: res.memberToken,
+        rollNumber: rollNumber.trim().toUpperCase(),
+        name: name.trim(),
+        isCaptain: res.member?.isCaptain ?? false
+      });
+    } catch (err) {
+      setError(err.message || 'Failed to rejoin squad.');
     } finally {
       setLoading(false);
     }
@@ -105,8 +148,19 @@ export function TeamOnboarding({ onJoinedTeam }) {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           {error && (
-            <div className="border-2 border-[#ff6b5e] bg-[#ff6b5e]/15 p-3.5 text-[#ff6b5e] font-mono text-xs tracking-wide">
-              <span className="font-bold">ERROR:</span> {error}
+            <div className="border-2 border-[#ff6b5e] bg-[#ff6b5e]/15 p-3.5 text-[#ff6b5e] font-mono text-xs tracking-wide flex flex-col gap-2">
+              <div>
+                <span className="font-bold">ERROR:</span> {error}
+              </div>
+              {existingTeamMatch && (
+                <button
+                  type="button"
+                  onClick={() => handleQuickRejoin(existingTeamMatch)}
+                  className="self-start py-1.5 px-3 bg-[#2ee58f] text-[#090c0a] border border-[#090c0a] font-mono font-bold text-xs uppercase shadow-[2px_2px_0_#090c0a] hover:translate-x-0.5 transition-transform"
+                >
+                  ⚡ REJOIN SQUAD #{existingTeamMatch} NOW
+                </button>
+              )}
             </div>
           )}
 

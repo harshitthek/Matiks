@@ -16,6 +16,7 @@ export function SprintSummary({
   teamName = 'Squad',
   isTimeOut = false,
   onReturnToLobby,
+  onPlayAgain,
   onViewLeaderboard
 }) {
   const correctCount = submissions.filter((s) => s.isCorrect).length;
@@ -107,22 +108,32 @@ export function SprintSummary({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+        <div className="flex flex-col sm:flex-row flex-wrap gap-3 justify-center">
           <TactileButton
             variant="signal"
             onClick={onReturnToLobby}
-            className="w-full sm:w-auto px-8 py-3.5 text-sm"
+            className="w-full sm:w-auto px-6 py-3.5 text-sm"
           >
-            RETURN TO SQUAD LOBBY
+            ← RETURN TO SQUAD LOBBY
           </TactileButton>
+
+          {onPlayAgain && (
+            <TactileButton
+              variant="ghost"
+              onClick={onPlayAgain}
+              className="w-full sm:w-auto px-6 py-3.5 text-sm"
+            >
+              🔄 PLAY AGAIN WITH SQUAD
+            </TactileButton>
+          )}
 
           {onViewLeaderboard && (
             <TactileButton
               variant="butter"
               onClick={onViewLeaderboard}
-              className="w-full sm:w-auto px-8 py-3.5 text-sm"
+              className="w-full sm:w-auto px-6 py-3.5 text-sm"
             >
-              VIEW LIVE LEADERBOARD
+              🏆 VIEW LIVE LEADERBOARD
             </TactileButton>
           )}
         </div>

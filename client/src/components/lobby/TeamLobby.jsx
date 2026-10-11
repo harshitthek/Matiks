@@ -3,35 +3,41 @@ import { TactileButton } from '../common/TactileButton.jsx';
 import { WashiTape } from '../common/WashiTape.jsx';
 import { RadarDot } from '../common/RadarDot.jsx';
 import { CountdownOverlay } from './CountdownOverlay.jsx';
-import { toggleReady, getTeamSnapshot } from '../../services/api.js';
+import { toggleReady, getTeamSnapshot, resetTeamSprint } from '../../services/api.js';
 import { connectTeamStream } from '../../services/sse.js';
 
 /**
  * Team & Student Lobby panel (Showcase Mode).
  * Displays live member roster, connection radar pings, atomic ready lock,
- * and synchronized 3-2-1 countdown overlay.
+ * post-sprint rematch controls, and synchronized 3-2-1 countdown overlay.
  */
 export function TeamLobby({
   teamCode,
   memberToken,
   currentRoll,
+  leavePromptRequested = false,
+  onDismissLeavePrompt,
   onStartSprint,
-  onLeaveTeam
+  onLeaveTeam,
+  onViewLeaderboard
 }) {
   const [snapshot, setSnapshot] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [readyLoading, setReadyLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [error, setError] = useState(null);
   const [countdown, setCountdown] = useState(null); // { secondsRemaining, message }
   const copyTimerRef = useRef(null);
+  const linkTimerRef = useRef(null);
 
-  // Clear copy timer on unmount
+  // Clear copy timers on unmount
   useEffect(() => {
     return () => {
-      if (copyTimerRef.current) {
-        clearTimeout(copyTimerRef.current);
-      }
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      if (linkTimerRef.current) clearTimeout(linkTimerRef.current);
     };
   }, []);
 
@@ -46,12 +52,14 @@ export function TeamLobby({
         if (!isMounted) return;
         if (err.status === 401 || err.status === 404) {
           console.warn('[Lobby] Stale or invalid session detected, resetting to onboarding:', err.message);
-          onLeaveTeam?.();
+          onLeaveTeam?.({ forceLocal: true });
         } else {
           setError(err.message || 'Failed to fetch team details');
         }
       });
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [teamCode, memberToken, onLeaveTeam]);
 
   // Connect SSE Team Stream
@@ -63,6 +71,7 @@ export function TeamLobby({
       },
       onSnapshot: (data) => {
         setSnapshot(data);
+        setError(null);
         if (data?.status !== 'COUNTDOWN') {
           setCountdown(null);
         }
@@ -77,7 +86,25 @@ export function TeamLobby({
             ...prev,
             members: updatedMembers,
             allReady: data.allReady,
-            status: data.status
+            status: data.status || prev.status
+          };
+        });
+      },
+      onTeammateProgress: (data) => {
+        setSnapshot((prev) => {
+          if (!prev || !Array.isArray(prev.members)) return prev;
+          const updatedMembers = prev.members.map((m) =>
+            m.rollNumber === data.rollNumber
+              ? {
+                  ...m,
+                  completedQuestions: data.questionIndex,
+                  individualScore: data.currentScore
+                }
+              : m
+          );
+          return {
+            ...prev,
+            members: updatedMembers
           };
         });
       },
@@ -96,27 +123,34 @@ export function TeamLobby({
         }
 
         setCountdown({ secondsRemaining: 0, message: 'START!' });
-        // Hand off to Arena view with individual player's assigned sessionId
         const playerQuestions = data.questionsByRollNumber?.[currentRoll];
         if (sprintLaunchTimer) clearTimeout(sprintLaunchTimer);
         sprintLaunchTimer = setTimeout(() => {
           onStartSprint({
             sessionId,
             questions: playerQuestions,
-            startedAt: data.startedAt,
-            durationSeconds: data.durationSeconds
+            questionIndex: 0,
+            currentScore: 0,
+            streak: 0,
+            startedAt: data.startedAt || Date.now(),
+            durationSeconds: data.durationSeconds || 120
           });
         }, 500);
       },
       onSprintResume: (data) => {
-        // Player reconnected mid-sprint
+        const now = Date.now();
+        const remainingMs = data.expiresAt ? Math.max(1000, data.expiresAt - now) : 120000;
+        const remainingSec = Math.max(1, Math.ceil(remainingMs / 1000));
         onStartSprint({
           sessionId: data.sessionId,
           questions: data.questions,
-          currentScore: data.currentScore,
-          streak: data.streak,
+          questionIndex: data.questionIndex ?? 0,
+          currentScore: data.currentScore ?? 0,
+          streak: data.streak ?? 0,
+          startedAt: now,
+          durationSeconds: remainingSec,
           expiresAt: data.expiresAt,
-          isPaused: data.isPaused,
+          isPaused: Boolean(data.isPaused),
           isResume: true
         });
       },
@@ -155,6 +189,25 @@ export function TeamLobby({
       });
   }, [teamCode]);
 
+  // Copy invite URL to clipboard
+  const handleCopyInviteLink = useCallback(() => {
+    const inviteUrl = `${window.location.origin}/?team=${encodeURIComponent(teamCode)}`;
+    if (!navigator?.clipboard?.writeText) {
+      setError(`Share invite link manually: ${inviteUrl}`);
+      return;
+    }
+    navigator.clipboard
+      .writeText(inviteUrl)
+      .then(() => {
+        setCopiedLink(true);
+        if (linkTimerRef.current) clearTimeout(linkTimerRef.current);
+        linkTimerRef.current = setTimeout(() => setCopiedLink(false), 2000);
+      })
+      .catch(() => {
+        setError(`Share invite link manually: ${inviteUrl}`);
+      });
+  }, [teamCode]);
+
   // Toggle ready status
   const currentMember = snapshot?.members?.find((m) => m.rollNumber === currentRoll);
   const isCurrentlyReady = currentMember?.isReady ?? false;
@@ -171,11 +224,55 @@ export function TeamLobby({
     }
   };
 
+  const handlePlayAgain = async () => {
+    setResetLoading(true);
+    setError(null);
+    try {
+      const res = await resetTeamSprint(teamCode, currentRoll, memberToken);
+      if (res?.snapshot) {
+        setSnapshot(res.snapshot);
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to reset squad for new sprint.');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const handleCancelLeave = () => {
+    setShowLeaveConfirm(false);
+    onDismissLeavePrompt?.();
+  };
+
+  const handleConfirmLeave = async () => {
+    setError(null);
+    try {
+      await onLeaveTeam?.();
+    } catch (err) {
+      if (err?.status === 401 || err?.status === 404) {
+        await onLeaveTeam?.({ forceLocal: true });
+      } else {
+        setShowLeaveConfirm(false);
+        onDismissLeavePrompt?.();
+        setError(err?.message || 'Failed to leave squad. Please try again.');
+      }
+    }
+  };
+
   const members = snapshot?.members || [];
   const activeMembers = members.filter((m) => !m.isExcused);
   const readyCount = activeMembers.filter((m) => m.isReady).length;
   const isRosterFull = snapshot ? members.length >= snapshot.targetSize : false;
   const isContestWindowOpen = snapshot?.contestWindow?.isOpen ?? true;
+  const roomStatus = snapshot?.status || 'LOBBY';
+  const isRoundFinished = roomStatus === 'FINISHED' || roomStatus === 'COMPLETED';
+
+  const squadAverageScore =
+    activeMembers.length > 0
+      ? Math.round(
+          activeMembers.reduce((sum, m) => sum + (m.individualScore || 0), 0) / activeMembers.length
+        )
+      : 0;
 
   return (
     <div className="w-full max-w-3xl mx-auto px-4 py-8">
@@ -202,12 +299,40 @@ export function TeamLobby({
 
         <button
           type="button"
-          onClick={onLeaveTeam}
-          className="font-mono text-xs text-[#aab5ac] hover:text-[#ff6b5e] uppercase tracking-wider transition-colors underline underline-offset-4"
+          onClick={() => setShowLeaveConfirm(true)}
+          className="font-mono text-xs text-[#aab5ac] hover:text-[#ff6b5e] uppercase tracking-wider transition-colors underline underline-offset-4 cursor-pointer"
         >
-          [LEAVE SQUAD]
+          [← LEAVE SQUAD]
         </button>
       </div>
+
+      {/* Leave Squad Confirmation Banner */}
+      {(showLeaveConfirm || leavePromptRequested) && (
+        <div className="border-2 border-[#ff6b5e] bg-[#ff6b5e]/15 p-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-[4px_4px_0_#090c0a]">
+          <div className="font-mono text-xs text-[#e8ece3]">
+            <strong className="text-[#ff6b5e] uppercase block mb-0.5">
+              LEAVE SQUAD #{teamCode}?
+            </strong>
+            Your spot in this squad will be released so you can join or create another team.
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleCancelLeave}
+              className="px-3 py-1.5 bg-[#090c0a] border-2 border-[#2ee58f] text-[#2ee58f] font-mono font-bold text-xs uppercase cursor-pointer"
+            >
+              STAY IN SQUAD
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmLeave}
+              className="px-3 py-1.5 bg-[#ff6b5e] border-2 border-[#090c0a] text-[#090c0a] font-mono font-bold text-xs uppercase shadow-[2px_2px_0_#090c0a] cursor-pointer"
+            >
+              CONFIRM LEAVE
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Squad Header Card */}
       <div className="cyber-card p-6 md:p-8 mb-6 relative">
@@ -223,17 +348,24 @@ export function TeamLobby({
             </h1>
           </div>
 
-          {/* Squad Code Pill with Copy */}
-          <div className="flex items-center gap-2">
+          {/* Squad Code Pill with Copy & Share Link */}
+          <div className="flex flex-wrap items-center gap-2">
             <div className="font-mono text-sm md:text-base font-bold bg-[#090c0a] border-2 border-[#2ee58f] px-4 py-2 text-[#2ee58f] tracking-widest shadow-[3px_3px_0_#2ee58f]">
               #{teamCode}
             </div>
             <button
               type="button"
               onClick={handleCopyCode}
-              className="py-2 px-3 border-2 border-[#090c0a] bg-[#ffe36e] text-[#090c0a] font-mono font-bold text-xs uppercase tracking-wider shadow-[2px_2px_0_#090c0a] hover:translate-x-0.5 transition-transform"
+              className="py-2 px-3 border-2 border-[#090c0a] bg-[#ffe36e] text-[#090c0a] font-mono font-bold text-xs uppercase tracking-wider shadow-[2px_2px_0_#090c0a] hover:translate-x-0.5 transition-transform cursor-pointer"
             >
-              {copiedCode ? 'COPIED!' : 'COPY'}
+              {copiedCode ? 'COPIED!' : 'COPY CODE'}
+            </button>
+            <button
+              type="button"
+              onClick={handleCopyInviteLink}
+              className="py-2 px-3 border-2 border-[#090c0a] bg-[#2ee58f] text-[#090c0a] font-mono font-bold text-xs uppercase tracking-wider shadow-[2px_2px_0_#090c0a] hover:translate-x-0.5 transition-transform cursor-pointer"
+            >
+              {copiedLink ? 'LINK COPIED!' : 'INVITE LINK 🔗'}
             </button>
           </div>
         </div>
@@ -261,6 +393,26 @@ export function TeamLobby({
         </div>
       )}
 
+      {/* Completed Sprint Summary Banner inside Lobby */}
+      {isRoundFinished && (
+        <div className="border-2 border-[#2ee58f] bg-[#2ee58f]/10 p-5 mb-6 shadow-[4px_4px_0_#090c0a] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <span className="font-mono text-xs font-bold text-[#2ee58f] uppercase tracking-widest block">
+              🏆 SPRINT ROUND COMPLETED
+            </span>
+            <span className="font-body text-xs text-[#e8ece3]">
+              All squad members have completed the sprint. Ready for another round?
+            </span>
+          </div>
+          <div className="bg-[#090c0a] border-2 border-[#ffe36e] px-4 py-2 text-center shrink-0">
+            <span className="font-mono text-[10px] text-[#aab5ac] uppercase block">SQUAD AVERAGE</span>
+            <span className="font-display font-extrabold text-xl text-[#ffe36e]">
+              {squadAverageScore.toLocaleString()} PTS
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Roster Card */}
       <div className="cyber-card p-6 md:p-8 mb-6 relative">
         <WashiTape color="pink" rotation="2deg" className="-top-3 -left-4" />
@@ -270,7 +422,7 @@ export function TeamLobby({
             SQUAD ROSTER ({members.length} / {snapshot?.targetSize || 3} SQUAD CAPACITY)
           </h2>
           <span className="font-mono text-xs text-[#aab5ac]">
-            STATUS: <strong className="text-[#2ee58f]">{snapshot?.status || 'LOBBY'}</strong>
+            STATUS: <strong className="text-[#2ee58f]">{roomStatus}</strong>
           </span>
         </div>
 
@@ -290,7 +442,7 @@ export function TeamLobby({
                 <div className="flex items-center gap-3">
                   <RadarDot status={member.connected ? 'online' : 'offline'} />
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-display font-bold text-base text-[#e8ece3]">
                         {member.name} {isMe && <span className="text-[#2ee58f] font-mono text-xs">(YOU)</span>}
                       </span>
@@ -316,12 +468,21 @@ export function TeamLobby({
                   </div>
                 </div>
 
-                {/* Ready Status Pill */}
+                {/* Status / Score Pill */}
                 <div className="flex items-center gap-2 self-start sm:self-auto">
                   {member.isExcused ? (
                     <span className="font-mono text-xs px-3 py-1 bg-[#090c0a] border border-[#aab5ac]/30 text-[#aab5ac]">
                       EXCUSED FROM SPRINT
                     </span>
+                  ) : isRoundFinished || roomStatus === 'IN_SPRINT' ? (
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs px-2.5 py-1 bg-[#090c0a] border border-[#2ee58f]/40 text-[#aab5ac]">
+                        {member.completedQuestions || 0}/15 Q
+                      </span>
+                      <span className="font-mono text-xs font-bold px-3 py-1 bg-[#2ee58f] text-[#090c0a] border border-[#090c0a] shadow-[2px_2px_0_#090c0a]">
+                        {(member.individualScore || 0).toLocaleString()} PTS
+                      </span>
+                    </div>
                   ) : member.isReady ? (
                     <span className="font-mono text-xs font-bold px-3 py-1 bg-[#2ee58f] text-[#090c0a] border border-[#090c0a] shadow-[2px_2px_0_#090c0a] flex items-center gap-1">
                       ✓ READY LOCKED
@@ -346,30 +507,70 @@ export function TeamLobby({
       </div>
 
       {/* Atomic Ready Lock Notice */}
-      <div className="border-2 border-[#ffe36e] bg-[#ffe36e]/10 p-4 mb-6 shadow-[4px_4px_0_#090c0a]">
-        <div className="flex items-start gap-3">
-          <span className="text-xl leading-none">⚠️</span>
-          <div>
-            <h3 className="font-mono font-bold text-xs text-[#ffe36e] uppercase tracking-wider mb-1">
-              ATOMIC SYNCHRONIZED START GATE
-            </h3>
-            <p className="font-body text-xs text-[#e8ece3] leading-relaxed">
-              Every squad member must be logged in and in the <strong>"READY"</strong> state before the sprint can launch ({readyCount} of {activeMembers.length} ready).
-              All teammates solve individually at the exact same time. The team score is the <strong>AVERAGE</strong> of all members' scores!
-            </p>
+      {!isRoundFinished && (
+        <div className="border-2 border-[#ffe36e] bg-[#ffe36e]/10 p-4 mb-6 shadow-[4px_4px_0_#090c0a]">
+          <div className="flex items-start gap-3">
+            <span className="text-xl leading-none">⚠️</span>
+            <div>
+              <h3 className="font-mono font-bold text-xs text-[#ffe36e] uppercase tracking-wider mb-1">
+                ATOMIC SYNCHRONIZED START GATE
+              </h3>
+              <p className="font-body text-xs text-[#e8ece3] leading-relaxed">
+                Every squad member must be logged in and in the <strong>"READY"</strong> state before the sprint can launch ({readyCount} of {activeMembers.length} ready).
+                All teammates solve individually at the exact same time. The team score is the <strong>AVERAGE</strong> of all members' scores!
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Big Tactile Action Button */}
+      {/* Big Tactile Action Area */}
       <div className="text-center">
         {!snapshot ? (
           <div className="p-4 border-2 border-[#2ee58f]/40 bg-[#090c0a] text-[#2ee58f] font-mono text-xs font-bold tracking-wider animate-pulse">
             CONNECTING TO SQUAD LOBBY TELEMETRY...
           </div>
+        ) : isRoundFinished ? (
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <TactileButton
+              variant="signal"
+              onClick={handlePlayAgain}
+              disabled={resetLoading}
+              className="flex-1 py-4 text-sm md:text-base shadow-[6px_6px_0_#090c0a]"
+            >
+              {resetLoading ? 'RESETTING SQUAD...' : '🔄 PLAY AGAIN (NEW SPRINT WITH SQUAD)'}
+            </TactileButton>
+
+            {onViewLeaderboard && (
+              <TactileButton
+                variant="butter"
+                onClick={onViewLeaderboard}
+                className="sm:w-auto px-6 py-4 text-sm md:text-base shadow-[6px_6px_0_#090c0a]"
+              >
+                🏆 VIEW LEADERBOARD
+              </TactileButton>
+            )}
+          </div>
+        ) : roomStatus === 'IN_SPRINT' ? (
+          <div className="space-y-3">
+            <div className="p-4 border-2 border-[#2ee58f] bg-[#2ee58f]/15 text-[#2ee58f] font-mono text-xs font-bold tracking-wider animate-pulse">
+              ⏳ SPRINT IN PROGRESS — WAITING FOR TEAMMATES TO FINISH...
+            </div>
+            {onViewLeaderboard && (
+              <div className="flex justify-center">
+                <TactileButton
+                  variant="butter"
+                  onClick={onViewLeaderboard}
+                  className="px-6 py-3 text-xs"
+                >
+                  🏆 VIEW LIVE LEADERBOARD
+                </TactileButton>
+              </div>
+            )}
+          </div>
         ) : !isRosterFull ? (
           <div className="p-4 border-2 border-[#f5a623] bg-[#f5a623]/15 text-[#f5a623] font-mono text-xs font-bold tracking-wider">
-            SQUAD INCOMPLETE: SHARE CODE #{teamCode} WITH TEAMMATES TO FILL ROSTER ({members.length}/{snapshot.targetSize})
+            SQUAD INCOMPLETE: SHARE CODE #{teamCode} OR INVITE LINK WITH TEAMMATES TO FILL ROSTER ({members.length}/{snapshot.targetSize})
           </div>
         ) : !isContestWindowOpen ? (
           <div className="p-4 border-2 border-[#f5a623] bg-[#f5a623]/15 text-[#f5a623] font-mono text-xs font-bold tracking-wider">

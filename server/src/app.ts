@@ -12,7 +12,9 @@ import {
   createTeamHandler,
   joinTeamHandler,
   readyToggleHandler,
-  getTeamSnapshotHandler
+  getTeamSnapshotHandler,
+  leaveTeamHandler,
+  resetTeamSprintHandler
 } from './controllers/teamController.js';
 
 import {
@@ -138,6 +140,8 @@ export function createApp(): express.Application {
   app.post('/api/team/create', createTeamHandler);
   app.post('/api/team/join', joinTeamHandler);
   app.post('/api/team/ready', readyToggleHandler);
+  app.post('/api/team/leave', leaveTeamHandler);
+  app.post('/api/team/reset', resetTeamSprintHandler);
   app.get('/api/team/:teamCode', getTeamSnapshotHandler);
 
   // Inbound Sprint REST endpoints

@@ -168,3 +168,48 @@ export function getTeamSnapshotHandler(req: Request, res: Response): void {
 
   res.status(200).json(roomManager.getSnapshot(room));
 }
+
+export function leaveTeamHandler(req: Request, res: Response): void {
+  try {
+    const { teamCode, rollNumber } = req.body;
+
+    if (!isValidStringField(teamCode) || !isValidStringField(rollNumber)) {
+      res.status(400).json({ error: 'teamCode and rollNumber must be non-empty strings up to 64 characters.' });
+      return;
+    }
+
+    const token = (req.headers['x-member-token'] as string) || (req.body.token as string) || (req.body.memberToken as string);
+    const { dissolved, room } = roomManager.leaveTeam(teamCode, rollNumber, token);
+
+    res.status(200).json({
+      success: true,
+      dissolved,
+      snapshot: room ? roomManager.getSnapshot(room) : null
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to leave team';
+    res.status(400).json({ error: message });
+  }
+}
+
+export function resetTeamSprintHandler(req: Request, res: Response): void {
+  try {
+    const { teamCode, rollNumber } = req.body;
+
+    if (!isValidStringField(teamCode) || !isValidStringField(rollNumber)) {
+      res.status(400).json({ error: 'teamCode and rollNumber must be non-empty strings up to 64 characters.' });
+      return;
+    }
+
+    const token = (req.headers['x-member-token'] as string) || (req.body.token as string) || (req.body.memberToken as string);
+    const room = roomManager.resetTeamSprint(teamCode, rollNumber, token);
+
+    res.status(200).json({
+      success: true,
+      snapshot: roomManager.getSnapshot(room)
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to reset squad sprint';
+    res.status(400).json({ error: message });
+  }
+}

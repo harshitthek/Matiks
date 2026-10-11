@@ -7,7 +7,7 @@ import { TactileButton } from '../common/TactileButton.jsx';
  * Organizer Passcode Authentication Gate.
  * Enforces admin secret verification for tournament management.
  */
-export function AdminAuthGate({ onAuthenticate, error }) {
+export function AdminAuthGate({ onAuthenticate, onReturnToLobby, error }) {
   const [secret, setSecret] = useState('');
   const [localError, setLocalError] = useState(null);
 
@@ -72,6 +72,17 @@ export function AdminAuthGate({ onAuthenticate, error }) {
             UNLOCK COMMAND CENTER ↵
           </TactileButton>
 
+          {onReturnToLobby && (
+            <TactileButton
+              type="button"
+              variant="muted"
+              onClick={onReturnToLobby}
+              className="w-full py-2.5 text-xs font-bold tracking-wider"
+            >
+              ← RETURN TO SQUAD LOBBY
+            </TactileButton>
+          )}
+
           {/* Development Quick Helper (Dev Only) */}
           {Boolean(import.meta.env?.DEV) && (
             <div className="pt-2 border-t border-white/10">
@@ -89,3 +100,4 @@ export function AdminAuthGate({ onAuthenticate, error }) {
     </div>
   );
 }
+

@@ -11,7 +11,14 @@ const BASE_URL = `${API_ORIGIN}/api`;
  * Shared fetch helper that parses response defensively and formats errors.
  */
 async function request(endpoint, options = {}) {
-  const res = await fetch(`${BASE_URL}${endpoint}`, options);
+  const mergedHeaders = {
+    'ngrok-skip-browser-warning': 'true',
+    ...(options.headers || {})
+  };
+  const res = await fetch(`${BASE_URL}${endpoint}`, {
+    ...options,
+    headers: mergedHeaders
+  });
   let data = null;
   const contentType = res.headers.get('content-type');
 
@@ -64,6 +71,36 @@ export async function joinTeam(teamCode, rollNumber, name, token) {
     method: 'POST',
     headers,
     body: JSON.stringify({ teamCode, rollNumber, name, token })
+  });
+}
+
+/**
+ * Leaves the current squad room and frees the roll number.
+ */
+export async function leaveTeam(teamCode, rollNumber, token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['x-member-token'] = token;
+  }
+  return request('/team/leave', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ teamCode, rollNumber, token })
+  });
+}
+
+/**
+ * Resets a completed squad room for a new sprint round.
+ */
+export async function resetTeamSprint(teamCode, rollNumber, token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['x-member-token'] = token;
+  }
+  return request('/team/reset', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ teamCode, rollNumber, token })
   });
 }
 

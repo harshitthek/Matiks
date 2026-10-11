@@ -294,7 +294,13 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
 
   // Render Auth Gate if unauthenticated
   if (!adminToken) {
-    return <AdminAuthGate onAuthenticate={handleAuthenticate} error={authError} />;
+    return (
+      <AdminAuthGate
+        onAuthenticate={handleAuthenticate}
+        onReturnToLobby={onReturnToLobby}
+        error={authError}
+      />
+    );
   }
 
   return (

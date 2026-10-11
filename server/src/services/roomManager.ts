@@ -201,6 +201,134 @@ export class RoomManager {
   }
 
   /**
+   * Removes a member from a Team Room (or dissolves the room if empty),
+   * freeing their roll number to join or create another team.
+   */
+  public leaveTeam(
+    teamCode: string,
+    rollNumber: string,
+    memberToken?: string
+  ): { dissolved: boolean; room?: TeamRoom } {
+    const cleanCode = teamCode.trim().toUpperCase();
+    const cleanRoll = rollNumber.trim().toUpperCase();
+    const room = this.rooms.get(cleanCode);
+    if (!room) {
+      if (this.rollToTeamMap.get(cleanRoll) === cleanCode) {
+        this.rollToTeamMap.delete(cleanRoll);
+      }
+      return { dissolved: true };
+    }
+
+    const member = room.members.get(cleanRoll);
+    if (!member) {
+      if (this.rollToTeamMap.get(cleanRoll) === cleanCode) {
+        this.rollToTeamMap.delete(cleanRoll);
+      }
+      return { dissolved: false, room };
+    }
+
+    if (member.token && (!memberToken || member.token !== memberToken)) {
+      throw new Error('Unauthorized: Valid member token is required to leave team.');
+    }
+
+    if (member.activeSessionId) {
+      const sess = this.sessions.get(member.activeSessionId);
+      if (sess) {
+        sess.isFinished = true;
+      }
+      this.lastQuestionTimes.delete(member.activeSessionId);
+    }
+
+    const wasCaptain = member.isCaptain;
+    room.members.delete(cleanRoll);
+    if (this.rollToTeamMap.get(cleanRoll) === cleanCode) {
+      this.rollToTeamMap.delete(cleanRoll);
+    }
+
+    if (room.members.size === 0) {
+      this.clearRoomTimers(cleanCode);
+      this.rooms.delete(cleanCode);
+      leaderboardManager.removeTeam(cleanCode, true);
+      return { dissolved: true };
+    }
+
+    if (wasCaptain) {
+      const nextCaptain = room.members.values().next().value;
+      if (nextCaptain) {
+        nextCaptain.isCaptain = true;
+      }
+    }
+
+    if (room.status === 'COUNTDOWN' || room.status === 'AWAITING_READY') {
+      if (room.members.size < room.targetSize) {
+        this.clearRoomTimers(cleanCode);
+        room.status = 'LOBBY';
+      }
+    } else if (room.status === 'IN_SPRINT') {
+      this.checkRoomCompletion(room);
+    }
+
+    this.broadcastSnapshot(room);
+    this.syncLeaderboard(room);
+    return { dissolved: false, room };
+  }
+
+  /**
+   * Resets a completed team room back to the ready lobby
+   * so the same squad can run another sprint together.
+   */
+  public resetTeamSprint(
+    teamCode: string,
+    rollNumber: string,
+    memberToken?: string
+  ): TeamRoom {
+    const cleanCode = teamCode.trim().toUpperCase();
+    const room = this.rooms.get(cleanCode);
+    if (!room) {
+      throw new Error(`Team ${cleanCode} not found.`);
+    }
+
+    const cleanRoll = rollNumber.trim().toUpperCase();
+    const member = room.members.get(cleanRoll);
+    if (!member) {
+      throw new Error(`Member ${cleanRoll} not found in team ${cleanCode}.`);
+    }
+
+    if (member.token && (!memberToken || member.token !== memberToken)) {
+      throw new Error('Unauthorized: Valid member token is required to reset squad.');
+    }
+
+    if (room.status !== 'FINISHED') {
+      throw new Error(`Cannot reset squad while room is in ${room.status} status. Wait for the sprint to finish.`);
+    }
+
+    this.clearRoomTimers(cleanCode);
+
+    for (const m of room.members.values()) {
+      if (m.activeSessionId) {
+        this.sessions.delete(m.activeSessionId);
+        this.lastQuestionTimes.delete(m.activeSessionId);
+      }
+      m.activeSessionId = undefined;
+      m.isReady = false;
+      m.isExcused = false;
+      m.individualScore = 0;
+      m.completedQuestions = 0;
+      m.lastActiveAt = Date.now();
+    }
+
+    room.status = room.members.size >= room.targetSize ? 'AWAITING_READY' : 'LOBBY';
+    room.startedAt = undefined;
+    room.completedAt = undefined;
+    room.isPaused = false;
+    room.pausedAt = undefined;
+
+    this.broadcastSnapshot(room);
+    this.syncLeaderboard(room);
+    return room;
+  }
+
+  /**
    * Toggles a member's READY status and triggers the atomic ready gate check.
    */
   public toggleReady(
