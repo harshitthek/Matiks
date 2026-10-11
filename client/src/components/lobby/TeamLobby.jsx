@@ -15,6 +15,7 @@ export function TeamLobby({
   teamCode,
   memberToken,
   currentRoll,
+  suppressedResumeSessionId = null,
   leavePromptRequested = false,
   onDismissLeavePrompt,
   onStartSprint,
@@ -28,10 +29,16 @@ export function TeamLobby({
   const [readyLoading, setReadyLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [resumableSprint, setResumableSprint] = useState(null);
   const [error, setError] = useState(null);
   const [countdown, setCountdown] = useState(null); // { secondsRemaining, message }
   const copyTimerRef = useRef(null);
   const linkTimerRef = useRef(null);
+  const suppressedResumeRef = useRef(suppressedResumeSessionId);
+
+  useEffect(() => {
+    suppressedResumeRef.current = suppressedResumeSessionId;
+  }, [suppressedResumeSessionId]);
 
   // Clear copy timers on unmount
   useEffect(() => {
@@ -75,6 +82,61 @@ export function TeamLobby({
         if (data?.status !== 'COUNTDOWN') {
           setCountdown(null);
         }
+        if (data?.status !== 'IN_SPRINT') {
+          setResumableSprint(null);
+        } else {
+          const nextPaused = Boolean(data?.isPaused);
+          setResumableSprint((prev) => {
+            if (!prev || prev.isPaused === nextPaused) return prev;
+            const now = Date.now();
+            if (nextPaused) {
+              const elapsed = Math.max(0, now - (prev.capturedAt || prev.startedAt || now));
+              const updatedRemaining = Math.max(0, (prev.initialRemainingMs ?? prev.durationSeconds * 1000) - elapsed);
+              return {
+                ...prev,
+                isPaused: true,
+                capturedAt: now,
+                initialRemainingMs: updatedRemaining
+              };
+            }
+            const remaining = prev.initialRemainingMs ?? prev.durationSeconds * 1000;
+            return {
+              ...prev,
+              isPaused: false,
+              capturedAt: now,
+              initialRemainingMs: remaining,
+              expiresAt: now + remaining
+            };
+          });
+        }
+      },
+      onRoomPaused: () => {
+        const now = Date.now();
+        setResumableSprint((prev) => {
+          if (!prev || prev.isPaused) return prev;
+          const elapsed = Math.max(0, now - (prev.capturedAt || prev.startedAt || now));
+          const updatedRemaining = Math.max(0, (prev.initialRemainingMs ?? prev.durationSeconds * 1000) - elapsed);
+          return {
+            ...prev,
+            isPaused: true,
+            capturedAt: now,
+            initialRemainingMs: updatedRemaining
+          };
+        });
+      },
+      onRoomResumed: () => {
+        const now = Date.now();
+        setResumableSprint((prev) => {
+          if (!prev || !prev.isPaused) return prev;
+          const remaining = prev.initialRemainingMs ?? prev.durationSeconds * 1000;
+          return {
+            ...prev,
+            isPaused: false,
+            capturedAt: now,
+            initialRemainingMs: remaining,
+            expiresAt: now + remaining
+          };
+        });
       },
       onMemberReady: (data) => {
         setSnapshot((prev) => {
@@ -132,6 +194,8 @@ export function TeamLobby({
             questionIndex: 0,
             currentScore: 0,
             streak: 0,
+            maxStreak: 0,
+            submissions: [],
             startedAt: data.startedAt || Date.now(),
             durationSeconds: data.durationSeconds || 120
           });
@@ -139,20 +203,37 @@ export function TeamLobby({
       },
       onSprintResume: (data) => {
         const now = Date.now();
-        const remainingMs = data.expiresAt ? Math.max(1000, data.expiresAt - now) : 120000;
+        const remainingMs =
+          typeof data.remainingMs === 'number'
+            ? data.remainingMs
+            : data.expiresAt
+            ? data.expiresAt - now
+            : 120000;
+        if (!data.isPaused && remainingMs <= 0) {
+          return;
+        }
         const remainingSec = Math.max(1, Math.ceil(remainingMs / 1000));
-        onStartSprint({
+        const resumePayload = {
           sessionId: data.sessionId,
           questions: data.questions,
           questionIndex: data.questionIndex ?? 0,
           currentScore: data.currentScore ?? 0,
           streak: data.streak ?? 0,
+          maxStreak: data.maxStreak ?? data.streak ?? 0,
+          submissions: Array.isArray(data.submissions) ? data.submissions : [],
           startedAt: now,
+          capturedAt: now,
+          initialRemainingMs: remainingMs,
           durationSeconds: remainingSec,
           expiresAt: data.expiresAt,
           isPaused: Boolean(data.isPaused),
           isResume: true
-        });
+        };
+        setResumableSprint(resumePayload);
+        if (suppressedResumeRef.current && suppressedResumeRef.current === data.sessionId) {
+          return;
+        }
+        onStartSprint(resumePayload);
       },
       onSprintError: (data) => {
         setCountdown(null);
@@ -554,19 +635,52 @@ export function TeamLobby({
         ) : roomStatus === 'IN_SPRINT' ? (
           <div className="space-y-3">
             <div className="p-4 border-2 border-[#2ee58f] bg-[#2ee58f]/15 text-[#2ee58f] font-mono text-xs font-bold tracking-wider animate-pulse">
-              ⏳ SPRINT IN PROGRESS — WAITING FOR TEAMMATES TO FINISH...
+              ⏳ SPRINT IN PROGRESS — {resumableSprint ? 'YOU EXITED THE ARENA' : 'WAITING FOR TEAMMATES TO FINISH...'}
             </div>
-            {onViewLeaderboard && (
-              <div className="flex justify-center">
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              {resumableSprint && (
+                <TactileButton
+                  variant="signal"
+                  onClick={() => {
+                    const now = Date.now();
+                    const elapsedMs = resumableSprint.isPaused
+                      ? 0
+                      : Math.max(0, now - (resumableSprint.capturedAt || resumableSprint.startedAt || now));
+                    const baseRemainingMs =
+                      typeof resumableSprint.initialRemainingMs === 'number'
+                        ? resumableSprint.initialRemainingMs
+                        : resumableSprint.expiresAt
+                        ? resumableSprint.expiresAt - now + elapsedMs
+                        : resumableSprint.durationSeconds * 1000;
+                    const remainingMs = baseRemainingMs - elapsedMs;
+                    if (!resumableSprint.isPaused && remainingMs <= 0) {
+                      setResumableSprint(null);
+                      getTeamSnapshot(teamCode, memberToken)
+                        .then((data) => setSnapshot(data))
+                        .catch(() => {});
+                      return;
+                    }
+                    onStartSprint({
+                      ...resumableSprint,
+                      startedAt: now,
+                      durationSeconds: Math.max(1, Math.ceil(remainingMs / 1000))
+                    });
+                  }}
+                  className="px-6 py-3 text-xs sm:text-sm"
+                >
+                  ⚡ RETURN TO ACTIVE SPRINT
+                </TactileButton>
+              )}
+              {onViewLeaderboard && (
                 <TactileButton
                   variant="butter"
                   onClick={onViewLeaderboard}
-                  className="px-6 py-3 text-xs"
+                  className="px-6 py-3 text-xs sm:text-sm"
                 >
                   🏆 VIEW LIVE LEADERBOARD
                 </TactileButton>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         ) : !isRosterFull ? (
           <div className="p-4 border-2 border-[#f5a623] bg-[#f5a623]/15 text-[#f5a623] font-mono text-xs font-bold tracking-wider">

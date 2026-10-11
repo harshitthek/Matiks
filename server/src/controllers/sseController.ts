@@ -80,13 +80,38 @@ export function sseTeamHandler(req: Request, res: Response): void {
     roomManager.broadcastSnapshot(room);
   }
 
+  // Ensure expired sprints are finalized before emitting snapshot or sprint_resume
+  roomManager.checkAndFinalizeIfExpired(room);
+
   // Send immediate initial snapshot
   sseHub.sendDirect(res, 'team_snapshot', roomManager.getSnapshot(room));
 
-  // Reconnection support: if room is in sprint and member has an active unfinished session
+  // Reconnection support: if room is in sprint and member has an active unfinished session with remaining time
   if (room.status === 'IN_SPRINT' && connectedMember.activeSessionId) {
     const session = roomManager.getSession(connectedMember.activeSessionId);
-    if (session && !session.isFinished) {
+    const now = Date.now();
+    if (session && !session.isFinished && (room.isPaused || now < session.expiresAt)) {
+      let maxStreak = 0;
+      let runningStreak = 0;
+      const clientSubmissions = session.submissions.map((sub) => {
+        if (sub.isCorrect) {
+          runningStreak += 1;
+          if (runningStreak > maxStreak) maxStreak = runningStreak;
+        } else {
+          runningStreak = 0;
+        }
+        const q = session.questions[sub.questionIndex];
+        return {
+          questionIndex: sub.questionIndex,
+          a: q?.a,
+          b: q?.b,
+          answer: sub.submittedAnswer,
+          isCorrect: sub.isCorrect,
+          pointsAwarded: sub.pointsAwarded,
+          latencyMs: sub.latencyMs
+        };
+      });
+
       sseHub.sendDirect(res, 'sprint_resume', {
         sessionId: session.sessionId,
         rollNumber: connectedMember.rollNumber,
@@ -94,7 +119,11 @@ export function sseTeamHandler(req: Request, res: Response): void {
         questions: mathEngine.sanitizeQuestions(session.questions),
         currentScore: session.currentScore,
         streak: session.consecutiveStreak,
+        maxStreak,
+        submissions: clientSubmissions,
+        startedAt: session.startedAt,
         expiresAt: session.expiresAt,
+        remainingMs: Math.max(0, session.expiresAt - now),
         isPaused: room.isPaused
       });
     }

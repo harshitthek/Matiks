@@ -20,9 +20,14 @@ export function ArenaView({
   initialQuestionIndex = 0,
   initialScore = 0,
   initialStreak = 0,
+  initialMaxStreak = 0,
+  initialSubmissions = [],
+  initialIsFinished = false,
+  initialIsTimeOut = false,
   startedAt = 0,
   durationSeconds = 120,
   initialIsPaused = false,
+  isActiveView = true,
   teamCode,
   memberToken,
   currentRoll,
@@ -30,6 +35,7 @@ export function ArenaView({
   exitPromptRequested = false,
   onDismissExitPrompt,
   onSprintFinishedChange,
+  onStateSync,
   onReturnToLobby,
   onPlayAgain,
   onViewLeaderboard
@@ -38,13 +44,17 @@ export function ArenaView({
   const [currentInput, setCurrentInput] = useState('');
   const [score, setScore] = useState(initialScore || 0);
   const [streak, setStreak] = useState(initialStreak || 0);
-  const [maxStreak, setMaxStreak] = useState(initialStreak || 0);
-  const [submissions, setSubmissions] = useState([]);
+  const [maxStreak, setMaxStreak] = useState(() =>
+    Math.max(initialStreak || 0, initialMaxStreak || 0)
+  );
+  const [submissions, setSubmissions] = useState(() =>
+    Array.isArray(initialSubmissions) ? initialSubmissions : []
+  );
   const [flashState, setFlashState] = useState(null); // 'correct' | 'incorrect' | null
   const [lastResult, setLastResult] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isFinished, setIsFinished] = useState(false);
-  const [isTimeOut, setIsTimeOut] = useState(false);
+  const [isFinished, setIsFinished] = useState(Boolean(initialIsFinished));
+  const [isTimeOut, setIsTimeOut] = useState(Boolean(initialIsTimeOut));
   const [isPaused, setIsPaused] = useState(Boolean(initialIsPaused));
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [submissionError, setSubmissionError] = useState(null);
@@ -55,7 +65,7 @@ export function ArenaView({
   const questionStartTimeRef = useRef(0);
   const pauseStartRef = useRef(null);
   const isSubmittingRef = useRef(false);
-  const isFinishedRef = useRef(false);
+  const isFinishedRef = useRef(Boolean(initialIsFinished));
 
   // Initialize question start time on mount
   useEffect(() => {
@@ -65,6 +75,29 @@ export function ArenaView({
   useEffect(() => {
     onSprintFinishedChange?.(isFinished);
   }, [isFinished, onSprintFinishedChange]);
+
+  useEffect(() => {
+    onStateSync?.({
+      questionIndex: currentIndex,
+      currentScore: score,
+      streak,
+      maxStreak,
+      submissions,
+      isFinished,
+      isTimeOut,
+      isPaused
+    });
+  }, [
+    currentIndex,
+    score,
+    streak,
+    maxStreak,
+    submissions,
+    isFinished,
+    isTimeOut,
+    isPaused,
+    onStateSync
+  ]);
 
   // Subscribe to Team SSE Stream for live teammate HUD, snapshots, and admin pauses
   useEffect(() => {
@@ -291,7 +324,7 @@ export function ArenaView({
   // Zetamac Physical Keyboard listeners (Universal Explicit Submit)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (isFinished || isPaused) return;
+      if (!isActiveView || isFinished || isPaused) return;
 
       const target = e.target;
       const isEditable =
@@ -319,7 +352,7 @@ export function ArenaView({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleDigit, handleClear, handleSubmitAnswer, isFinished, isPaused]);
+  }, [handleDigit, handleClear, handleSubmitAnswer, isActiveView, isFinished, isPaused]);
 
   // Handle 120s sprint timeout
   const handleTimerExpire = useCallback(async () => {

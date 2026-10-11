@@ -298,6 +298,8 @@ export class RoomManager {
       throw new Error('Unauthorized: Valid member token is required to reset squad.');
     }
 
+    this.checkAndFinalizeIfExpired(room);
+
     if (room.status !== 'FINISHED') {
       throw new Error(`Cannot reset squad while room is in ${room.status} status. Wait for the sprint to finish.`);
     }
@@ -979,9 +981,33 @@ export class RoomManager {
   }
 
   /**
+   * Finalizes an IN_SPRINT room if all active members have either completed their sessions
+   * or passed the authoritative 120s + 2.5s network transit grace submission cutoff.
+   */
+  public checkAndFinalizeIfExpired(room: TeamRoom): void {
+    if (room.status !== 'IN_SPRINT' || room.isPaused) return;
+    const now = Date.now();
+    const activeMembers = Array.from(room.members.values()).filter(m => !m.isExcused);
+    if (activeMembers.length === 0) return;
+
+    const allExpiredOrFinished = activeMembers.every(m => {
+      if (!m.activeSessionId) return true;
+      const sess = this.sessions.get(m.activeSessionId);
+      if (!sess || sess.isFinished) return true;
+      return now > sess.expiresAt + 2500;
+    });
+
+    if (allExpiredOrFinished) {
+      this.handleSprintTimeout(room.teamCode);
+    }
+  }
+
+  /**
    * Prepares a sanitized TeamSnapshotEvent for a given room.
    */
   public getSnapshot(room: TeamRoom): TeamSnapshotEvent {
+    this.checkAndFinalizeIfExpired(room);
+
     const membersList = Array.from(room.members.values()).map(m => ({
       rollNumber: m.rollNumber,
       name: m.name,

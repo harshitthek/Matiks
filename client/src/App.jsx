@@ -9,6 +9,7 @@ import { AdminView } from './components/admin/AdminView.jsx';
 import { leaveTeam, resetTeamSprint } from './services/api.js';
 
 const SESSION_STORAGE_KEY = 'matiks_squad_session';
+const SPRINT_STORAGE_KEY = 'matiks_sprint_session';
 
 function getInitialView() {
   if (typeof window === 'undefined') return 'squad';
@@ -56,18 +57,51 @@ export function App() {
     }
   });
 
-  const [sprintSession, setSprintSession] = useState(null);
-  const [isSprintFinished, setIsSprintFinished] = useState(false);
+  const [sprintSession, setSprintSession] = useState(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('arena') !== '1') {
+        sessionStorage.removeItem(SPRINT_STORAGE_KEY);
+        return null;
+      }
+      const saved = sessionStorage.getItem(SPRINT_STORAGE_KEY);
+      if (!saved) return null;
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object' && typeof parsed.sessionId === 'string') {
+        return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [isSprintFinished, setIsSprintFinished] = useState(() =>
+    Boolean(sprintSession?.isFinished)
+  );
+  const [suppressedResumeSessionId, setSuppressedResumeSessionId] = useState(null);
   const [arenaExitPrompt, setArenaExitPrompt] = useState(false);
   const [lobbyLeavePrompt, setLobbyLeavePrompt] = useState(false);
 
-  const sprintSessionRef = useRef(null);
-  const teamSessionRef = useRef(null);
-  const isSprintFinishedRef = useRef(false);
+  const sprintSessionRef = useRef(sprintSession);
+  const teamSessionRef = useRef(teamSession);
+  const isSprintFinishedRef = useRef(Boolean(sprintSession?.isFinished));
+  const arenaExitPromptRef = useRef(false);
+  const lobbyLeavePromptRef = useRef(false);
   const currentViewRef = useRef(currentView);
 
   useEffect(() => {
     sprintSessionRef.current = sprintSession;
+    try {
+      if (sprintSession) {
+        sessionStorage.setItem(SPRINT_STORAGE_KEY, JSON.stringify(sprintSession));
+      } else {
+        sessionStorage.removeItem(SPRINT_STORAGE_KEY);
+      }
+    } catch {
+      // Ignore storage errors
+    }
   }, [sprintSession]);
 
   useEffect(() => {
@@ -98,106 +132,24 @@ export function App() {
     }
   }, [currentView, teamSession, sprintSession, buildSquadUrl]);
 
-  // Sync navigation & Back/Forward button behavior with browser popstate
-  useEffect(() => {
-    const handlePopState = () => {
-      const nextView = getInitialView();
-      const prevView = currentViewRef.current;
-
-      // Returning from /leaderboard or /admin back to squad
-      if (prevView !== 'squad' && nextView === 'squad') {
-        setCurrentView('squad');
-        return;
-      }
-
-      if (nextView !== 'squad') {
-        setCurrentView(nextView);
-        return;
-      }
-
-      // User pressed Back while inside Squad view
-      const activeSprint = sprintSessionRef.current;
-      const activeTeam = teamSessionRef.current;
-
-      if (activeSprint) {
-        if (!isSprintFinishedRef.current) {
-          // Guard against accidental Back button / mobile swipe-back during live 2-minute sprint
-          setArenaExitPrompt(true);
-          window.history.pushState(
-            { view: 'squad', step: 'arena', teamCode: activeTeam?.teamCode },
-            '',
-            buildSquadUrl(activeTeam, activeSprint)
-          );
-          return;
-        }
-        // Sprint is already finished (Summary view) -> Back returns cleanly to Team Lobby
-        setSprintSession(null);
-        setArenaExitPrompt(false);
-        isSprintFinishedRef.current = false;
-        setIsSprintFinished(false);
-        if (activeTeam?.teamCode) {
-          window.history.replaceState(
-            { view: 'squad', step: 'lobby', teamCode: activeTeam.teamCode },
-            '',
-            buildSquadUrl(activeTeam, null)
-          );
-        }
-        return;
-      }
-
-      setCurrentView('squad');
-      setInviteTeamCode(getUrlInviteTeamCode());
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [buildSquadUrl]);
-
-  const navigateTo = useCallback((view) => {
-    setCurrentView(view);
-    const activeTeam = teamSessionRef.current;
+  const handleReturnToLobbyFromSprint = useCallback(() => {
     const activeSprint = sprintSessionRef.current;
-    const targetUrl =
-      view === 'leaderboard'
-        ? '/leaderboard'
-        : view === 'admin'
-        ? '/admin'
-        : buildSquadUrl(activeTeam, activeSprint);
-
-    if (window.location.pathname + window.location.search !== targetUrl) {
-      window.history.pushState({ view }, '', targetUrl);
+    if (activeSprint?.sessionId && !isSprintFinishedRef.current) {
+      setSuppressedResumeSessionId(activeSprint.sessionId);
     }
-  }, [buildSquadUrl]);
-
-  // Sync session state to localStorage
-  useEffect(() => {
-    try {
-      if (teamSession) {
-        localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(teamSession));
-        if (teamSession.rollNumber && teamSession.memberToken) {
-          const rawVault = localStorage.getItem('matiks_member_tokens');
-          const vault = rawVault ? JSON.parse(rawVault) : {};
-          vault[teamSession.rollNumber.toUpperCase()] = teamSession.memberToken;
-          localStorage.setItem('matiks_member_tokens', JSON.stringify(vault));
-        }
-      } else {
-        localStorage.removeItem(SESSION_STORAGE_KEY);
-      }
-    } catch (e) {
-      console.warn('Failed to persist squad session to localStorage:', e);
-    }
-  }, [teamSession]);
-
-  const handleJoinedTeam = useCallback((sessionData) => {
-    setTeamSession(sessionData);
     setSprintSession(null);
+    arenaExitPromptRef.current = false;
     setArenaExitPrompt(false);
-    setLobbyLeavePrompt(false);
     isSprintFinishedRef.current = false;
     setIsSprintFinished(false);
     setCurrentView('squad');
-    const url = `/?team=${encodeURIComponent(sessionData.teamCode)}`;
-    window.history.pushState({ view: 'squad', step: 'lobby', teamCode: sessionData.teamCode }, '', url);
+    const activeTeam = teamSessionRef.current;
+    const url = activeTeam?.teamCode ? `/?team=${encodeURIComponent(activeTeam.teamCode)}` : '/';
+    window.history.replaceState(
+      { view: 'squad', step: 'lobby', teamCode: activeTeam?.teamCode },
+      '',
+      url
+    );
   }, []);
 
   const handleLeaveTeam = useCallback(async (options = {}) => {
@@ -221,18 +173,148 @@ export function App() {
 
     setTeamSession(null);
     setSprintSession(null);
+    setSuppressedResumeSessionId(null);
+    arenaExitPromptRef.current = false;
     setArenaExitPrompt(false);
+    lobbyLeavePromptRef.current = false;
     setLobbyLeavePrompt(false);
     isSprintFinishedRef.current = false;
     setIsSprintFinished(false);
     setInviteTeamCode('');
-    window.history.pushState({ view: 'squad', step: 'onboarding' }, '', '/');
+    window.history.replaceState({ view: 'squad', step: 'onboarding' }, '', '/');
+  }, []);
+
+  // Sync navigation & Back/Forward button behavior with browser popstate
+  useEffect(() => {
+    const handlePopState = () => {
+      const nextView = getInitialView();
+      const prevView = currentViewRef.current;
+
+      // Returning from /leaderboard or /admin back to squad
+      if (prevView !== 'squad' && nextView === 'squad') {
+        setCurrentView('squad');
+        return;
+      }
+
+      if (nextView !== 'squad') {
+        setCurrentView(nextView);
+        return;
+      }
+
+      // User pressed Back while inside Squad view
+      const activeSprint = sprintSessionRef.current;
+      const activeTeam = teamSessionRef.current;
+
+      if (activeSprint) {
+        if (!isSprintFinishedRef.current) {
+          if (arenaExitPromptRef.current) {
+            // Second Back press while confirmation prompt is open -> exit to lobby
+            handleReturnToLobbyFromSprint();
+            return;
+          }
+          // Guard against accidental Back button / mobile swipe-back during live 2-minute sprint
+          arenaExitPromptRef.current = true;
+          setArenaExitPrompt(true);
+          window.history.pushState(
+            { view: 'squad', step: 'arena', teamCode: activeTeam?.teamCode },
+            '',
+            buildSquadUrl(activeTeam, activeSprint)
+          );
+          return;
+        }
+        // Sprint is already finished (Summary view) -> Back returns cleanly to Team Lobby
+        handleReturnToLobbyFromSprint();
+        return;
+      }
+
+      if (activeTeam) {
+        if (lobbyLeavePromptRef.current) {
+          // Second Back press while leave prompt is open -> leave squad
+          handleLeaveTeam();
+          return;
+        }
+        lobbyLeavePromptRef.current = true;
+        setLobbyLeavePrompt(true);
+        window.history.pushState(
+          { view: 'squad', step: 'lobby', teamCode: activeTeam.teamCode },
+          '',
+          buildSquadUrl(activeTeam, null)
+        );
+        return;
+      }
+
+      setCurrentView('squad');
+      setInviteTeamCode(getUrlInviteTeamCode());
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [buildSquadUrl, handleReturnToLobbyFromSprint, handleLeaveTeam]);
+
+  const navigateTo = useCallback(
+    (view) => {
+      setCurrentView(view);
+      const activeTeam = teamSessionRef.current;
+      const activeSprint = sprintSessionRef.current;
+      const targetUrl =
+        view === 'leaderboard'
+          ? '/leaderboard'
+          : view === 'admin'
+          ? '/admin'
+          : buildSquadUrl(activeTeam, activeSprint);
+
+      if (window.location.pathname + window.location.search !== targetUrl) {
+        window.history.pushState({ view }, '', targetUrl);
+      }
+    },
+    [buildSquadUrl]
+  );
+
+  // Sync session state to localStorage
+  useEffect(() => {
+    try {
+      if (teamSession) {
+        localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(teamSession));
+        if (teamSession.rollNumber && teamSession.memberToken) {
+          const rawVault = localStorage.getItem('matiks_member_tokens');
+          const vault = rawVault ? JSON.parse(rawVault) : {};
+          vault[teamSession.rollNumber.toUpperCase()] = teamSession.memberToken;
+          localStorage.setItem('matiks_member_tokens', JSON.stringify(vault));
+        }
+      } else {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+    } catch (e) {
+      console.warn('Failed to persist squad session to localStorage:', e);
+    }
+  }, [teamSession]);
+
+  const handleJoinedTeam = useCallback((sessionData) => {
+    setTeamSession(sessionData);
+    setSprintSession(null);
+    setSuppressedResumeSessionId(null);
+    arenaExitPromptRef.current = false;
+    setArenaExitPrompt(false);
+    lobbyLeavePromptRef.current = false;
+    setLobbyLeavePrompt(false);
+    isSprintFinishedRef.current = false;
+    setIsSprintFinished(false);
+    setCurrentView('squad');
+    const url = `/?team=${encodeURIComponent(sessionData.teamCode)}`;
+    window.history.pushState(
+      { view: 'squad', step: 'lobby', teamCode: sessionData.teamCode },
+      '',
+      url
+    );
   }, []);
 
   const handleStartSprint = useCallback((sprintData) => {
-    isSprintFinishedRef.current = false;
-    setIsSprintFinished(false);
+    setSuppressedResumeSessionId(null);
+    isSprintFinishedRef.current = Boolean(sprintData.isFinished);
+    setIsSprintFinished(Boolean(sprintData.isFinished));
+    arenaExitPromptRef.current = false;
     setArenaExitPrompt(false);
+    lobbyLeavePromptRef.current = false;
     setLobbyLeavePrompt(false);
     setSprintSession(sprintData);
     setCurrentView('squad');
@@ -240,18 +322,37 @@ export function App() {
     const url = activeTeam?.teamCode
       ? `/?team=${encodeURIComponent(activeTeam.teamCode)}&arena=1`
       : '/?arena=1';
-    window.history.pushState({ view: 'squad', step: 'arena', sessionId: sprintData.sessionId }, '', url);
+    window.history.pushState(
+      { view: 'squad', step: 'arena', sessionId: sprintData.sessionId },
+      '',
+      url
+    );
   }, []);
 
-  const handleReturnToLobbyFromSprint = useCallback(() => {
-    setSprintSession(null);
-    setArenaExitPrompt(false);
-    isSprintFinishedRef.current = false;
-    setIsSprintFinished(false);
-    setCurrentView('squad');
-    const activeTeam = teamSessionRef.current;
-    const url = activeTeam?.teamCode ? `/?team=${encodeURIComponent(activeTeam.teamCode)}` : '/';
-    window.history.pushState({ view: 'squad', step: 'lobby', teamCode: activeTeam?.teamCode }, '', url);
+  const handleSprintStateSync = useCallback((patch) => {
+    setSprintSession((prev) => {
+      if (!prev) return prev;
+      if (
+        prev.questionIndex === patch.questionIndex &&
+        prev.currentScore === patch.currentScore &&
+        prev.streak === patch.streak &&
+        prev.maxStreak === patch.maxStreak &&
+        prev.submissions === patch.submissions &&
+        prev.isFinished === patch.isFinished &&
+        prev.isTimeOut === patch.isTimeOut &&
+        prev.isPaused === patch.isPaused
+      ) {
+        return prev;
+      }
+      const next = { ...prev, ...patch };
+      sprintSessionRef.current = next;
+      try {
+        sessionStorage.setItem(SPRINT_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // Ignore storage errors
+      }
+      return next;
+    });
   }, []);
 
   const handlePlayAgainFromSummary = useCallback(async () => {
@@ -263,6 +364,7 @@ export function App() {
         // Even if already reset by a teammate, transition back to lobby
       }
     }
+    setSuppressedResumeSessionId(null);
     handleReturnToLobbyFromSprint();
   }, [handleReturnToLobbyFromSprint]);
 
@@ -342,57 +444,77 @@ export function App() {
 
       {/* Main View Body */}
       <main className="flex-1 flex flex-col justify-center py-6">
-        {currentView === 'leaderboard' ? (
+        {currentView === 'leaderboard' && (
           <LeaderboardView onReturnToLobby={() => navigateTo('squad')} />
-        ) : currentView === 'admin' ? (
+        )}
+
+        {currentView === 'admin' && (
           <AdminView
             onReturnToLobby={() => navigateTo('squad')}
             onViewLeaderboard={() => navigateTo('leaderboard')}
           />
-        ) : sprintSession ? (
-          <ArenaView
-            sessionId={sprintSession.sessionId}
-            questions={sprintSession.questions}
-            initialQuestionIndex={sprintSession.questionIndex || 0}
-            initialScore={sprintSession.currentScore || 0}
-            initialStreak={sprintSession.streak || 0}
-            startedAt={sprintSession.startedAt}
-            durationSeconds={sprintSession.durationSeconds || 120}
-            initialIsPaused={Boolean(sprintSession.isPaused)}
-            teamCode={teamSession?.teamCode}
-            memberToken={teamSession?.memberToken}
-            currentRoll={teamSession?.rollNumber}
-            currentName={teamSession?.name}
-            exitPromptRequested={arenaExitPrompt}
-            onDismissExitPrompt={() => setArenaExitPrompt(false)}
-            onSprintFinishedChange={(finished) => {
-              isSprintFinishedRef.current = finished;
-              setIsSprintFinished(finished);
-            }}
-            onReturnToLobby={handleReturnToLobbyFromSprint}
-            onPlayAgain={handlePlayAgainFromSummary}
-            onViewLeaderboard={() => navigateTo('leaderboard')}
-          />
-        ) : teamSession ? (
-          /* Active Squad Lobby */
-          <TeamLobby
-            teamCode={teamSession.teamCode}
-            memberToken={teamSession.memberToken}
-            currentRoll={teamSession.rollNumber}
-            leavePromptRequested={lobbyLeavePrompt}
-            onDismissLeavePrompt={() => setLobbyLeavePrompt(false)}
-            onStartSprint={handleStartSprint}
-            onLeaveTeam={handleLeaveTeam}
-            onViewLeaderboard={() => navigateTo('leaderboard')}
-          />
-        ) : (
-          /* Squad Onboarding */
-          <TeamOnboarding
-            key={inviteTeamCode}
-            initialTeamCode={inviteTeamCode}
-            onJoinedTeam={handleJoinedTeam}
-          />
         )}
+
+        <div className={currentView === 'squad' ? 'w-full' : 'hidden'}>
+          {sprintSession ? (
+            <ArenaView
+              key={sprintSession.sessionId}
+              sessionId={sprintSession.sessionId}
+              questions={sprintSession.questions}
+              initialQuestionIndex={sprintSession.questionIndex || 0}
+              initialScore={sprintSession.currentScore || 0}
+              initialStreak={sprintSession.streak || 0}
+              initialMaxStreak={sprintSession.maxStreak || sprintSession.streak || 0}
+              initialSubmissions={sprintSession.submissions || []}
+              initialIsFinished={Boolean(sprintSession.isFinished)}
+              initialIsTimeOut={Boolean(sprintSession.isTimeOut)}
+              startedAt={sprintSession.startedAt}
+              durationSeconds={sprintSession.durationSeconds || 120}
+              initialIsPaused={Boolean(sprintSession.isPaused)}
+              isActiveView={currentView === 'squad'}
+              teamCode={teamSession?.teamCode}
+              memberToken={teamSession?.memberToken}
+              currentRoll={teamSession?.rollNumber}
+              currentName={teamSession?.name}
+              exitPromptRequested={arenaExitPrompt}
+              onDismissExitPrompt={() => {
+                arenaExitPromptRef.current = false;
+                setArenaExitPrompt(false);
+              }}
+              onSprintFinishedChange={(finished) => {
+                isSprintFinishedRef.current = finished;
+                setIsSprintFinished(finished);
+              }}
+              onStateSync={handleSprintStateSync}
+              onReturnToLobby={handleReturnToLobbyFromSprint}
+              onPlayAgain={handlePlayAgainFromSummary}
+              onViewLeaderboard={() => navigateTo('leaderboard')}
+            />
+          ) : teamSession ? (
+            /* Active Squad Lobby */
+            <TeamLobby
+              teamCode={teamSession.teamCode}
+              memberToken={teamSession.memberToken}
+              currentRoll={teamSession.rollNumber}
+              suppressedResumeSessionId={suppressedResumeSessionId}
+              leavePromptRequested={lobbyLeavePrompt}
+              onDismissLeavePrompt={() => {
+                lobbyLeavePromptRef.current = false;
+                setLobbyLeavePrompt(false);
+              }}
+              onStartSprint={handleStartSprint}
+              onLeaveTeam={handleLeaveTeam}
+              onViewLeaderboard={() => navigateTo('leaderboard')}
+            />
+          ) : (
+            /* Squad Onboarding */
+            <TeamOnboarding
+              key={inviteTeamCode}
+              initialTeamCode={inviteTeamCode}
+              onJoinedTeam={handleJoinedTeam}
+            />
+          )}
+        </div>
       </main>
 
       {/* Footer */}
