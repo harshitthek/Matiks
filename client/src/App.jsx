@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { GrainOverlay } from './components/common/GrainOverlay.jsx';
 import { MarqueeTicker } from './components/common/MarqueeTicker.jsx';
-import { WashiTape } from './components/common/WashiTape.jsx';
 import { TeamOnboarding } from './components/lobby/TeamOnboarding.jsx';
 import { TeamLobby } from './components/lobby/TeamLobby.jsx';
-import { TactileButton } from './components/common/TactileButton.jsx';
+import { ArenaView } from './components/arena/ArenaView.jsx';
 
 const SESSION_STORAGE_KEY = 'matiks_squad_session';
 
@@ -97,34 +96,17 @@ export function App() {
       {/* Main View Body */}
       <main className="flex-1 flex flex-col justify-center py-6">
         {sprintSession ? (
-          /* Arena Phase 4 Preparation Screen */
-          <div className="w-full max-w-2xl mx-auto px-4 py-8">
-            <div className="cyber-card cyber-card-signal p-8 text-center relative">
-              <WashiTape color="signal" rotation="-2deg" className="-top-3 -right-4" />
-              <div className="font-mono text-xs text-[#2ee58f] font-bold tracking-widest uppercase mb-2">
-                § 02 // SPRINT ARENA READY
-              </div>
-              <h2 className="font-display font-extrabold text-3xl md:text-5xl text-[#e8ece3] mb-4">
-                SPRINT LAUNCHED!
-              </h2>
-              <p className="font-mono text-sm text-[#ffe36e] mb-6">
-                Session ID: {sprintSession.sessionId}
-              </p>
-              <div className="border-2 border-[#2ee58f]/30 bg-[#090c0a] p-4 text-left font-mono text-xs text-[#aab5ac] space-y-2 mb-8">
-                <div>PLAYER: <strong className="text-[#e8ece3]">{teamSession?.name}</strong> ({teamSession?.rollNumber})</div>
-                <div>QUESTIONS: <strong className="text-[#2ee58f]">{sprintSession.questions?.length || 15} Qs Loaded</strong></div>
-                <div>TIMELIMIT: <strong className="text-[#ffe36e]">120.0s (2 Minutes)</strong></div>
-                <div>TACTILE INPUT: <strong className="text-[#2ee58f]">Universal Explicit Submit Enabled</strong></div>
-              </div>
-              <TactileButton
-                variant="signal"
-                onClick={() => setSprintSession(null)}
-                className="w-full py-3.5 text-sm"
-              >
-                RETURN TO SQUAD LOBBY
-              </TactileButton>
-            </div>
-          </div>
+          <ArenaView
+            sessionId={sprintSession.sessionId}
+            questions={sprintSession.questions}
+            startedAt={sprintSession.startedAt}
+            durationSeconds={sprintSession.durationSeconds || 120}
+            teamCode={teamSession?.teamCode}
+            memberToken={teamSession?.memberToken}
+            currentRoll={teamSession?.rollNumber}
+            currentName={teamSession?.name}
+            onReturnToLobby={() => setSprintSession(null)}
+          />
         ) : teamSession ? (
           /* Active Squad Lobby */
           <TeamLobby

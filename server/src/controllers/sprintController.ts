@@ -8,17 +8,33 @@ import type { Request, Response } from 'express';
 import { roomManager } from '../services/roomManager.js';
 import { windowManager } from '../services/windowManager.js';
 
+function parseSubmittedAnswer(val: unknown): number | null {
+  if (typeof val === 'number' && Number.isInteger(val)) {
+    return val;
+  }
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (/^-?\d+$/.test(trimmed)) {
+      const parsed = Number(trimmed);
+      if (Number.isSafeInteger(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
 export function submitAnswerHandler(req: Request, res: Response): void {
   try {
-    const { sessionId, questionIndex, submittedAnswer, clientDeltaMs, clientTimestamp } = req.body;
+    const { sessionId, questionIndex, clientDeltaMs, clientTimestamp } = req.body;
+    const rawAnswer = req.body.submittedAnswer ?? req.body.answer;
+    const submittedAnswer = parseSubmittedAnswer(rawAnswer);
 
     if (
       typeof sessionId !== 'string' ||
       typeof questionIndex !== 'number' ||
-      typeof submittedAnswer !== 'number' ||
+      submittedAnswer === null ||
       typeof clientDeltaMs !== 'number'
     ) {
-      res.status(400).json({ error: 'Missing or invalid submission parameters' });
+      res.status(400).json({ error: 'Missing or invalid submission parameters', errorCode: 'INVALID_PARAMETERS' });
       return;
     }
 
@@ -40,7 +56,9 @@ export function submitAnswerHandler(req: Request, res: Response): void {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Submission failed';
-    res.status(400).json({ error: message });
+    const isFinished = /already finished|deadline expired|already completed/i.test(message);
+    const errorCode = isFinished ? 'SPRINT_FINISHED' : 'SUBMISSION_ERROR';
+    res.status(400).json({ error: message, errorCode, isFinished });
   }
 }
 

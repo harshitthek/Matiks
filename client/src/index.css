@@ -251,3 +251,61 @@ body {
   }
 }
 
+/* Reflex Mode Arena Animations & Perimeter Flash */
+@keyframes flash-green {
+  0% {
+    box-shadow: 0 0 0 6px var(--signal), inset 0 0 24px rgba(46, 229, 143, 0.5);
+    border-color: var(--signal);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(46, 229, 143, 0), inset 0 0 0 rgba(46, 229, 143, 0);
+  }
+}
+
+@keyframes flash-red {
+  0% {
+    box-shadow: 0 0 0 6px var(--ember), inset 0 0 24px rgba(255, 107, 94, 0.5);
+    border-color: var(--ember);
+    transform: translateX(-4px);
+  }
+  25% { transform: translateX(4px); }
+  50% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 107, 94, 0), inset 0 0 0 rgba(255, 107, 94, 0);
+    transform: translateX(0);
+  }
+}
+
+@keyframes float-up {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-28px) scale(1.15);
+  }
+}
+
+.flash-correct {
+  animation: flash-green 0.4s ease-out;
+  border-color: var(--signal) !important;
+}
+
+.flash-incorrect {
+  animation: flash-red 0.4s ease-out;
+  border-color: var(--ember) !important;
+}
+
+.animate-float-up {
+  animation: float-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.numpad-btn {
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+
