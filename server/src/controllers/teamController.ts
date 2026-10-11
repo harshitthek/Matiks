@@ -96,9 +96,10 @@ export function getTeamSnapshotHandler(req: Request, res: Response): void {
     return;
   }
 
+  const memberTokenHeader = req.headers['x-member-token'] as string | undefined;
   const queryToken = req.query['token'] as string | undefined;
   const authHeader = req.headers['authorization'];
-  let token = queryToken;
+  let token = memberTokenHeader || queryToken;
   if (!token && authHeader) {
     token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();
   }

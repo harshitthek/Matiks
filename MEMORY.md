@@ -121,3 +121,17 @@
   * **Timing Verification Window:** Client submits measured `clientDeltaMs` and `clientTimestamp`. Server tolerates $\pm 350\text{ ms}$ packet jitter against server clock and provides a $+2.5\text{ s}$ transit grace cutoff for submissions made before the $120.0\text{ s}$ deadline.
   * **Sub-200ms Anomaly Detection:** Submissions under $200\text{ ms}$ trigger an automated anti-cheat flag in the admin feed.
   * **Admin Excuse Control:** Admin dashboard features an `[EXCUSE MEMBER]` control (`POST /api/admin/teams/:teamCode/excuse-member`). Excusing a member removes them from the average divisor (e.g. dividing by 2 instead of 3) while logging an immutable audit record with justification.
+
+---
+
+## 4. Phase Execution Roadmap & Lifecycle State
+
+| Phase | Description | Status | Notes |
+| :--- | :--- | :--- | :--- |
+| **Phase 1** | Math Generation & Difficulty Normalization | **Completed** | Deterministic 4-bucket carry taxonomy, O(1) sum convergence, anti-chunking filters, 23/23 tests. |
+| **Phase 2** | Real-time SSE Hub & State Machine | **Completed** | Room lifecycle machine, atomic ready gate, parallel player dispatch, anti-cheat latency watchdog. |
+| **Phase 3** | Frontend UFC UI Primitives & Team Lobby | **Baseline (Incomplete)** | Tactile sticker UI, ransom tiles, washi tape, roster presence, and atomic ready gate functional; marked incomplete to revisit for deep tactile polish after full pipeline setup. |
+| **Phase 4** | 2-Minute Sprint Arena (Reflex Mode) | **Upcoming** | 60fps locked, custom tactile numpad with Thumb-Enter, physical Zetamac listeners, perimeter flash. |
+| **Phase 5** | Projector Leaderboard & Admin Command Center | **Upcoming** | Macro-telemetry stream, podium swaps, room excuse/pause controls, anti-cheat audit. |
+| **Phase 6** | Club OIDC Adapter & Concurrency Stress Test | **Upcoming** | FOSS club auth adapter, 50-team load simulation. |
+
