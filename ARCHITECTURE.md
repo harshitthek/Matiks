@@ -1,0 +1,485 @@
+# MATIKS HACKATHON ENGINE — TECHNICAL ARCHITECTURE (ARCHITECTURE.md)
+
+> **Document Version:** 1.2.0  
+> **System Purpose:** High-concurrency, zero-luck, team-synchronized speed mental math competition platform.  
+> **Target Environment:** College hackathons, campus Wi-Fi networks, 4K auditorium projectors, mobile & desktop browsers.
+
+---
+
+## 1. System Topology Overview
+
+The Matiks Hackathon Engine is an event-driven, decoupled client-server architecture. It replaces duplex WebSockets with **Unidirectional Server-Sent Events (SSE) + RESTful HTTP POST**, guaranteeing 100% firewall pass-through and connection survival across congested college Wi-Fi access points.
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                              CLIENT TIER                                               │
+│                                                                                                        │
+│   ┌────────────────────────┐  ┌────────────────────────┐  ┌─────────────────┐  ┌───────────────────┐   │
+│   │   Team & Member Lobby  │  │   2-Min Combat Arena   │  │   Admin Panel   │  │ 4K Stage Projector│   │
+│   │   (`/team/:teamCode`)  │  │  (`/arena/:sessionId`) │  │   (`/admin`)    │  │  (`/leaderboard`) │   │
+│   └───────────┬────────────┘  └───────────┬────────────┘  └────────┬────────┘  └─────────▲─────────┘   │
+└───────────────┼───────────────────────────┼────────────────────────┼─────────────────────┼─────────────┘
+                │ 1. POST /api/team/*       │ 2. POST /api/sprint/*  │ 3. POST /api/admin/*│ 4. SSE Stream
+                │    (Join, Ready)          │    (Submit Answer)     │    (Open/Close/Msg) │    (text/event-stream)
+                ▼                           ▼                        ▼                     │
+┌──────────────────────────────────────────────────────────────────────────────────────────┴─────────────┐
+│                                         NETWORKING & ROUTING TIER                                      │
+│                                                                                                        │
+│                    Reverse Proxy / Express HTTP Server (CORS, JSON Parser, Rate Limiter)               │
+└───────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
+                                                    │
+┌───────────────────────────────────────────────────▼────────────────────────────────────────────────────┐
+│                                            BACKEND CORE SERVICES                                       │
+│                                                                                                        │
+│  ┌────────────────────────┐  ┌────────────────────────┐  ┌──────────────────┐  ┌───────────────────┐   │
+│  │  Room & Team Sync Hub  │  │ 4-Bucket Math Engine   │  │ Scoring & Latency│  │ Contest Window    │   │
+│  │  (Atomic Ready State)  │  │ (Zero-Luck Taxonomy)   │  │ Validation Engine│  │ Lifecycle Manager │   │
+│  └───────────┬────────────┘  └───────────┬────────────┘  └─────────┬────────┘  └─────────┬─────────┘   │
+│              │                           │                         │                     │             │
+│              └───────────────────────────┼─────────────────────────┴─────────────────────┘             │
+│                                          ▼                                                             │
+│  ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+│  │                                 SSE EVENT DISPATCHER & PUB/SUB BUS                               │  │
+│  │                                                                                                  │  │
+│  │   • Channel: `/api/sse/team/:teamCode?token=x` (Member Joins, Ready States, 3-2-1 Countdown)     │  │
+│  │   • Channel: `/api/sse/leaderboard`           (Realtime Score Swaps, Podium Changes, Ticker)     │  │
+│  │   • Channel: `/api/sse/admin`                 (Telemetry Logs, Anti-Cheat Anomalies, Sessions)   │  │
+│  └───────────────────────────────────────┬──────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────┼─────────────────────────────────────────────────────────────┘
+                                           │
+┌──────────────────────────────────────────▼─────────────────────────────────────────────────────────────┐
+│                                          DATA & STATE STORE                                            │
+│                                                                                                        │
+│   ┌──────────────────────────────────────────────────┐ ┌────────────────────────────────────────────┐  │
+│   │             In-Memory High-Speed Cache           │ │         Persistence Layer (JSON/SQLite)    │  │
+│   │  • Active Rooms & Member Connections             │ │  • Registered Teams & Roll Numbers         │  │
+│   │  • Active Parallel Sprints & Member Scores       │ │  • Completed Results & Audit Trails        │  │
+│   │  • Sorted Leaderboard Priority Queue (Team Avg)  │ │  • Anti-Cheat Anomaly Incident Logs        │  │
+│   └──────────────────────────────────────────────────┘ └────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 2. Directory & Component Architecture
+
+```
+Matiks/
+├── client/                               # React (Vite / Next.js) Frontend
+│   ├── public/                           # Sound effects, SVG textures, favicon
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── admin/                    # Admin Panel views & controls
+│   │   │   │   ├── AnomalyFeed.tsx       # Live anti-cheat sub-200ms anomaly watcher
+│   │   │   │   ├── TeamsTable.tsx        # Realtime table with individual Pause/Resume
+│   │   │   │   └── WindowControls.tsx    # Open/Close contest window & broadcast
+│   │   │   ├── arena/                    # 2-Minute Math Combat Arena (Reflex Mode)
+│   │   │   │   ├── CountdownOverlay.tsx  # Scissor-cut Ransom note 3-2-1 drop-in
+│   │   │   │   ├── HitFeedback.tsx       # Green flash / Red shake animations
+│   │   │   │   ├── Numpad.tsx            # Tactile mobile on-screen numpad with Thumb-Enter
+│   │   │   │   ├── QuestionCard.tsx      # High-contrast Bricolage Grotesque math display
+│   │   │   │   ├── SprintTimer.tsx       # Millisecond Space Mono clock
+│   │   │   │   └── TeammateHUD.tsx       # Live partner progress pills (Q7, Q9, Q6)
+│   │   │   ├── leaderboard/              # Projector & Auditorium views (Showcase Mode)
+│   │   │   │   ├── PodiumTop3.tsx        # Gold, Silver, Bronze podium cards
+│   │   │   │   ├── RankRow.tsx           # Framer motion animated rank swap row
+│   │   │   │   └── RibbonTicker.tsx      # Angled crossing marquee ribbons
+│   │   │   ├── lobby/                    # Team & Student Lobby (Showcase Mode)
+│   │   │   │   ├── MemberCard.tsx        # Connected player chip with live ping dot
+│   │   │   │   ├── ReadyButton.tsx       # Chunky .btn tactile ready toggle
+│   │   │   │   └── TeamRoster.tsx        # Complete team status overview
+│   │   │   └── ui/                       # UFC Design System Primitives
+│   │   │       ├── Button.tsx            # Neo-brutalist tactile sticker button (.btn)
+│   │   │       ├── FilmGrain.tsx         # SVG fractal noise procedural overlay
+│   │   │       ├── PingDot.tsx           # Neon green pulsing radar dot
+│   │   │       ├── Ransom.tsx            # Multi-typeface paper scrap lettering
+│   │   │       └── Tape.tsx              # Slanted washi tape decorative strips
+│   │   ├── hooks/
+│   │   │   ├── useAudio.ts               # Web Audio API sound triggers (chime, click)
+│   │   │   ├── useNumpad.ts              # Physical keyboard & touch numpad listener
+│   │   │   ├── useSSE.ts                 # Native EventSource connection manager with resync
+│   │   │   └── useTimer.ts               # High-precision requestAnimationFrame timer
+│   │   ├── styles/
+│   │   │   ├── design-tokens.css         # --ink, --signal, --amber, --butter, fonts
+│   │   │   └── globals.css               # Tailwind CSS directives
+│   │   └── types/                        # Frontend TypeScript definitions
+│   └── package.json
+│
+├── server/                               # Node.js Express Backend
+│   ├── src/
+│   │   ├── controllers/
+│   │   │   ├── adminController.ts        # Window status, manual pause, broadcast
+│   │   │   ├── sprintController.ts       # Parallel session creation, answer submission
+│   │   │   └── teamController.ts         # Team registration, join, ready toggle
+│   │   ├── middleware/
+│   │   │   ├── antiCheat.ts              # Latency sanity check, sub-200ms flagger
+│   │   │   └── auth.ts                   # Admin token validator
+│   │   ├── services/
+│   │   │   ├── mathEngine.ts             # 4-Bucket generator with entropy balancing
+│   │   │   ├── roomManager.ts            # Team lifecycle & atomic ready lock
+│   │   │   ├── scoringEngine.ts          # Calibrated latency decay & streak multipliers
+│   │   │   ├── sseHub.ts                 # Realtime SSE connection manager & pub/sub
+│   │   │   └── windowManager.ts          # Hackathon contest window timer
+│   │   ├── store/
+│   │   │   ├── inMemoryDb.ts             # Fast in-memory rooms & leaderboard queue
+│   │   │   └── persistence.ts            # Disk sync for audit logs & final ranks
+│   │   └── types/                        # Backend data models & SSE contracts
+│   ├── tsconfig.json
+│   └── package.json
+│
+├── ARCHITECTURE.md                       # This document
+├── DESIGN.md                             # UFC visual identity & movement spec
+├── MATH_ENGINE.md                        # Zero-luck 4-bucket taxonomy & proofs
+├── MEMORY.md                             # Architectural decisions & requirements log
+├── README.md                             # Master project overview & guide
+└── SSE_PROTOCOL.md                       # SSE event schemas & transport contracts
+```
+
+---
+
+## 3. Data Flow & Communication Lifecycles
+
+### Flow A: Team Joining, Atomic Ready Gate & Synchronized Countdown
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Capt as Team Captain
+    actor Mem as Team Member
+    participant Srv as Backend Server (Express)
+    participant Hub as SSE Hub (/api/sse/team/:code)
+
+    Capt->>Srv: POST /api/team/create { teamName: "Zero Gravity", size: 2 }
+    Srv-->>Capt: 201 Created { teamCode: "ZG-99" }
+    
+    Capt->>Hub: Connect GET /api/sse/team/ZG-99?token=capt_tok
+    Mem->>Hub: Connect GET /api/sse/team/ZG-99?token=mem_tok
+    
+    Mem->>Srv: POST /api/team/join { teamCode: "ZG-99", rollNo: "EC21088", name: "Priya" }
+    Srv->>Hub: Broadcast event: member_joined
+    Hub-->>Capt: Member joined: Priya
+    Hub-->>Mem: Member joined: Priya
+
+    Capt->>Srv: POST /api/team/ready { rollNo: "CS21045", ready: true }
+    Srv->>Hub: Broadcast event: member_ready_changed { readyCount: 1, allReady: false }
+    
+    Mem->>Srv: POST /api/team/ready { rollNo: "EC21088", ready: true }
+    Note over Srv: Atomic check: allReady === true && windowIsOpen === true
+    Srv->>Hub: Broadcast event: member_ready_changed { readyCount: 2, allReady: true }
+    
+    loop Countdown 3..2..1
+        Srv->>Hub: Broadcast event: countdown_tick { secondsRemaining: 3..2..1 }
+        Hub-->>Capt: Render Ransom Note "3..2..1"
+        Hub-->>Mem: Render Ransom Note "3..2..1"
+    end
+    
+    Srv->>Hub: Broadcast event: sprint_start { sessionIds: { "CS21045": "s_1", "EC21088": "s_2" } }
+    Hub-->>Capt: Transition to /arena/s_1 (Parallel Individual Play)
+    Hub-->>Mem: Transition to /arena/s_2 (Parallel Individual Play)
+```
+
+---
+
+### Flow B: Parallel Individual Sprint Combat & Team Average Scoring
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Capt as Captain (Rohan)
+    actor Mem as Member (Priya)
+    participant Srv as Sprint Engine
+    participant Score as Scoring Engine
+    participant LdHub as SSE Hub (/api/sse/leaderboard)
+    participant Proj as Auditorium Projector
+
+    Note over Capt,Mem: Both play 15 questions individually at the exact same time
+    Capt->>Srv: POST /api/sprint/submit { sessionId: "s_1", qIndex: 0, answer: 134, clientDeltaMs: 1240, clientTimestamp: 1733918451240 }
+    Note over Srv: Validate: clientDeltaMs >= 200ms && |serverDelta - clientDelta| <= 350ms
+    Srv->>Score: Evaluate Q1 (B4 Double Carry, delta=1.24s)
+    Score-->>Srv: isCorrect: true, pointsEarned: 184 pts
+    Srv-->>Capt: 200 OK { isCorrect: true, pointsEarned: 184, totalScore: 184, nextQ: 1 }
+
+    Mem->>Srv: POST /api/sprint/submit { sessionId: "s_2", qIndex: 0, answer: 134, clientDeltaMs: 2100, clientTimestamp: 1733918452100 }
+    Srv->>Score: Evaluate Q1 (B4 Double Carry, delta=2.10s)
+    Score-->>Srv: isCorrect: true, pointsEarned: 173 pts
+    Srv-->>Mem: 200 OK { isCorrect: true, pointsEarned: 173, totalScore: 173, nextQ: 1 }
+
+    Note over Srv: Team Current Score = Average(184, 173) = 178.5 pts
+    Note over Srv: Zero Leak Check: equations & answer keys stripped from payload
+    Srv->>LdHub: Broadcast event: leaderboard_update (Team Score, Rank, Flame, Progress ONLY)
+    LdHub-->>Proj: Framer Motion animated rank swap on 4K stage projector
+```
+
+---
+
+### Flow C: Hardware Failure / Disconnect Recovery (`[EXCUSE MEMBER]`)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as Hackathon Organizer
+    participant Srv as Backend Server (Express)
+    participant Room as Room & Scoring Hub
+    participant LdHub as SSE Hub (/api/sse/leaderboard)
+    participant Proj as Auditorium Projector
+
+    Note over Admin: Student Aarav's phone battery dies at Q6 (unrecoverable hardware issue)
+    Admin->>Srv: POST /api/admin/teams/ZG-99/excuse-member { rollNumber: "IT21019", reason: "Hardware battery failure" }
+    Srv->>Room: Recalculate Divisor: Active Members = 2 (Rohan, Priya). Exclude Aarav.
+    Room-->>Srv: Updated Team Average = (2420 + 2380) / 2 = 2400 pts
+    Srv->>Srv: Append audit record: EXCUSE_MEMBER { team: "ZG-99", rollNo: "IT21019", adminId: "admin_1" }
+    Srv->>LdHub: Broadcast event: leaderboard_update (New Team Average = 2400)
+    LdHub-->>Proj: Recalculated rank reflected on projector with audit badge
+    Srv-->>Admin: 200 OK { success: true, newDivisor: 2, teamAverage: 2400 }
+```
+
+---
+
+## 4. State Machine Specifications
+
+### A. Team Room Lifecycle State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> LOBBY_CREATED: Captain registers Team
+    
+    LOBBY_CREATED --> MEMBERS_JOINING: First member connects SSE
+    MEMBERS_JOINING --> MEMBERS_JOINING: Subsequent members join
+    
+    MEMBERS_JOINING --> AWAITING_READY: Member count == Target size
+    
+    AWAITING_READY --> AWAITING_READY: Member toggles Ready / Unready
+    
+    AWAITING_READY --> ALL_READY: All members ready && Window is OPEN
+    
+    ALL_READY --> COUNTDOWN: Trigger 3-second synchronized timer
+    
+    COUNTDOWN --> IN_PARALLEL_SPRINT: T = 0 reached, all members launch arena
+    
+    IN_PARALLEL_SPRINT --> SPRINT_PAUSED: Admin emergency pause on room
+    SPRINT_PAUSED --> IN_PARALLEL_SPRINT: Admin resumes room
+    
+    IN_PARALLEL_SPRINT --> COMPLETED: All members finish OR 120s expires (+2.5s network grace)
+    
+    COMPLETED --> [*]
+```
+
+---
+
+### B. Per-Player Combat State Machine (Reflex Mode)
+
+```mermaid
+stateDiagram-v2
+    [*] --> QUESTION_ACTIVE: Equation displayed in Bricolage Grotesque
+    
+    QUESTION_ACTIVE --> DIGIT_BUFFER: Digits entered via Touch Numpad / Keys
+    DIGIT_BUFFER --> DIGIT_BUFFER: Digits buffered (1 to 3 digits)
+    
+    DIGIT_BUFFER --> UNIVERSAL_EXPLICIT_SUBMIT: Player triggers submit
+    
+    note right of UNIVERSAL_EXPLICIT_SUBMIT
+        Desktop: Spacebar or Enter key
+        Mobile: Oversized Neon Green Thumb-Enter (ENTER ↵)
+        (Auto-submit disabled to preserve muscle memory across 2-digit & 3-digit sums)
+    end note
+    
+    UNIVERSAL_EXPLICIT_SUBMIT --> EVALUATION: Server validates answer & latency delta
+    
+    state EVALUATION {
+        [*] --> CORRECT: Matches key
+        [*] --> INCORRECT: Mismatches key
+    }
+    
+    CORRECT --> VISUAL_HIT_GREEN: +100 Base + Calibrated Speed Bonus + Streak
+    INCORRECT --> VISUAL_HIT_RED: -20 Penalty, Streak reset
+    
+    VISUAL_HIT_GREEN --> ADVANCE: Slide next question
+    VISUAL_HIT_RED --> ADVANCE: Slide next question
+    
+    ADVANCE --> QUESTION_ACTIVE: qIndex < 14
+    ADVANCE --> FINISHED: qIndex == 14
+    FINISHED --> [*]
+```
+
+---
+
+## 5. Core Data Models (TypeScript Interfaces)
+
+```typescript
+// 1. Math Question Model
+export interface Question {
+  id: number;
+  bucket: 'B1' | 'B2' | 'B3' | 'B4'; // 4-Bucket Carry Taxonomy
+  a: number;                         // 10 <= a, b <= 99 (no 0-endings, no double-5 endings)
+  b: number;
+  answer: number;                    // Target sum: a + b
+  carries: 0 | 1 | 2;
+  targetLatencySeconds: number;      // 3.5s (B1), 5.5s (B2), 6.0s (B3), 8.0s (B4)
+}
+
+// 2. Team Member Model
+export interface TeamMember {
+  rollNumber: string;                // e.g. "CS21045"
+  name: string;
+  isCaptain: boolean;
+  isReady: boolean;
+  connected: boolean;
+  activeSessionId?: string;
+  individualScore: number;
+  individualCompleted: number;
+  lastHeartbeat: number;
+}
+
+// 3. Team Room State
+export interface TeamRoom {
+  teamCode: string;                  // e.g. "ZG-99"
+  teamName: string;
+  targetSize: number;                // Configured size (2 to 4)
+  members: Map<string, TeamMember>;
+  status: 'LOBBY' | 'AWAITING_READY' | 'COUNTDOWN' | 'IN_SPRINT' | 'PAUSED' | 'FINISHED';
+  isPaused: boolean;
+  pausedAt?: number;
+  createdAt: number;
+}
+
+// 4. Individual Sprint Session Model
+export interface SprintSession {
+  sessionId: string;
+  teamCode: string;
+  rollNumber: string;
+  startedAt: number;
+  expiresAt: number;                 // startedAt + 120,000ms
+  questions: Question[];             // Normalized 15-question set
+  submissions: SubmissionRecord[];
+  currentScore: number;
+  consecutiveStreak: number;         // 1x, 1.1x, 1.25x, 1.5x
+  completedQuestions: number;
+  isFinished: boolean;
+}
+
+// 5. Answer Submission Record
+export interface SubmissionRecord {
+  questionIndex: number;
+  submittedAnswer: number;
+  isCorrect: boolean;
+  latencyMs: number;
+  pointsAwarded: number;
+  timestamp: number;
+}
+
+// 6. Realtime Leaderboard Entry (Team Score = Average of Members)
+export interface LeaderboardEntry {
+  rank: number;
+  teamCode: string;
+  teamName: string;
+  teamAverageScore: number;          // Average of all team members
+  memberScores: { rollNumber: string; name: string; score: number }[];
+  averageTimeSeconds: number;
+  status: 'IN_SPRINT' | 'FINISHED';
+}
+
+// 7. Contest Window Configuration
+export interface ContestWindow {
+  isOpen: boolean;
+  opensAt: number;
+  closesAt: number;
+  durationMinutes: number;
+  announcementTicker?: string;
+}
+```
+
+---
+
+## 6. Campus Wi-Fi Resiliency & Network Guarantees
+
+1. **Enterprise Firewall Pass-Through:**
+   * SSE uses standard `HTTP 200` with `text/event-stream`, bypassing WebSocket handshake bans on campus networks.
+2. **Stateful NAT Keepalive:**
+   * Server sends `:keepalive [timestamp]\n\n` comments every 15 seconds.
+3. **Tab Sleep & Background Recovery:**
+   * Client tracks `document.visibilityState`. When a student returns from a minimized tab, the client immediately requests `/api/sprint/sync` to restore exact server timestamps.
+4. **Proxy Buffering Suppression:**
+   * Server sends `X-Accel-Buffering: no` to prevent Nginx/Cloudflare reverse proxies from caching live SSE streams.
+
+---
+
+## 7. Security & Anti-Cheat Subsystem
+
+1. **Strict Server Authority & Network Transit Grace:**
+   * The sprint timer is strictly anchored to the server's high-resolution timer.
+   * Client transmits `{ submittedAnswer, clientDeltaMs, clientTimestamp }`.
+   * Server validates that the submission occurred before the 120.0s deadline on the client, granting a $+2.5\text{s}$ network transit grace to ensure laggy campus Wi-Fi packets are not unfairly rejected.
+   * Server verifies latency jitter: $| \text{serverDeltaMs} - \text{clientDeltaMs} | \le 350\text{ ms}$.
+2. **Sub-200ms Bot Anomaly Detector:**
+   * Submissions where `clientDeltaMs < 200` are flagged automatically in the Organizer Telemetry Stream (`/api/sse/admin`) to catch client-side script injection or bot automation.
+3. **One Attempt per Roll Number:**
+   * Roll numbers are atomically locked upon sprint initiation. Duplicate logins or concurrent attempts are rejected with `409 Conflict`.
+4. **Answer Key Protection & Zero Question Leak Guarantee:**
+   * The sprint client receives only problem operands ($A, B$). Verification is executed 100% server-side.
+   * The auditorium projector SSE stream (`/api/sse/leaderboard`) broadcasts macro metrics exclusively (Team Name, Rank, Team Average Score, Question Progress $Q/15$, and Streak Flame). Operands, questions, and answers are strictly stripped from all public broadcasts.
+5. **Deterministic $\mathcal{O}(1)$ Residual Math Generation:**
+   * Prevents server thread exhaustion during concurrent room starts by utilizing the $\mathcal{O}(1)$ residual-targeted blueprint generator described in [MATH_ENGINE.md](MATH_ENGINE.md).
+6. **Hardware Failure Recovery (`[EXCUSE MEMBER]`):**
+   * If a student experiences an unrecoverable device crash or dead battery, an admin can execute `POST /api/admin/teams/:teamCode/excuse-member` to remove that student from the score divisor without corrupting the rest of the team's average. Every action is recorded in an immutable append-only audit trail.
+
+---
+
+## 8. Pluggable Auth Architecture & Club OIDC Blueprint
+
+To accommodate the ongoing development of the USAR FOSS Club's central authentication system, the authentication and permission subsystem is structured as a pluggable adapter pattern:
+
+```
+                          ┌───────────────────────────┐
+                          │   IAuthProvider Interface │
+                          └─────────────┬─────────────┘
+                                        │
+           ┌────────────────────────────┴───────────────────────────┐
+           ▼                                                        ▼
+┌─────────────────────────────────────┐  ┌──────────────────────────────────────┐
+│  Phase 1: LocalHackathonAuthProvider│  │   Phase 2: ClubOidcAuthProvider      │
+│  (Current Operational Mode)         │  │   (Future Integration Target)        │
+├─────────────────────────────────────┤  ├──────────────────────────────────────┤
+│ • Zero-barrier student onboarding   │  │ • OIDC / OAuth2 against fossclub.tech│
+│ • College Roll Number + Display Name│  │ • Fetches /api/members/:id endpoint  │
+│ • Pre-shared ADMIN_SECRET passcode  │  │ • Verifies verified club membership  │
+│ • Mockable role & membership flags  │  │ • Enforces team roster permissions   │
+└─────────────────────────────────────┘  └──────────────────────────────────────┘
+```
+
+### A. The Common Auth Contract (`authTypes.ts`)
+```typescript
+export interface AuthUser {
+  id: string;                        // Unique student ID or GitHub ID
+  rollNumber: string;                // Primary academic identifier
+  displayName: string;
+  isClubMember: boolean;             // Verified UFC member status
+  teamCode?: string;                 // Associated team room
+  role: 'participant' | 'captain' | 'admin';
+}
+
+export interface IAuthProvider {
+  loginPlayer(credentials: { rollNumber: string; name: string; teamCode: string }): Promise<AuthUser>;
+  loginAdmin(credentials: { passcode: string }): Promise<AuthUser>;
+  verifySession(token: string): Promise<AuthUser | null>;
+  validateClubMembership(userId: string): Promise<boolean>;
+}
+```
+
+### B. Phase 1: Local Hackathon Auth (Current Stage)
+* **Student Onboarding:** Enters Roll Number, Name, and Team Code directly in the lobby without external redirects.
+* **Admin Gate:** Access protected via `process.env.ADMIN_SECRET` in HTTP header `x-admin-key`.
+* **Mock Hooks:** Includes a mock `isClubMember` flag and testing roles so team-based permission checks can be validated today.
+
+### C. Phase 2: Future Club OIDC Flow (Ready for Drop-in)
+When the central club website (`fossclub.tech`) completes its OIDC endpoints:
+1. **Authorization Code Flow:** Client redirects to `https://www.fossclub.tech/oauth/authorize?client_id=matiks&redirect_uri=...`.
+2. **Token & Claims Retrieval:** Server exchanges code at `/api/auth/token` for JWT claims containing the student's GitHub ID and registered roll number.
+3. **Membership Check:** Queries the club's member endpoint (`GET https://www.fossclub.tech/api/dashboard/members`) to ensure the student is an authorized club member or registered hackathon team participant.
+4. **Zero Refactoring Needed:** The core game engine, room manager, scoring, and SSE channels depend solely on `IAuthProvider`, meaning switching from Phase 1 to Phase 2 requires changing a single environment flag:
+   ```env
+   AUTH_MODE=club_oidc # Swapped from AUTH_MODE=local
+   CLUB_OIDC_ISSUER_URL=https://www.fossclub.tech
+   CLUB_OIDC_CLIENT_ID=matiks_hackathon
+   CLUB_OIDC_CLIENT_SECRET=...
+   ```
+
