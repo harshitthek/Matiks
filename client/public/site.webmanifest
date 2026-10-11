@@ -1,0 +1,28 @@
+{
+  "name": "MATIKS // Speed Math Hackathon Sprint",
+  "short_name": "MATIKS",
+  "description": "High-velocity 2-minute competitive arithmetic sprint engine with difficulty-calibrated carry taxonomy.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090c0a",
+  "theme_color": "#090c0a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon.ico",
+      "sizes": "32x32",
+      "type": "image/x-icon"
+    }
+  ]
+}

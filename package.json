@@ -1,0 +1,31 @@
+{
+  "name": "matiks-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Matiks — High-velocity 2-digit mental arithmetic hackathon engine",
+  "type": "module",
+  "scripts": {
+    "dev": "npm --prefix client run dev",
+    "dev:client": "npm --prefix client run dev",
+    "dev:server": "npm --prefix server run dev",
+    "build": "npm --prefix client run build",
+    "build:client": "npm --prefix client run build",
+    "build:server": "npm --prefix server run build",
+    "start": "npm --prefix server run start",
+    "test": "npm --prefix server run test",
+    "test:unit": "npm --prefix server run test:unit",
+    "test:auth": "npm --prefix server run test:auth",
+    "test:load": "npm --prefix server run test:load",
+    "test:chaos": "npm --prefix server run test:chaos",
+    "lint": "npm --prefix client run lint"
+  },
+  "keywords": [
+    "speed-math",
+    "hackathon",
+    "react",
+    "express",
+    "sse"
+  ],
+  "author": "harshitthek",
+  "license": "MIT"
+}

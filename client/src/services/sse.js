@@ -7,6 +7,8 @@
  * 3. document.visibilitychange background-tab resync watchdog
  */
 
+const API_ORIGIN = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '';
+
 export function connectTeamStream(teamCode, token, handlers = {}) {
   let eventSource = null;
   let keepaliveTimer = null;
@@ -37,7 +39,7 @@ export function connectTeamStream(teamCode, token, handlers = {}) {
       eventSource = null;
     }
 
-    const url = `/api/sse/team/${encodeURIComponent(teamCode)}?token=${encodeURIComponent(token)}`;
+    const url = `${API_ORIGIN}/api/sse/team/${encodeURIComponent(teamCode)}?token=${encodeURIComponent(token)}`;
     eventSource = new EventSource(url);
 
     eventSource.onopen = () => {
@@ -235,7 +237,7 @@ export function connectLeaderboardStream(handlers = {}) {
       eventSource = null;
     }
 
-    eventSource = new EventSource('/api/sse/leaderboard');
+    eventSource = new EventSource(`${API_ORIGIN}/api/sse/leaderboard`);
 
     const markConnectionHealthy = () => {
       retryAttempts = 0;
@@ -409,7 +411,7 @@ export function connectAdminStream(adminToken, handlers = {}) {
       return;
     }
 
-    const url = `/api/sse/admin?ticket=${encodeURIComponent(ticket)}`;
+    const url = `${API_ORIGIN}/api/sse/admin?ticket=${encodeURIComponent(ticket)}`;
     eventSource = new EventSource(url);
 
     eventSource.onopen = () => {

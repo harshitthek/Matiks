@@ -1,0 +1,15 @@
+# Server backend & build artifacts
+server/
+
+# Test suites & coverage
+tests/
+*.test.js
+*.test.ts
+coverage/
+
+# Repository & agent tooling metadata
+.git/
+.github/
+.gemini/
+*.md
+!README.md

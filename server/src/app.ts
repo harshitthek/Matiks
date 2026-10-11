@@ -98,7 +98,7 @@ export function createApp(): express.Application {
   app.set('trust proxy', 1);
 
   // CORS configuration with explicit trusted origins allowlist
-  const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,https://fossclub.tech,https://www.fossclub.tech')
+  const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,https://matiks.fossclub.tech,https://fossclub.tech,https://www.fossclub.tech')
     .split(',')
     .map(s => s.trim());
 

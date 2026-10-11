@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <!-- Dot grid pattern -->
+    <pattern id="dot-grid" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.5" fill="#2ee58f" fill-opacity="0.12"/>
+    </pattern>
+    <!-- Hard shadow filter -->
+    <filter id="hard-shadow" x="0" y="0" width="120%" height="120%">
+      <feDropShadow dx="8" dy="8" stdDeviation="0" flood-color="#2ee58f" flood-opacity="0.9"/>
+    </filter>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="1200" height="630" fill="#090c0a"/>
+  <rect width="1200" height="630" fill="url(#dot-grid)"/>
+
+  <!-- Top Accent Danger Stripes -->
+  <g fill="#2ee58f" opacity="0.8">
+    <polygon points="0,0 20,0 10,12 0,12"/>
+    <polygon points="30,0 50,0 40,12 20,12"/>
+    <polygon points="60,0 80,0 70,12 50,12"/>
+    <polygon points="90,0 110,0 100,12 80,12"/>
+    <polygon points="120,0 140,0 130,12 110,12"/>
+  </g>
+
+  <!-- Central Brutalist Sticker Card -->
+  <g transform="translate(80, 75)">
+    <!-- Shadow Box -->
+    <rect x="8" y="8" width="1040" height="480" rx="16" fill="#2ee58f" opacity="0.3"/>
+    <!-- Card Frame -->
+    <rect x="0" y="0" width="1040" height="480" rx="16" fill="#0f1411" stroke="#2ee58f" stroke-width="4"/>
+
+    <!-- Header Badge -->
+    <g transform="translate(48, 48)">
+      <rect x="0" y="0" width="260" height="36" rx="6" fill="#2ee58f"/>
+      <text x="130" y="24" fill="#090c0a" font-family="'Space Mono', monospace, sans-serif" font-size="14" font-weight="bold" text-anchor="middle" letter-spacing="2">
+        ⚡ USAR FOSS CLUB
+      </text>
+    </g>
+
+    <g transform="translate(320, 48)">
+      <rect x="0" y="0" width="220" height="36" rx="6" fill="#18221c" stroke="#2ee58f" stroke-width="1.5"/>
+      <text x="110" y="23" fill="#2ee58f" font-family="'Space Mono', monospace, sans-serif" font-size="13" font-weight="bold" text-anchor="middle" letter-spacing="1">
+        LIVE HACKATHON ARENA
+      </text>
+    </g>
+
+    <!-- Main Title -->
+    <g transform="translate(48, 175)">
+      <text x="0" y="0" fill="#e8ece3" font-family="'Bricolage Grotesque', sans-serif" font-size="88" font-weight="800" letter-spacing="-2">
+        MATIKS<tspan fill="#2ee58f">.ENGINE</tspan>
+      </text>
+    </g>
+
+    <!-- Subtitle -->
+    <g transform="translate(48, 230)">
+      <text x="0" y="0" fill="#a4b3a2" font-family="'DM Sans', sans-serif" font-size="26" font-weight="500">
+        High-Velocity Speed Math Sprint // 4-Bucket Carry Taxonomy
+      </text>
+      <text x="0" y="36" fill="#71826f" font-family="'DM Sans', sans-serif" font-size="20">
+        15 Difficulty-Calibrated Questions • Real-Time SSE Podium • Anti-Cheat Latency Shield
+      </text>
+    </g>
+
+    <!-- Tactile Metric Stickers (Footer) -->
+    <g transform="translate(48, 370)">
+      <!-- Sticker 1: 15 Questions -->
+      <g transform="translate(0, 0)">
+        <rect x="4" y="4" width="210" height="54" rx="8" fill="#090c0a"/>
+        <rect x="0" y="0" width="210" height="54" rx="8" fill="#1b241e" stroke="#2ee58f" stroke-width="2"/>
+        <text x="105" y="33" fill="#2ee58f" font-family="'Space Mono', monospace" font-size="15" font-weight="bold" text-anchor="middle">
+          ⚡ 15 SPRINT TASKS
+        </text>
+      </g>
+
+      <!-- Sticker 2: 120s Timer -->
+      <g transform="translate(230, 0)">
+        <rect x="4" y="4" width="210" height="54" rx="8" fill="#090c0a"/>
+        <rect x="0" y="0" width="210" height="54" rx="8" fill="#1b241e" stroke="#f5a623" stroke-width="2"/>
+        <text x="105" y="33" fill="#f5a623" font-family="'Space Mono', monospace" font-size="15" font-weight="bold" text-anchor="middle">
+          ⏱️ 120.0s DEADLINE
+        </text>
+      </g>
+
+      <!-- Sticker 3: Zero Luck -->
+      <g transform="translate(460, 0)">
+        <rect x="4" y="4" width="230" height="54" rx="8" fill="#090c0a"/>
+        <rect x="0" y="0" width="230" height="54" rx="8" fill="#1b241e" stroke="#2ee58f" stroke-width="2"/>
+        <text x="115" y="33" fill="#2ee58f" font-family="'Space Mono', monospace" font-size="15" font-weight="bold" text-anchor="middle">
+          🎯 ZERO-LUCK FAIRNESS
+        </text>
+      </g>
+
+      <!-- Sticker 4: SSE Sync -->
+      <g transform="translate(710, 0)">
+        <rect x="4" y="4" width="230" height="54" rx="8" fill="#090c0a"/>
+        <rect x="0" y="0" width="230" height="54" rx="8" fill="#1b241e" stroke="#ffe36e" stroke-width="2"/>
+        <text x="115" y="33" fill="#ffe36e" font-family="'Space Mono', monospace" font-size="15" font-weight="bold" text-anchor="middle">
+          📡 REAL-TIME SSE HUB
+        </text>
+      </g>
+    </g>
+  </g>
+</svg>

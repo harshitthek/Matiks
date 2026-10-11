@@ -4,7 +4,8 @@
  * Provides clean typed interactions with backend REST endpoints.
  */
 
-const BASE_URL = '/api';
+const API_ORIGIN = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '';
+const BASE_URL = `${API_ORIGIN}/api`;
 
 /**
  * Shared fetch helper that parses response defensively and formats errors.
