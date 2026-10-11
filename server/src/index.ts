@@ -6,8 +6,18 @@
 
 import { createApp } from './app.js';
 import { sseHub } from './services/sseHub.js';
+import { statePersistence } from './services/statePersistence.js';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
+
+if (process.env.NODE_ENV !== 'test') {
+  const restored = statePersistence.loadFromDisk();
+  if (restored) {
+    console.log(`💾 Restored tournament state snapshot from ${statePersistence.getFilePath()}`);
+  }
+  statePersistence.enableAutoSave();
+}
+
 const app = createApp();
 
 const server = app.listen(PORT, (err?: Error) => {
@@ -25,6 +35,9 @@ server.on('error', (err: Error) => {
 
 function handleShutdown(): void {
   console.log('Shutting down Matiks Hackathon Server...');
+  if (process.env.NODE_ENV !== 'test') {
+    statePersistence.saveNow();
+  }
   sseHub.destroy();
   server.close(() => {
     process.exit(0);

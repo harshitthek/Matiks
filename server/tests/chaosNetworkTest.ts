@@ -21,7 +21,6 @@ import type { AddressInfo } from 'node:net';
 import { roomManager } from '../src/services/roomManager.js';
 import { leaderboardManager } from '../src/services/leaderboardManager.js';
 import { windowManager } from '../src/services/windowManager.js';
-import { sseHub } from '../src/services/sseHub.js';
 import { createApp } from '../src/app.js';
 
 describe('Matiks Hackathon — Phase 6: Chaos & Campus Wi-Fi Resiliency Engine', () => {
@@ -227,7 +226,7 @@ describe('Matiks Hackathon — Phase 6: Chaos & Campus Wi-Fi Resiliency Engine',
 
     const sAlice = roomManager.getSession(mAlice.activeSessionId!)!;
     const sBob = roomManager.getSession(mBob.activeSessionId!)!;
-    const sCharlie = roomManager.getSession(mCharlie.activeSessionId!)!;
+    const _sCharlie = roomManager.getSession(mCharlie.activeSessionId!)!;
 
     // Alice answers 2 questions correctly (say 200 pts each approx)
     roomManager.submitAnswer(sAlice.sessionId, 0, sAlice.questions[0].answer, 600, Date.now(), sAlice.memberToken);

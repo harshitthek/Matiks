@@ -30,13 +30,17 @@ import { sseHub } from './sseHub.js';
 import { leaderboardManager } from './leaderboardManager.js';
 import { windowManager } from './windowManager.js';
 
-function hashStringToSeed(str: string): number {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
+export interface SerializedTeamRoom extends Omit<TeamRoom, 'members'> {
+  members: Array<[string, TeamMember]>;
+}
+
+export interface PersistedTournamentState {
+  version: 1;
+  savedAt: number;
+  rooms: SerializedTeamRoom[];
+  sessions: Array<[string, SprintSession]>;
+  rollToTeamMap: Array<[string, string]>;
+  auditLogs: AuditRecord[];
 }
 
 export class RoomManager {
@@ -47,6 +51,20 @@ export class RoomManager {
   private countdownTimers = new Map<string, NodeJS.Timeout[]>();
   private expiryTimers = new Map<string, NodeJS.Timeout>();
   private lastQuestionTimes = new Map<string, number>(); // sessionId -> timestamp
+  private onStateMutated?: () => void;
+
+  public setPersistenceHook(hook?: () => void): void {
+    this.onStateMutated = hook;
+  }
+
+  private notifyStateMutated(): void {
+    if (!this.onStateMutated) return;
+    try {
+      this.onStateMutated();
+    } catch (err: unknown) {
+      console.error('State persistence hook failed:', err);
+    }
+  }
 
   /**
    * Generates a concise, memorable team code (e.g. "ZG-99").
@@ -249,6 +267,7 @@ export class RoomManager {
       this.clearRoomTimers(cleanCode);
       this.rooms.delete(cleanCode);
       leaderboardManager.removeTeam(cleanCode, true);
+      this.notifyStateMutated();
       return { dissolved: true };
     }
 
@@ -863,6 +882,7 @@ export class RoomManager {
 
     sseHub.broadcast(`team:${room.teamCode}`, 'room_paused', { teamCode: room.teamCode, pausedAt: room.pausedAt });
     this.broadcastSnapshot(room);
+    this.notifyStateMutated();
   }
 
   /**
@@ -924,6 +944,7 @@ export class RoomManager {
 
     sseHub.broadcast(`team:${room.teamCode}`, 'room_resumed', { teamCode: room.teamCode, resumedAt: Date.now() });
     this.broadcastSnapshot(room);
+    this.notifyStateMutated();
   }
 
   /**
@@ -932,6 +953,7 @@ export class RoomManager {
   private syncLeaderboard(room: TeamRoom, immediate = false): void {
     if (room.status === 'LOBBY') {
       leaderboardManager.removeTeam(room.teamCode, immediate);
+      this.notifyStateMutated();
       return;
     }
 
@@ -970,6 +992,7 @@ export class RoomManager {
     };
 
     leaderboardManager.updateTeam(entry, immediate);
+    this.notifyStateMutated();
   }
 
   /**
@@ -1196,6 +1219,7 @@ export class RoomManager {
     });
 
     sseHub.broadcast('admin', 'admin_telemetry', this.getTelemetry());
+    this.notifyStateMutated();
     return generatedCodes;
   }
 
@@ -1227,6 +1251,7 @@ export class RoomManager {
     });
 
     sseHub.broadcast('admin', 'admin_telemetry', this.getTelemetry());
+    this.notifyStateMutated();
   }
 
   /**
@@ -1264,6 +1289,116 @@ export class RoomManager {
   }
 
   /**
+   * Exports a serializable snapshot of all active rooms, sprint sessions,
+   * roll-number mappings, and audit logs for crash-safe disk persistence.
+   */
+  public exportStateSnapshot(): PersistedTournamentState {
+    const serializedRooms: SerializedTeamRoom[] = Array.from(this.rooms.values()).map(room => ({
+      ...room,
+      members: Array.from(room.members.entries())
+    }));
+
+    return {
+      version: 1,
+      savedAt: Date.now(),
+      rooms: serializedRooms,
+      sessions: Array.from(this.sessions.entries()),
+      rollToTeamMap: Array.from(this.rollToTeamMap.entries()),
+      auditLogs: [...this.auditLogs]
+    };
+  }
+
+  /**
+   * Restores rooms, sprint sessions, roll-number mappings, audit logs,
+   * and leaderboard entries from a persisted snapshot on server boot.
+   */
+  public restoreStateSnapshot(snapshot: PersistedTournamentState): void {
+    if (!snapshot || snapshot.version !== 1) return;
+
+    const prevHook = this.onStateMutated;
+    this.onStateMutated = undefined;
+
+    try {
+      for (const teamCode of this.rooms.keys()) {
+        this.clearRoomTimers(teamCode);
+      }
+      this.rooms.clear();
+      this.sessions.clear();
+      this.rollToTeamMap.clear();
+      this.lastQuestionTimes.clear();
+      leaderboardManager.clear();
+
+      this.auditLogs = Array.isArray(snapshot.auditLogs) ? [...snapshot.auditLogs] : [];
+      this.rollToTeamMap = new Map(Array.isArray(snapshot.rollToTeamMap) ? snapshot.rollToTeamMap : []);
+      this.sessions = new Map(Array.isArray(snapshot.sessions) ? snapshot.sessions : []);
+
+      const now = Date.now();
+      for (const [sessionId, sess] of this.sessions.entries()) {
+        const lastSub = sess.submissions.length > 0
+          ? sess.submissions[sess.submissions.length - 1]
+          : undefined;
+        this.lastQuestionTimes.set(sessionId, lastSub ? lastSub.timestamp : sess.startedAt);
+      }
+
+      if (Array.isArray(snapshot.rooms)) {
+        for (const rawRoom of snapshot.rooms) {
+          const membersMap = new Map<string, TeamMember>(
+            Array.isArray(rawRoom.members) ? rawRoom.members : []
+          );
+          const room: TeamRoom = {
+            ...rawRoom,
+            members: membersMap
+          };
+
+          if (room.status === 'COUNTDOWN') {
+            room.status = room.members.size >= room.targetSize ? 'AWAITING_READY' : 'LOBBY';
+            for (const m of room.members.values()) {
+              m.isReady = false;
+            }
+          }
+
+          this.rooms.set(room.teamCode, room);
+
+          if (room.status === 'IN_SPRINT' && !room.isPaused) {
+            let maxRemaining = 0;
+            for (const m of room.members.values()) {
+              if (m.activeSessionId) {
+                const sess = this.sessions.get(m.activeSessionId);
+                if (sess && !sess.isFinished) {
+                  const rem = sess.expiresAt + 2500 - now;
+                  if (rem > maxRemaining) {
+                    maxRemaining = rem;
+                  }
+                }
+              }
+            }
+
+            if (maxRemaining <= 0) {
+              this.handleSprintTimeout(room.teamCode);
+            } else {
+              const autoClose = setTimeout(() => {
+                try {
+                  this.handleSprintTimeout(room.teamCode);
+                } catch (err: unknown) {
+                  console.error(`Error during restored sprint timeout for team ${room.teamCode}:`, err);
+                }
+              }, maxRemaining);
+              autoClose.unref?.();
+              this.expiryTimers.set(room.teamCode, autoClose);
+            }
+          }
+
+          this.syncLeaderboard(room, false);
+        }
+      }
+
+      leaderboardManager.broadcastLeaderboard();
+    } finally {
+      this.onStateMutated = prevHook;
+    }
+  }
+
+  /**
    * Clears all room state (useful for test resets).
    */
   public clear(): void {
@@ -1276,6 +1411,7 @@ export class RoomManager {
     this.auditLogs = [];
     this.lastQuestionTimes.clear();
     leaderboardManager.clear();
+    this.notifyStateMutated();
   }
 }
 

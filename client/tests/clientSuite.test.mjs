@@ -42,7 +42,8 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
           ok: true,
           status: 200,
           headers: { get: () => 'application/json' },
-          json: async () => ({ success: true, url })
+          json: async () => ({ success: true, url }),
+          text: async () => 'Rank,TeamCode\r\n'
         };
       };
 
@@ -64,6 +65,8 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
       await api.getAdminStreamTicket('adm_tok');
       await api.simulateTeams(5, 'adm_tok');
       await api.clearSimulatedTeams('adm_tok');
+      await api.exportTournamentCsv('adm_tok');
+      await api.exportTournamentJson('adm_tok');
       await api.getAuthConfig();
       await api.loginPlayer('CS001', 'Alice', 'CY-01');
       await api.loginAdmin('secret');
@@ -71,7 +74,7 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
       await api.exchangeOidcCode('code_123', 'state_456');
       await api.verifyClubMembership('UFC202601');
 
-      assert.equal(capturedCalls.length, 24);
+      assert.equal(capturedCalls.length, 26);
       for (const call of capturedCalls) {
         assert.equal(
           call.options.headers['ngrok-skip-browser-warning'],
@@ -84,7 +87,7 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
       assert.equal(capturedCalls[1].options.headers['x-member-token'], 'tok_bob');
       assert.equal(capturedCalls[6].options.headers['x-member-token'], 'tok_alice');
       assert.equal(capturedCalls[8].options.headers['x-admin-token'], 'adm_tok');
-      assert.equal(capturedCalls[21].options.headers['Authorization'], 'Bearer jwt_tok');
+      assert.equal(capturedCalls[23].options.headers['Authorization'], 'Bearer jwt_tok');
     });
 
     test('parses JSON and plain-text HTTP errors with status code and error payload attached', async () => {

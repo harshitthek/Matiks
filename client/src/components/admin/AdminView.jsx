@@ -19,7 +19,9 @@ import {
   pauseTeam,
   resumeTeam,
   simulateTeams,
-  clearSimulatedTeams
+  clearSimulatedTeams,
+  exportTournamentCsv,
+  exportTournamentJson
 } from '../../services/api.js';
 import { connectAdminStream } from '../../services/sse.js';
 
@@ -273,6 +275,59 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
     }
   };
 
+  // Trigger browser file download from string content
+  const downloadTextFile = (content, filename, mimeType) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
+  // Handle Export CSV
+  const handleExportCsv = async () => {
+    setActionLoading('export-csv');
+    setActionFeedback(null);
+    try {
+      const csvText = await exportTournamentCsv(adminToken);
+      downloadTextFile(csvText, 'matiks-leaderboard-standings.csv', 'text/csv;charset=utf-8');
+      setActionFeedback({
+        type: 'success',
+        message: 'Exported tournament leaderboard standings as CSV.'
+      });
+    } catch (err) {
+      setActionFeedback({ type: 'error', message: err?.message || 'Failed to export CSV.' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Handle Export JSON
+  const handleExportJson = async () => {
+    setActionLoading('export-json');
+    setActionFeedback(null);
+    try {
+      const report = await exportTournamentJson(adminToken);
+      downloadTextFile(
+        JSON.stringify(report, null, 2),
+        'matiks-tournament-report.json',
+        'application/json;charset=utf-8'
+      );
+      setActionFeedback({
+        type: 'success',
+        message: 'Exported full tournament report and audit trail as JSON.'
+      });
+    } catch (err) {
+      setActionFeedback({ type: 'error', message: err?.message || 'Failed to export JSON report.' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Handle Excuse Member
   const handleExcuseMember = async (teamCode, rollNumber, reason) => {
     setActionLoading(teamCode);
@@ -381,7 +436,15 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
         onToggleWindow={handleToggleWindow}
         onSimulateTeams={handleSimulateTeams}
         onClearSimulatedTeams={handleClearSimulatedTeams}
-        isLoading={actionLoading === 'window' || actionLoading === 'simulate' || actionLoading === 'clear-simulate'}
+        onExportCsv={handleExportCsv}
+        onExportJson={handleExportJson}
+        isLoading={
+          actionLoading === 'window' ||
+          actionLoading === 'simulate' ||
+          actionLoading === 'clear-simulate' ||
+          actionLoading === 'export-csv' ||
+          actionLoading === 'export-json'
+        }
       />
 
       {/* Anti-Cheat Anomaly Stream */}

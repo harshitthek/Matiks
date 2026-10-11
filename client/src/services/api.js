@@ -283,6 +283,43 @@ export async function clearSimulatedTeams(adminToken) {
 }
 
 /**
+ * Admin: Exports sorted tournament leaderboard standings as an RFC-4180 CSV string.
+ */
+export async function exportTournamentCsv(adminToken) {
+  const res = await fetch(`${BASE_URL}/admin/export/csv`, {
+    headers: {
+      'ngrok-skip-browser-warning': 'true',
+      'x-admin-token': adminToken || ''
+    }
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    let errorMsg = `HTTP ${res.status} (${res.statusText || 'Export failed'})`;
+    try {
+      const parsed = JSON.parse(text);
+      errorMsg = parsed?.message || parsed?.error || errorMsg;
+    } catch {
+      if (text) errorMsg = text;
+    }
+    const err = new Error(errorMsg);
+    err.status = res.status;
+    throw err;
+  }
+  return text;
+}
+
+/**
+ * Admin: Exports full tournament report (standings, rooms, telemetry, and audit logs) as JSON.
+ */
+export async function exportTournamentJson(adminToken) {
+  return request('/admin/export/json', {
+    headers: {
+      'x-admin-token': adminToken || ''
+    }
+  });
+}
+
+/**
  * Auth: Fetches active authentication configuration, OIDC URL, and server-generated state.
  */
 export async function getAuthConfig() {

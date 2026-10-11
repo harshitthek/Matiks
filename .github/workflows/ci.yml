@@ -1,0 +1,52 @@
+name: CI — Lint, Build & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Build, Lint & Test (Node 22)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+
+      - name: Install server dependencies
+        run: npm ci --prefix server
+
+      - name: Install client dependencies
+        run: npm ci --prefix client
+
+      - name: Lint frontend and backend (oxlint)
+        run: |
+          npm --prefix client run lint
+          npx --prefix client oxlint server/src server/tests
+
+      - name: Build TypeScript backend
+        run: npm run build:server
+
+      - name: Build Vite React frontend
+        run: npm run build:client
+
+      - name: Run backend unit, service, smoke, and QA regression suites
+        run: npm run test:unit
+
+      - name: Run frontend service and audio test suites
+        run: npm --prefix client test

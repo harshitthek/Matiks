@@ -10,6 +10,8 @@ export function ContestWindowWidget({
   onToggleWindow,
   onSimulateTeams,
   onClearSimulatedTeams,
+  onExportCsv,
+  onExportJson,
   isLoading
 }) {
   const [durationMinutes, setDurationMinutes] = useState(30);
@@ -47,6 +49,30 @@ export function ContestWindowWidget({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {onExportCsv && (
+            <TactileButton
+              variant="muted"
+              onClick={onExportCsv}
+              disabled={isLoading}
+              className="px-3 py-2.5 text-xs font-bold"
+              title="Download sorted tournament leaderboard standings as CSV"
+            >
+              📥 EXPORT CSV
+            </TactileButton>
+          )}
+
+          {onExportJson && (
+            <TactileButton
+              variant="muted"
+              onClick={onExportJson}
+              disabled={isLoading}
+              className="px-3 py-2.5 text-xs font-bold"
+              title="Download full tournament report (standings, rooms, telemetry, and audit logs) as JSON"
+            >
+              📦 EXPORT JSON
+            </TactileButton>
+          )}
+
           {onSimulateTeams && (
             <TactileButton
               variant="butter"

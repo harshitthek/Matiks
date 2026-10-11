@@ -331,6 +331,24 @@ describe('Matiks Hackathon — End-to-End Smoke Test Suite', () => {
       assert.equal(windowManager.isOpen(), true);
       assert.equal(windowManager.getConfig().announcementTicker, 'FINAL ROUND LIVE!');
 
+      // Export tournament standings as CSV and full report as JSON
+      const csvExportRes = await fetch(`${baseUrl}/api/admin/export/csv`, { headers });
+      assert.equal(csvExportRes.status, 200);
+      assert.ok(csvExportRes.headers.get('content-type')?.includes('text/csv'));
+      assert.ok(csvExportRes.headers.get('content-disposition')?.includes('matiks-leaderboard-standings.csv'));
+      const csvBody = await csvExportRes.text();
+      assert.ok(csvBody.includes('Rank,TeamCode,TeamName,Status,TeamAverageScore'));
+      assert.ok(csvBody.includes('SIM-01'));
+
+      const jsonExportRes = await fetch(`${baseUrl}/api/admin/export/json`, { headers });
+      assert.equal(jsonExportRes.status, 200);
+      assert.ok(jsonExportRes.headers.get('content-disposition')?.includes('matiks-tournament-report.json'));
+      const jsonReport = await jsonExportRes.json();
+      assert.ok(Array.isArray(jsonReport.leaderboard));
+      assert.equal(jsonReport.leaderboard.length, 4);
+      assert.ok(Array.isArray(jsonReport.rooms));
+      assert.ok(Array.isArray(jsonReport.auditLogs));
+
       // Clear simulated teams
       const clearRes = await fetch(`${baseUrl}/api/admin/clear-simulated-teams`, {
         method: 'POST',

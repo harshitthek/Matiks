@@ -12,8 +12,7 @@ import assert from 'node:assert/strict';
 import {
   generateSprintPaper,
   shuffleQuestionsForPlayer,
-  sanitizeQuestions,
-  verifyAnswer
+  sanitizeQuestions
 } from '../src/services/mathEngine.js';
 import {
   evaluateSubmission,

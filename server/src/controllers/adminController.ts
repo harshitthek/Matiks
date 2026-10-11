@@ -9,6 +9,7 @@ import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { roomManager } from '../services/roomManager.js';
 import { windowManager } from '../services/windowManager.js';
+import { leaderboardManager } from '../services/leaderboardManager.js';
 
 const adminStreamTickets = new Map<string, number>();
 
@@ -154,4 +155,79 @@ export function clearSimulatedTeamsHandler(_req: Request, res: Response): void {
     const message = err instanceof Error ? err.message : 'Failed to clear simulated teams';
     res.status(400).json({ error: message });
   }
+}
+
+export function escapeCsvCell(value: unknown): string {
+  const raw = value === null || value === undefined ? '' : String(value);
+  const formulaSafe =
+    /^[=+\-@\t\r]/.test(raw) && !/^-\d+(\.\d+)?$/.test(raw) ? `'${raw}` : raw;
+  if (/[",\r\n]/.test(formulaSafe)) {
+    return `"${formulaSafe.replace(/"/g, '""')}"`;
+  }
+  return formulaSafe;
+}
+
+export function exportTournamentCsvHandler(_req: Request, res: Response): void {
+  const entries = leaderboardManager.getLeaderboard();
+  const headers = [
+    'Rank',
+    'TeamCode',
+    'TeamName',
+    'Status',
+    'TeamAverageScore',
+    'AverageTimeSeconds',
+    'ActiveMembersCount',
+    'TotalMembersCount',
+    'MemberBreakdowns'
+  ];
+
+  const rows = entries.map(entry => {
+    const breakdownText = entry.memberBreakdown
+      .map(
+        m =>
+          `${m.name} (${m.score} pts, ${m.completedQuestions}/15${m.isExcused ? ', EXCUSED' : ''})`
+      )
+      .join(' | ');
+
+    return [
+      entry.rank,
+      entry.teamCode,
+      entry.teamName,
+      entry.status,
+      entry.teamAverageScore,
+      entry.averageTimeSeconds,
+      entry.activeMembersCount,
+      entry.membersCount,
+      breakdownText
+    ]
+      .map(escapeCsvCell)
+      .join(',');
+  });
+
+  const csvContent = [headers.join(','), ...rows].join('\r\n') + '\r\n';
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader(
+    'Content-Disposition',
+    'attachment; filename="matiks-leaderboard-standings.csv"'
+  );
+  res.status(200).send(csvContent);
+}
+
+export function exportTournamentJsonHandler(_req: Request, res: Response): void {
+  const report = {
+    exportedAt: new Date().toISOString(),
+    exportedTimestamp: Date.now(),
+    contestWindow: windowManager.getConfig(),
+    telemetry: roomManager.getTelemetry(),
+    leaderboard: leaderboardManager.getLeaderboard(),
+    rooms: roomManager.getAllRooms(),
+    auditLogs: roomManager.getAuditLogs()
+  };
+
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader(
+    'Content-Disposition',
+    'attachment; filename="matiks-tournament-report.json"'
+  );
+  res.status(200).send(JSON.stringify(report, null, 2));
 }

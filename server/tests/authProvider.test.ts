@@ -594,6 +594,8 @@ describe('Matiks Hackathon — Phase 7: Pluggable Auth & Club OIDC Adapter', () 
         assert.equal(successData.user.rollNumber, 'CS21045');
         assert.equal(successData.user.isClubMember, true);
         assert.equal(successData.token, 'oidc_jwt_token_xyz');
+        assert.equal(validatedStateArg, validTestState);
+        assert.equal(exchangedCodeArg, 'valid_auth_code');
 
         // Cookie is cleared upon successful exchange
         const clearedCookieHeader = successRes.headers.get('set-cookie');

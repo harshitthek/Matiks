@@ -16,7 +16,8 @@ dist-ssr/
 .env.*
 !.env.example
 
-# Logs
+# Logs & Runtime Snapshots
+.data/
 logs/
 *.log
 npm-debug.log*

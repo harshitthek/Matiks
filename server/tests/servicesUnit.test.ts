@@ -13,10 +13,16 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-import { LeaderboardManager } from '../src/services/leaderboardManager.js';
+import { LeaderboardManager, leaderboardManager } from '../src/services/leaderboardManager.js';
 import { WindowManager } from '../src/services/windowManager.js';
 import { SseHub } from '../src/services/sseHub.js';
+import { roomManager } from '../src/services/roomManager.js';
+import { StatePersistenceService } from '../src/services/statePersistence.js';
+import { escapeCsvCell } from '../src/controllers/adminController.js';
 
 function createMockSseResponse(shouldThrowOnWrite = false) {
   const emitter = new EventEmitter();
@@ -239,6 +245,95 @@ describe('Matiks Hackathon — Core Services Unit Test Suite', () => {
       hub.destroy();
       assert.equal(hub.getClientCount(), 0);
       assert.equal(finalRes.isEnded(), true);
+    });
+  });
+
+  describe('4. StatePersistenceService Crash-Safe Disk Snapshot & Recovery', () => {
+    test('atomically saves and restores rooms, sprint sessions, leaderboard standings, and audit logs across restarts', async () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'matiks-persist-'));
+      const snapshotPath = path.join(tmpDir, 'snapshot.json');
+      const persistence = new StatePersistenceService(snapshotPath);
+
+      try {
+        roomManager.clear();
+        persistence.enableAutoSave(20);
+
+        // Create a team, join a second member, and simulate demo teams
+        const { teamCode, memberToken: capTok } = roomManager.createTeam('Persist Squad', 2, 'PER01', 'Captain Persist');
+        const { memberToken: memTok } = roomManager.joinTeam(teamCode, 'PER02', 'Partner Persist');
+        roomManager.simulateTeams(2);
+
+        // Wait for debounced auto-save
+        await new Promise((r) => setTimeout(r, 60));
+        assert.equal(fs.existsSync(snapshotPath), true, 'Auto-save must write snapshot file to disk');
+
+        // Also test interrupting a COUNTDOWN state (should revert to AWAITING_READY on restore)
+        const room = roomManager.getRoom(teamCode)!;
+        room.status = 'COUNTDOWN';
+        room.members.get('PER01')!.isReady = true;
+        room.members.get('PER02')!.isReady = true;
+        assert.equal(persistence.saveNow(), true);
+
+        // Wipe in-memory state completely to simulate a server crash/restart
+        persistence.disableAutoSave();
+        roomManager.clear();
+        assert.equal(roomManager.getAllRooms().length, 0);
+        assert.equal(leaderboardManager.getLeaderboard().length, 0);
+
+        // Restore from disk
+        const loaded = persistence.loadFromDisk();
+        assert.equal(loaded, true);
+
+        const restoredRoom = roomManager.getRoom(teamCode);
+        assert.ok(restoredRoom, 'Squad room must be restored from disk');
+        assert.equal(restoredRoom.status, 'AWAITING_READY', 'Interrupted COUNTDOWN room must safely revert to AWAITING_READY');
+        assert.equal(restoredRoom.members.get('PER01')?.isReady, false);
+        assert.equal(restoredRoom.members.get('PER01')?.token, capTok);
+        assert.equal(restoredRoom.members.get('PER02')?.token, memTok);
+
+        // Leaderboard and audit logs must also be restored
+        const board = leaderboardManager.getLeaderboard();
+        assert.ok(board.some((e) => e.teamCode === 'SIM-01'));
+        assert.ok(roomManager.getAuditLogs().some((a) => a.action === 'ADMIN_SIMULATE_TEAMS'));
+      } finally {
+        persistence.disableAutoSave();
+        persistence.clearDiskSnapshot();
+        roomManager.clear();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    test('handles missing or malformed snapshot files gracefully', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'matiks-corrupt-'));
+      const snapshotPath = path.join(tmpDir, 'corrupt.json');
+      const persistence = new StatePersistenceService(snapshotPath);
+
+      try {
+        assert.equal(persistence.loadFromDisk(), false, 'Missing file must return false');
+
+        fs.writeFileSync(snapshotPath, '{ invalid json ', 'utf-8');
+        assert.equal(persistence.loadFromDisk(), false, 'Corrupt JSON must return false without throwing');
+
+        fs.writeFileSync(snapshotPath, JSON.stringify({ version: 999 }), 'utf-8');
+        assert.equal(persistence.loadFromDisk(), false, 'Unsupported version must return false');
+      } finally {
+        persistence.clearDiskSnapshot();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('5. CSV Formula Injection Defense & RFC-4180 Cell Escaping', () => {
+    test('neutralizes spreadsheet formula prefixes while preserving negative numbers and quoting delimiters', () => {
+      assert.equal(escapeCsvCell('=cmd|\'/C calc\'!A0'), "'=cmd|'/C calc'!A0");
+      assert.equal(escapeCsvCell('+SUM(A1:A2)'), "'+SUM(A1:A2)");
+      assert.equal(escapeCsvCell('@IMPORTXML()'), "'@IMPORTXML()");
+      assert.equal(escapeCsvCell('-20'), '-20', 'Negative integer score must not be prefixed');
+      assert.equal(escapeCsvCell('-12.5'), '-12.5', 'Negative decimal must not be prefixed');
+      assert.equal(escapeCsvCell('-malicious'), "'-malicious");
+      assert.equal(escapeCsvCell('Squad "Alpha", Jr.'), '"Squad ""Alpha"", Jr."');
+      assert.equal(escapeCsvCell(null), '');
+      assert.equal(escapeCsvCell(undefined), '');
     });
   });
 });

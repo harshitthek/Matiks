@@ -241,7 +241,7 @@ describe('Matiks Hackathon — Phase 2: State Machine & Realtime Engine', () => 
 
     const sRohan = roomManager.getSession(rohan.activeSessionId!)!;
     const sPriya = roomManager.getSession(priya.activeSessionId!)!;
-    const sAarav = roomManager.getSession(aarav.activeSessionId!)!;
+    const _sAarav = roomManager.getSession(aarav.activeSessionId!)!;
 
     // Rohan scores 150 pts
     roomManager.submitAnswer(sRohan.sessionId, 0, sRohan.questions[0].answer, 1000, Date.now(), rohan.token);

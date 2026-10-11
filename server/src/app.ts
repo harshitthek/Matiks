@@ -32,7 +32,9 @@ import {
   getAllRoomsHandler,
   issueAdminStreamTicketHandler,
   simulateTeamsHandler,
-  clearSimulatedTeamsHandler
+  clearSimulatedTeamsHandler,
+  exportTournamentCsvHandler,
+  exportTournamentJsonHandler
 } from './controllers/adminController.js';
 
 import {
@@ -159,6 +161,8 @@ export function createApp(): express.Application {
   app.post('/api/admin/stream-ticket', requireAdminAuth, issueAdminStreamTicketHandler);
   app.post('/api/admin/simulate-teams', requireAdminAuth, simulateTeamsHandler);
   app.post('/api/admin/clear-simulated-teams', requireAdminAuth, clearSimulatedTeamsHandler);
+  app.get('/api/admin/export/csv', requireAdminAuth, exportTournamentCsvHandler);
+  app.get('/api/admin/export/json', requireAdminAuth, exportTournamentJsonHandler);
 
   return app;
 }
