@@ -77,7 +77,8 @@ export class RoomManager {
     teamName: string,
     targetSize: number,
     captainRoll: string,
-    captainName: string
+    captainName: string,
+    isClubMember?: boolean
   ): { room: TeamRoom; teamCode: string; memberToken: string } {
     if (!Number.isInteger(targetSize) || targetSize < 2 || targetSize > 4) {
       throw new Error('Target team size must be an integer between 2 and 4 members.');
@@ -102,7 +103,8 @@ export class RoomManager {
       individualScore: 0,
       completedQuestions: 0,
       lastActiveAt: Date.now(),
-      token: memberToken
+      token: memberToken,
+      isClubMember: isClubMember ?? false
     };
     members.set(cleanRoll, captain);
 
@@ -130,7 +132,8 @@ export class RoomManager {
     teamCode: string,
     rollNumber: string,
     name: string,
-    reconnectToken?: string
+    reconnectToken?: string,
+    isClubMember?: boolean
   ): { room: TeamRoom; member: TeamMember; memberToken: string } {
     const room = this.rooms.get(teamCode.trim().toUpperCase());
     if (!room) {
@@ -147,6 +150,9 @@ export class RoomManager {
       }
       existing.connected = true;
       existing.lastActiveAt = Date.now();
+      if (typeof isClubMember === 'boolean') {
+        existing.isClubMember = isClubMember;
+      }
       this.broadcastSnapshot(room);
       return { room, member: existing, memberToken: existing.token || '' };
     }
@@ -177,7 +183,8 @@ export class RoomManager {
       individualScore: 0,
       completedQuestions: 0,
       lastActiveAt: Date.now(),
-      token: memberToken
+      token: memberToken,
+      isClubMember: isClubMember ?? false
     };
 
     room.members.set(cleanRoll, newMember);
@@ -855,7 +862,8 @@ export class RoomManager {
       isExcused: m.isExcused,
       connected: m.connected,
       individualScore: m.individualScore,
-      completedQuestions: m.completedQuestions
+      completedQuestions: m.completedQuestions,
+      isClubMember: m.isClubMember ?? false
     }));
 
     const activeMembers = membersList.filter(m => !m.isExcused);

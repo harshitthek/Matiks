@@ -27,6 +27,7 @@ export interface TeamMember {
   completedQuestions: number;
   lastActiveAt: number;
   token?: string;
+  isClubMember?: boolean;
 }
 
 export interface TeamRoom {
@@ -137,6 +138,7 @@ export interface TeamSnapshotEvent {
     connected: boolean;
     individualScore: number;
     completedQuestions: number;
+    isClubMember?: boolean;
   }[];
   allReady: boolean;
   contestWindow: {

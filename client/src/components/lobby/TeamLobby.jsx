@@ -299,6 +299,11 @@ export function TeamLobby({
                           CAPTAIN
                         </span>
                       )}
+                      {member.isClubMember && (
+                        <span className="bg-[#2ee58f]/20 text-[#2ee58f] font-mono font-bold text-[10px] uppercase px-1.5 py-0.5 border border-[#2ee58f] tracking-wider">
+                          🛡️ UFC MEMBER
+                        </span>
+                      )}
                       {member.isExcused && (
                         <span className="bg-[#ff6b5e]/20 text-[#ff6b5e] font-mono font-bold text-[10px] uppercase px-1.5 py-0.5 border border-[#ff6b5e]">
                           EXCUSED

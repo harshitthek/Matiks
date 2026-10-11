@@ -6,12 +6,29 @@
 
 import type { Request, Response } from 'express';
 import { roomManager } from '../services/roomManager.js';
+import { getAuthProvider } from '../services/auth/authProviderFactory.js';
 
 function isValidStringField(val: unknown, maxLength = 64): val is string {
   return typeof val === 'string' && val.trim().length > 0 && val.trim().length <= maxLength;
 }
 
-export function createTeamHandler(req: Request, res: Response): void {
+function extractSessionToken(req: Request): string | undefined {
+  const customHeader = req.headers['x-session-token'];
+  if (typeof customHeader === 'string' && customHeader.trim()) {
+    return customHeader.trim();
+  }
+  const bodyToken = req.body?.sessionToken;
+  if (typeof bodyToken === 'string' && bodyToken.trim()) {
+    return bodyToken.trim();
+  }
+  const authHeader = req.headers['authorization'];
+  if (authHeader && typeof authHeader === 'string') {
+    return authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();
+  }
+  return undefined;
+}
+
+export async function createTeamHandler(req: Request, res: Response): Promise<void> {
   try {
     const { teamName, targetSize } = req.body;
     const captainRoll = req.body.captainRoll ?? req.body.rollNumber;
@@ -22,8 +39,21 @@ export function createTeamHandler(req: Request, res: Response): void {
       return;
     }
 
+    const cleanCaptainRoll = captainRoll.trim().toUpperCase();
+    const sessionToken = extractSessionToken(req);
+    const sessionUser = sessionToken ? await getAuthProvider().verifySession(sessionToken) : null;
+    const isClubMember = (sessionUser && sessionUser.rollNumber === cleanCaptainRoll)
+      ? sessionUser.isClubMember
+      : undefined;
+
     const size = typeof targetSize === 'number' ? targetSize : 3;
-    const { room, teamCode, memberToken } = roomManager.createTeam(teamName, size, captainRoll, captainName);
+    const { room, teamCode, memberToken } = roomManager.createTeam(
+      teamName,
+      size,
+      cleanCaptainRoll,
+      captainName,
+      isClubMember
+    );
 
     res.status(201).json({
       success: true,
@@ -37,7 +67,7 @@ export function createTeamHandler(req: Request, res: Response): void {
   }
 }
 
-export function joinTeamHandler(req: Request, res: Response): void {
+export async function joinTeamHandler(req: Request, res: Response): Promise<void> {
   try {
     const { teamCode, rollNumber, name } = req.body;
 
@@ -46,8 +76,21 @@ export function joinTeamHandler(req: Request, res: Response): void {
       return;
     }
 
+    const cleanRoll = rollNumber.trim().toUpperCase();
+    const sessionToken = extractSessionToken(req);
+    const sessionUser = sessionToken ? await getAuthProvider().verifySession(sessionToken) : null;
+    const isClubMember = (sessionUser && sessionUser.rollNumber === cleanRoll)
+      ? sessionUser.isClubMember
+      : undefined;
+
     const token = (req.headers['x-member-token'] as string) || (req.body.token as string) || (req.body.memberToken as string);
-    const { room, member, memberToken } = roomManager.joinTeam(teamCode, rollNumber, name, token);
+    const { room, member, memberToken } = roomManager.joinTeam(
+      teamCode,
+      cleanRoll,
+      name,
+      token,
+      isClubMember
+    );
 
     res.status(200).json({
       success: true,

@@ -244,3 +244,62 @@ export async function clearSimulatedTeams(adminToken) {
   });
 }
 
+/**
+ * Auth: Fetches active authentication configuration, OIDC URL, and server-generated state.
+ */
+export async function getAuthConfig() {
+  return request('/auth/config');
+}
+
+/**
+ * Auth: Direct player roll-number login.
+ */
+export async function loginPlayer(rollNumber, name, teamCode) {
+  return request('/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rollNumber, name, teamCode })
+  });
+}
+
+/**
+ * Auth: Admin secret passcode login.
+ */
+export async function loginAdmin(passcode) {
+  return request('/auth/admin-login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ passcode })
+  });
+}
+
+/**
+ * Auth: Retrieves authenticated user profile from active session token.
+ */
+export async function getAuthUser(token) {
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return request('/auth/me', { headers });
+}
+
+/**
+ * Auth: Exchanges central USAR FOSS Club OIDC authorization code.
+ */
+export async function exchangeOidcCode(code, state) {
+  return request('/auth/oidc/exchange', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, state })
+  });
+}
+
+/**
+ * Auth: Verifies whether a student identifier or roll number is an official UFC club member.
+ */
+export async function verifyClubMembership(identifier) {
+  return request(`/auth/verify-membership/${encodeURIComponent(identifier)}`);
+}
+
+
