@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "test": "tsx --test tests/mathEngine.test.ts",
+    "test": "tsx --import ./tests/setup.ts --test tests/mathEngine.test.ts tests/roomManager.test.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts"
@@ -19,8 +19,14 @@
   "author": "harshitthek",
   "license": "MIT",
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.10.2",
     "tsx": "^4.23.15",
     "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.3.0"
   }
 }

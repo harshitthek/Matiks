@@ -5,6 +5,8 @@
  * gross sum normalization across 1,000 generated sets, and scoring formulas.
  */
 
+process.env.NODE_ENV = 'test';
+
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {

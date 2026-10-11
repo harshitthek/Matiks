@@ -168,25 +168,17 @@ function pickPair(
 
   if (targetSum !== undefined) {
     const availableSums = repo.getAvailableSums(bucket);
-    let bestSum = availableSums[0];
-    let minDiff = Math.abs(availableSums[0] - targetSum);
+    const sortedSums = [...availableSums].sort((a, b) => Math.abs(a - targetSum) - Math.abs(b - targetSum));
 
-    for (const s of availableSums) {
-      const diff = Math.abs(s - targetSum);
-      if (diff < minDiff) {
-        minDiff = diff;
-        bestSum = s;
-      }
-    }
-
-    const candidateList = bins.get(bestSum) || [];
-    // Uniform Fisher-Yates shuffle to avoid deterministic repetition
-    const shuffled = shuffleArray(candidateList);
-    for (const p of shuffled) {
-      const key = getCanonicalKey(p.a, p.b);
-      if (!usedKeys.has(key)) {
-        usedKeys.add(key);
-        return p;
+    for (const s of sortedSums) {
+      const candidateList = bins.get(s) || [];
+      const shuffled = shuffleArray(candidateList);
+      for (const p of shuffled) {
+        const key = getCanonicalKey(p.a, p.b);
+        if (!usedKeys.has(key)) {
+          usedKeys.add(key);
+          return p;
+        }
       }
     }
   }
@@ -242,80 +234,88 @@ function toQuestion(pair: RawPair, bucket: CarryBucket, index: number): Question
  * 6. Zero commutative duplicates, zero 0-endings, zero double-5 endings, zero identical operands
  */
 export function generateSprintPaper(paperId?: string): SprintPaper {
-  const usedKeys = new Set<string>();
-  const rawQuestions: { pair: RawPair; bucket: CarryBucket }[] = [];
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const usedKeys = new Set<string>();
+    const rawQuestions: { pair: RawPair; bucket: CarryBucket }[] = [];
 
-  // Step 1: Calibrated selection of B1 (3 Qs, target sum ~75 each)
-  for (let i = 0; i < 3; i++) {
-    const jitter = Math.floor(Math.random() * 21) - 10;
+    // Step 1: Calibrated selection of B1 (3 Qs, target sum ~75 each)
+    for (let i = 0; i < 3; i++) {
+      const jitter = Math.floor(Math.random() * 21) - 10;
+      rawQuestions.push({
+        pair: pickPair('B1', usedKeys, 75 + jitter),
+        bucket: 'B1'
+      });
+    }
+
+    // Step 2: Calibrated selection of B2 (4 Qs, target sum ~80 each)
+    for (let i = 0; i < 4; i++) {
+      const jitter = Math.floor(Math.random() * 21) - 10;
+      rawQuestions.push({
+        pair: pickPair('B2', usedKeys, 80 + jitter),
+        bucket: 'B2'
+      });
+    }
+
+    // Step 3: Calibrated selection of B3 (4 Qs, target sum ~140 each)
+    for (let i = 0; i < 4; i++) {
+      const jitter = Math.floor(Math.random() * 21) - 10;
+      rawQuestions.push({
+        pair: pickPair('B3', usedKeys, 140 + jitter),
+        bucket: 'B3'
+      });
+    }
+
+    // Step 4: Analytical Residual Partitioning across B4 (4 Qs)
+    // Calculate sum of first 11 questions
+    const currentSum11 = rawQuestions.reduce((sum, q) => sum + q.pair.sum, 0);
+    const remainingTotalTarget = 1700 - currentSum11;
+    const targetEachB4 = Math.round(remainingTotalTarget / 4);
+
+    // Pick first 3 questions of B4 around targetEachB4
+    for (let i = 0; i < 3; i++) {
+      const jitter = Math.floor(Math.random() * 11) - 5;
+      rawQuestions.push({
+        pair: pickPair('B4', usedKeys, targetEachB4 + jitter),
+        bucket: 'B4'
+      });
+    }
+
+    // Pick final B4 question targeting the exact mathematical residual
+    const currentSum14 = rawQuestions.reduce((sum, q) => sum + q.pair.sum, 0);
+    const finalResidualB4 = 1700 - currentSum14;
     rawQuestions.push({
-      pair: pickPair('B1', usedKeys, 75 + jitter),
-      bucket: 'B1'
-    });
-  }
-
-  // Step 2: Calibrated selection of B2 (4 Qs, target sum ~80 each)
-  for (let i = 0; i < 4; i++) {
-    const jitter = Math.floor(Math.random() * 21) - 10;
-    rawQuestions.push({
-      pair: pickPair('B2', usedKeys, 80 + jitter),
-      bucket: 'B2'
-    });
-  }
-
-  // Step 3: Calibrated selection of B3 (4 Qs, target sum ~140 each)
-  for (let i = 0; i < 4; i++) {
-    const jitter = Math.floor(Math.random() * 21) - 10;
-    rawQuestions.push({
-      pair: pickPair('B3', usedKeys, 140 + jitter),
-      bucket: 'B3'
-    });
-  }
-
-  // Step 4: Analytical Residual Partitioning across B4 (4 Qs)
-  // Calculate sum of first 11 questions
-  const currentSum11 = rawQuestions.reduce((sum, q) => sum + q.pair.sum, 0);
-  const remainingTotalTarget = 1700 - currentSum11;
-  const targetEachB4 = Math.round(remainingTotalTarget / 4);
-
-  // Pick first 3 questions of B4 around targetEachB4
-  for (let i = 0; i < 3; i++) {
-    const jitter = Math.floor(Math.random() * 11) - 5;
-    rawQuestions.push({
-      pair: pickPair('B4', usedKeys, targetEachB4 + jitter),
+      pair: pickPair('B4', usedKeys, finalResidualB4),
       bucket: 'B4'
     });
+
+    // Step 5: Construct Question objects
+    const questions: Question[] = rawQuestions.map((q, idx) =>
+      toQuestion(q.pair, q.bucket, idx)
+    );
+
+    const totalSum = questions.reduce((sum, q) => sum + q.answer, 0);
+
+    if (totalSum < 1650 || totalSum > 1750) {
+      continue;
+    }
+
+    const bucketCounts: Record<CarryBucket, number> = {
+      B1: questions.filter(q => q.bucket === 'B1').length,
+      B2: questions.filter(q => q.bucket === 'B2').length,
+      B3: questions.filter(q => q.bucket === 'B3').length,
+      B4: questions.filter(q => q.bucket === 'B4').length,
+    };
+
+    return {
+      paperId: paperId || `paper_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+      questions,
+      totalSum,
+      bucketCounts,
+      generatedAt: Date.now()
+    };
   }
 
-  // Pick final B4 question targeting the exact mathematical residual
-  const currentSum14 = rawQuestions.reduce((sum, q) => sum + q.pair.sum, 0);
-  const finalResidualB4 = 1700 - currentSum14;
-  rawQuestions.push({
-    pair: pickPair('B4', usedKeys, finalResidualB4),
-    bucket: 'B4'
-  });
-
-  // Step 5: Construct Question objects
-  const questions: Question[] = rawQuestions.map((q, idx) =>
-    toQuestion(q.pair, q.bucket, idx)
-  );
-
-  const totalSum = questions.reduce((sum, q) => sum + q.answer, 0);
-
-  const bucketCounts: Record<CarryBucket, number> = {
-    B1: questions.filter(q => q.bucket === 'B1').length,
-    B2: questions.filter(q => q.bucket === 'B2').length,
-    B3: questions.filter(q => q.bucket === 'B3').length,
-    B4: questions.filter(q => q.bucket === 'B4').length,
-  };
-
-  return {
-    paperId: paperId || `paper_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-    questions,
-    totalSum,
-    bucketCounts,
-    generatedAt: Date.now()
-  };
+  throw new Error('Failed to generate sprint paper within sum constraints [1650, 1750]');
 }
 
 /**
@@ -349,3 +349,10 @@ export function sanitizeQuestions(questions: Question[]): QuestionSanitized[] {
 export function verifyAnswer(question: Question, submittedAnswer: number): boolean {
   return question.answer === submittedAnswer;
 }
+
+export const mathEngine = {
+  generateSprintPaper,
+  shuffleQuestionsForPlayer,
+  sanitizeQuestions,
+  verifyAnswer
+};

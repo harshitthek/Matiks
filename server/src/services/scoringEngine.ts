@@ -90,3 +90,9 @@ export function evaluateSubmission(
     anomalyReason
   };
 }
+
+export const scoringEngine = {
+  evaluateSubmission,
+  computeSpeedBonus,
+  getStreakMultiplier
+};
