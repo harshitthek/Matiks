@@ -134,7 +134,7 @@ export function App() {
 
   const handleReturnToLobbyFromSprint = useCallback(() => {
     const activeSprint = sprintSessionRef.current;
-    if (activeSprint?.sessionId && !isSprintFinishedRef.current) {
+    if (activeSprint?.sessionId) {
       setSuppressedResumeSessionId(activeSprint.sessionId);
     }
     setSprintSession(null);
@@ -364,7 +364,6 @@ export function App() {
         // Even if already reset by a teammate, transition back to lobby
       }
     }
-    setSuppressedResumeSessionId(null);
     handleReturnToLobbyFromSprint();
   }, [handleReturnToLobbyFromSprint]);
 

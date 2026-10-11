@@ -106,6 +106,29 @@ describe('Math Engine — 4-Bucket Carry Taxonomy & Zero-Luck Invariants', () =>
     assert.equal(b3Count, 4);
     assert.equal(b4Count, 4);
   });
+
+  it('prevents question repetition across consecutive games and randomizes bucket positions', () => {
+    const squadUsedKeys = new Set<string>();
+    const firstQuestionBuckets = new Set<string>();
+
+    // Simulate 8 consecutive games for the same squad (120 questions total)
+    for (let game = 0; game < 8; game++) {
+      const paper = generateSprintPaper(undefined, squadUsedKeys);
+      firstQuestionBuckets.add(paper.questions[0].bucket);
+
+      for (const q of paper.questions) {
+        const key = q.a < q.b ? `${q.a}_${q.b}` : `${q.b}_${q.a}`;
+        assert.ok(
+          !squadUsedKeys.has(key),
+          `Question pair ${q.a}+${q.b} (${key}) repeated in game ${game + 1}`
+        );
+        squadUsedKeys.add(key);
+      }
+    }
+
+    assert.equal(squadUsedKeys.size, 120, 'All 120 questions across 8 consecutive games must be distinct pairs');
+    assert.ok(firstQuestionBuckets.size > 1, 'First question bucket must be randomized across games');
+  });
 });
 
 describe('Math Engine — High-Concurrency O(1) Monte Carlo Validation (1,000 Sprints)', () => {

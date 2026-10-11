@@ -47,6 +47,7 @@ export class RoomManager {
   private rooms = new Map<string, TeamRoom>();
   private sessions = new Map<string, SprintSession>();
   private rollToTeamMap = new Map<string, string>(); // rollNumber -> teamCode
+  private roomUsedPairKeys = new Map<string, Set<string>>(); // teamCode -> previously used question canonical keys
   private auditLogs: AuditRecord[] = [];
   private countdownTimers = new Map<string, NodeJS.Timeout[]>();
   private expiryTimers = new Map<string, NodeJS.Timeout>();
@@ -266,6 +267,7 @@ export class RoomManager {
     if (room.members.size === 0) {
       this.clearRoomTimers(cleanCode);
       this.rooms.delete(cleanCode);
+      this.roomUsedPairKeys.delete(cleanCode);
       leaderboardManager.removeTeam(cleanCode, true);
       this.notifyStateMutated();
       return { dissolved: true };
@@ -317,6 +319,14 @@ export class RoomManager {
       throw new Error('Unauthorized: Valid member token is required to reset squad.');
     }
 
+    // If the requesting member's own 120s timer has expired, finalize their session immediately
+    // while still respecting the +2.5s transit grace window for any other active teammates
+    if (member.activeSessionId) {
+      const ownSession = this.sessions.get(member.activeSessionId);
+      if (ownSession && !ownSession.isFinished && Date.now() >= ownSession.expiresAt) {
+        ownSession.isFinished = true;
+      }
+    }
     this.checkAndFinalizeIfExpired(room);
 
     if (room.status !== 'FINISHED') {
@@ -483,10 +493,22 @@ export class RoomManager {
     const startedAt = Date.now();
     room.startedAt = startedAt;
 
-    // 1. Generate master 15-question paper with zero-luck 4-bucket taxonomy
-    const masterPaper = mathEngine.generateSprintPaper();
+    let roomUsedKeys = this.roomUsedPairKeys.get(room.teamCode);
+    if (!roomUsedKeys) {
+      roomUsedKeys = new Set<string>();
+      this.roomUsedPairKeys.set(room.teamCode, roomUsedKeys);
+    } else if (roomUsedKeys.size > 450) {
+      roomUsedKeys.clear();
+    }
+
+    // 1. Generate master 15-question paper with zero-luck 4-bucket taxonomy,
+    // excluding all pairs previously played by this squad
+    const masterPaper = mathEngine.generateSprintPaper(undefined, roomUsedKeys);
     const masterQuestions = masterPaper.questions;
     room.masterPaperId = masterPaper.paperId;
+    for (const q of masterQuestions) {
+      roomUsedKeys.add(mathEngine.getCanonicalKey(q.a, q.b));
+    }
 
     const sessionIds: Record<string, string> = {};
     const questionsByRollNumber: Record<string, QuestionSanitized[]> = {};
@@ -495,7 +517,7 @@ export class RoomManager {
     for (const member of room.members.values()) {
       if (member.isExcused) continue;
 
-      const playerSeed = `${room.teamCode}:${member.rollNumber}:${startedAt}`;
+      const playerSeed = `${room.teamCode}:${member.rollNumber}:${masterPaper.paperId}:${startedAt}`;
       const shuffledQuestions = mathEngine.shuffleQuestionsForPlayer(masterQuestions, playerSeed);
       const sanitized = mathEngine.sanitizeQuestions(shuffledQuestions);
 
@@ -695,8 +717,10 @@ export class RoomManager {
       this.checkRoomCompletion(room);
     }
 
-    // Recalculate team average and broadcast to leaderboard
-    this.syncLeaderboard(room);
+    // Recalculate team average and broadcast to leaderboard (if not already finalized)
+    if ((room.status as string) !== 'FINISHED') {
+      this.syncLeaderboard(room);
+    }
 
     return {
       isCorrect: evalResult.isCorrect,
@@ -735,7 +759,7 @@ export class RoomManager {
     this.clearRoomTimers(room.teamCode);
 
     this.broadcastSnapshot(room);
-    this.syncLeaderboard(room, true);
+    this.syncLeaderboard(room);
   }
 
   /**
@@ -995,6 +1019,21 @@ export class RoomManager {
     this.notifyStateMutated();
   }
 
+  private telemetryTimer: NodeJS.Timeout | null = null;
+  private cachedRssMb = 0;
+  private lastRssAt = 0;
+
+  private scheduleTelemetryBroadcast(): void {
+    if (this.telemetryTimer || sseHub.getClientCount('admin') === 0) return;
+    this.telemetryTimer = setTimeout(() => {
+      this.telemetryTimer = null;
+      if (sseHub.getClientCount('admin') > 0) {
+        sseHub.broadcast('admin', 'admin_telemetry', this.getTelemetry());
+      }
+    }, 50);
+    this.telemetryTimer.unref?.();
+  }
+
   /**
    * Broadcasts complete room snapshot to team members and admin over SSE.
    */
@@ -1002,14 +1041,14 @@ export class RoomManager {
     const snapshot = this.getSnapshot(room);
     sseHub.broadcast(`team:${room.teamCode}`, 'team_snapshot', snapshot);
     sseHub.broadcast('admin', 'room_snapshot', snapshot);
-    sseHub.broadcast('admin', 'admin_telemetry', this.getTelemetry());
+    this.scheduleTelemetryBroadcast();
   }
 
   /**
    * Finalizes an IN_SPRINT room if all active members have either completed their sessions
    * or passed the authoritative 120s + 2.5s network transit grace submission cutoff.
    */
-  public checkAndFinalizeIfExpired(room: TeamRoom): void {
+  public checkAndFinalizeIfExpired(room: TeamRoom, graceMs = 2500): void {
     if (room.status !== 'IN_SPRINT' || room.isPaused) return;
     const now = Date.now();
     const activeMembers = Array.from(room.members.values()).filter(m => !m.isExcused);
@@ -1019,7 +1058,7 @@ export class RoomManager {
       if (!m.activeSessionId) return true;
       const sess = this.sessions.get(m.activeSessionId);
       if (!sess || sess.isFinished) return true;
-      return now > sess.expiresAt + 2500;
+      return now > sess.expiresAt + graceMs;
     });
 
     if (allExpiredOrFinished) {
@@ -1112,7 +1151,11 @@ export class RoomManager {
       }
     }
 
-    const memoryUsage = process.memoryUsage();
+    const now = Date.now();
+    if (now - this.lastRssAt > 250 || this.cachedRssMb === 0) {
+      this.cachedRssMb = Number((process.memoryUsage().rss / (1024 * 1024)).toFixed(1));
+      this.lastRssAt = now;
+    }
 
     return {
       activeRooms: this.rooms.size,
@@ -1120,7 +1163,7 @@ export class RoomManager {
       completedSprinters,
       windowOpen: windowManager.isOpen(),
       serverCpuPercent: 0,
-      rssMemoryMb: Number((memoryUsage.rss / (1024 * 1024)).toFixed(1))
+      rssMemoryMb: this.cachedRssMb
     };
   }
 
@@ -1402,12 +1445,17 @@ export class RoomManager {
    * Clears all room state (useful for test resets).
    */
   public clear(): void {
+    if (this.telemetryTimer) {
+      clearTimeout(this.telemetryTimer);
+      this.telemetryTimer = null;
+    }
     for (const teamCode of this.rooms.keys()) {
       this.clearRoomTimers(teamCode);
     }
     this.rooms.clear();
     this.sessions.clear();
     this.rollToTeamMap.clear();
+    this.roomUsedPairKeys.clear();
     this.auditLogs = [];
     this.lastQuestionTimes.clear();
     leaderboardManager.clear();

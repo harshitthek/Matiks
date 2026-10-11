@@ -105,6 +105,13 @@ export function ArenaView({
 
     const sse = connectTeamStream(teamCode, memberToken, {
       onSnapshot: (data) => {
+        if (
+          isFinishedRef.current &&
+          (data?.status === 'AWAITING_READY' || data?.status === 'LOBBY')
+        ) {
+          onReturnToLobby?.();
+          return;
+        }
         if (Array.isArray(data?.members)) {
           setTeammates(
             data.members.map((m) => ({
@@ -165,7 +172,7 @@ export function ArenaView({
     return () => {
       sse.disconnect();
     };
-  }, [teamCode, memberToken]);
+  }, [teamCode, memberToken, onReturnToLobby]);
 
   // Clean up flash and floating callout timers
   useEffect(() => {
