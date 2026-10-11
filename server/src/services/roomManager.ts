@@ -829,11 +829,13 @@ export class RoomManager {
   }
 
   /**
-   * Broadcasts complete room snapshot to team members over SSE.
+   * Broadcasts complete room snapshot to team members and admin over SSE.
    */
   public broadcastSnapshot(room: TeamRoom): void {
     const snapshot = this.getSnapshot(room);
     sseHub.broadcast(`team:${room.teamCode}`, 'team_snapshot', snapshot);
+    sseHub.broadcast('admin', 'room_snapshot', snapshot);
+    sseHub.broadcast('admin', 'admin_telemetry', this.getTelemetry());
   }
 
   /**
@@ -864,6 +866,8 @@ export class RoomManager {
       teamName: room.teamName,
       targetSize: room.targetSize,
       status: room.status,
+      isPaused: room.isPaused,
+      startedAt: room.startedAt,
       members: membersList,
       allReady,
       contestWindow: {
@@ -871,6 +875,13 @@ export class RoomManager {
         closesAt: windowConfig.closesAt
       }
     };
+  }
+
+  /**
+   * Returns sanitized snapshots for all active rooms.
+   */
+  public getAllRooms(): TeamSnapshotEvent[] {
+    return Array.from(this.rooms.values()).map(r => this.getSnapshot(r));
   }
 
   /**

@@ -6,8 +6,36 @@
  */
 
 import type { Request, Response } from 'express';
+import { randomUUID } from 'node:crypto';
 import { roomManager } from '../services/roomManager.js';
 import { windowManager } from '../services/windowManager.js';
+
+const adminStreamTickets = new Map<string, number>();
+
+export function issueAdminStreamTicketHandler(req: Request, res: Response): void {
+  const now = Date.now();
+  for (const [t, exp] of adminStreamTickets) {
+    if (now > exp) {
+      adminStreamTickets.delete(t);
+    }
+  }
+
+  const ticket = randomUUID();
+  adminStreamTickets.set(ticket, now + 60_000);
+  setTimeout(() => {
+    adminStreamTickets.delete(ticket);
+  }, 60_000);
+
+  res.status(200).json({ success: true, ticket });
+}
+
+export function isValidAdminStreamTicket(ticket?: string): boolean {
+  if (!ticket || typeof ticket !== 'string') return false;
+  const expiresAt = adminStreamTickets.get(ticket);
+  if (!expiresAt) return false;
+  adminStreamTickets.delete(ticket); // Single-use consumption
+  return Date.now() <= expiresAt;
+}
 
 export function toggleWindowHandler(req: Request, res: Response): void {
   try {
@@ -99,4 +127,8 @@ export function getAuditLogsHandler(req: Request, res: Response): void {
 
 export function getTelemetryHandler(req: Request, res: Response): void {
   res.status(200).json(roomManager.getTelemetry());
+}
+
+export function getAllRoomsHandler(req: Request, res: Response): void {
+  res.status(200).json({ success: true, rooms: roomManager.getAllRooms() });
 }

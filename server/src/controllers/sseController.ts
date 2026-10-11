@@ -14,6 +14,7 @@ import { leaderboardManager } from '../services/leaderboardManager.js';
 import { windowManager } from '../services/windowManager.js';
 import { mathEngine } from '../services/mathEngine.js';
 import { isValidAdminToken } from '../config/env.js';
+import { isValidAdminStreamTicket } from './adminController.js';
 
 const memberStreamCounts = new Map<string, number>();
 
@@ -118,15 +119,16 @@ export function sseLeaderboardHandler(req: Request, res: Response): void {
 }
 
 export function sseAdminHandler(req: Request, res: Response): void {
-  const queryToken = req.query['token'] as string | undefined;
+  const queryTicket = req.query['ticket'] as string | undefined;
   const authHeader = req.headers['authorization'];
-  let providedToken = queryToken;
+  let providedToken: string | undefined;
 
-  if (!providedToken && authHeader) {
+  if (authHeader) {
     providedToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();
   }
 
-  if (!isValidAdminToken(providedToken)) {
+  const isAuthorized = isValidAdminStreamTicket(queryTicket) || isValidAdminToken(providedToken);
+  if (!isAuthorized) {
     res.status(401).json({ error: 'UNAUTHORIZED_ADMIN_ACCESS' });
     return;
   }

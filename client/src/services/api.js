@@ -113,3 +113,108 @@ export async function submitAnswer(sessionId, questionIndex, answer, clientDelta
     })
   });
 }
+
+/**
+ * Synchronizes client clock with authoritative server timestamp.
+ */
+export async function syncClientClock() {
+  return request('/sprint/sync');
+}
+
+/**
+ * Admin: Toggles the contest window open or closed.
+ */
+export async function toggleContestWindow(open, durationMinutes, ticker, adminToken) {
+  return request('/admin/window/toggle', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': adminToken || ''
+    },
+    body: JSON.stringify({ open, durationMinutes, ticker })
+  });
+}
+
+/**
+ * Admin: Excuses a member whose device crashed or disconnected ([EXCUSE MEMBER]).
+ */
+export async function excuseMember(teamCode, rollNumber, reason, adminToken) {
+  return request(`/admin/teams/${encodeURIComponent(teamCode)}/excuse-member`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': adminToken || ''
+    },
+    body: JSON.stringify({ rollNumber, reason })
+  });
+}
+
+/**
+ * Admin: Pauses a team room sprint.
+ */
+export async function pauseTeam(teamCode, adminToken) {
+  return request(`/admin/teams/${encodeURIComponent(teamCode)}/pause`, {
+    method: 'POST',
+    headers: {
+      'x-admin-token': adminToken || ''
+    }
+  });
+}
+
+/**
+ * Admin: Resumes a paused team room sprint.
+ */
+export async function resumeTeam(teamCode, adminToken) {
+  return request(`/admin/teams/${encodeURIComponent(teamCode)}/resume`, {
+    method: 'POST',
+    headers: {
+      'x-admin-token': adminToken || ''
+    }
+  });
+}
+
+/**
+ * Admin: Fetches live telemetry stats.
+ */
+export async function getAdminTelemetry(adminToken) {
+  return request('/admin/telemetry', {
+    headers: {
+      'x-admin-token': adminToken || ''
+    }
+  });
+}
+
+/**
+ * Admin: Fetches all active rooms and their member snapshots.
+ */
+export async function getAdminRooms(adminToken) {
+  return request('/admin/rooms', {
+    headers: {
+      'x-admin-token': adminToken || ''
+    }
+  });
+}
+
+/**
+ * Admin: Fetches immutable audit logs.
+ */
+export async function getAdminAuditLogs(adminToken) {
+  return request('/admin/audit-logs', {
+    headers: {
+      'x-admin-token': adminToken || ''
+    }
+  });
+}
+
+/**
+ * Admin: Obtains an ephemeral single-use ticket to connect to the SSE admin stream.
+ */
+export async function getAdminStreamTicket(adminToken) {
+  return request('/admin/stream-ticket', {
+    method: 'POST',
+    headers: {
+      'x-admin-token': adminToken || ''
+    }
+  });
+}
+

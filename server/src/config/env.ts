@@ -15,7 +15,11 @@ export function getAdminSecret(): string {
     }
     throw new Error('FATAL: ADMIN_SECRET environment variable is required and must not be empty.');
   }
-  return secret.trim();
+  const trimmed = secret.trim();
+  if (process.env.NODE_ENV === 'production' && trimmed === 'hackathon_admin_secret') {
+    throw new Error('FATAL: ADMIN_SECRET must not use the default development secret in production.');
+  }
+  return trimmed;
 }
 
 export const ADMIN_SECRET = getAdminSecret();

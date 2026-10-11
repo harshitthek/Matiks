@@ -124,6 +124,8 @@ export interface TeamSnapshotEvent {
   teamName: string;
   targetSize: number;
   status: RoomStatus;
+  isPaused?: boolean;
+  startedAt?: number;
   members: {
     rollNumber: string;
     name: string;

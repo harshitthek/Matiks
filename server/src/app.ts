@@ -26,7 +26,9 @@ import {
   pauseTeamHandler,
   resumeTeamHandler,
   getAuditLogsHandler,
-  getTelemetryHandler
+  getTelemetryHandler,
+  getAllRoomsHandler,
+  issueAdminStreamTicketHandler
 } from './controllers/adminController.js';
 
 import {
@@ -71,6 +73,8 @@ export function createApp(): express.Application {
   app.post('/api/admin/teams/:teamCode/resume', requireAdminAuth, resumeTeamHandler);
   app.get('/api/admin/audit-logs', requireAdminAuth, getAuditLogsHandler);
   app.get('/api/admin/telemetry', requireAdminAuth, getTelemetryHandler);
+  app.get('/api/admin/rooms', requireAdminAuth, getAllRoomsHandler);
+  app.post('/api/admin/stream-ticket', requireAdminAuth, issueAdminStreamTicketHandler);
 
   return app;
 }

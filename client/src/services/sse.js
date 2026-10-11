@@ -201,3 +201,328 @@ export function connectTeamStream(teamCode, token, handlers = {}) {
     reconnect
   };
 }
+
+/**
+ * Connects to the public Auditorium Big-Screen Leaderboard SSE stream (/api/sse/leaderboard).
+ * Zero Question Leak Guarantee (ADR-08): Macro telemetry only.
+ */
+export function connectLeaderboardStream(handlers = {}) {
+  let eventSource = null;
+  let keepaliveTimer = null;
+  let isIntentionallyClosed = false;
+  let retryTimeout = null;
+  let retryAttempts = 0;
+  const BASE_RETRY_DELAY_MS = 1000;
+  const MAX_RETRY_DELAY_MS = 15000;
+
+  const resetKeepaliveWatchdog = () => {
+    if (keepaliveTimer) clearTimeout(keepaliveTimer);
+    keepaliveTimer = setTimeout(() => {
+      console.warn('[SSE:Leaderboard] Heartbeat timed out (>25s). Reconnecting...');
+      reconnect();
+    }, 25_000);
+  };
+
+  const init = () => {
+    if (isIntentionallyClosed) return;
+
+    if (retryTimeout) {
+      clearTimeout(retryTimeout);
+      retryTimeout = null;
+    }
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+
+    eventSource = new EventSource('/api/sse/leaderboard');
+
+    const markConnectionHealthy = () => {
+      retryAttempts = 0;
+      resetKeepaliveWatchdog();
+    };
+
+    eventSource.onopen = () => {
+      handlers.onConnectionChange?.(true);
+      resetKeepaliveWatchdog();
+    };
+
+    eventSource.onerror = (err) => {
+      console.warn('[SSE:Leaderboard] Connection error:', err);
+      handlers.onConnectionChange?.(false);
+      handlers.onError?.(err);
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      if (keepaliveTimer) {
+        clearTimeout(keepaliveTimer);
+        keepaliveTimer = null;
+      }
+
+      if (!isIntentionallyClosed) {
+        if (retryTimeout) clearTimeout(retryTimeout);
+        const delay = Math.min(BASE_RETRY_DELAY_MS * Math.pow(1.5, retryAttempts), MAX_RETRY_DELAY_MS);
+        retryAttempts++;
+        retryTimeout = setTimeout(() => {
+          init();
+        }, delay);
+      }
+    };
+
+    eventSource.addEventListener('leaderboard_update', (e) => {
+      markConnectionHealthy();
+      try {
+        const data = JSON.parse(e.data);
+        handlers.onLeaderboardUpdate?.(data);
+      } catch (err) {
+        console.error('[SSE:Leaderboard] Parse error:', err);
+      }
+    });
+
+    eventSource.addEventListener('window_status', (e) => {
+      markConnectionHealthy();
+      try {
+        const data = JSON.parse(e.data);
+        handlers.onWindowStatus?.(data);
+      } catch (err) {
+        console.error('[SSE:Leaderboard] Window status parse error:', err);
+      }
+    });
+  };
+
+  const reconnect = () => {
+    retryAttempts = 0;
+    if (retryTimeout) {
+      clearTimeout(retryTimeout);
+      retryTimeout = null;
+    }
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+    init();
+  };
+
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible' && !isIntentionallyClosed) {
+      if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
+        reconnect();
+      }
+    }
+  };
+
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  init();
+
+  return {
+    disconnect: () => {
+      isIntentionallyClosed = true;
+      retryAttempts = 0;
+      if (keepaliveTimer) clearTimeout(keepaliveTimer);
+      if (retryTimeout) clearTimeout(retryTimeout);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      handlers.onConnectionChange?.(false);
+    },
+    reconnect
+  };
+}
+
+/**
+ * Connects to the Organizer Command Center Telemetry SSE stream (/api/sse/admin).
+ */
+export function connectAdminStream(adminToken, handlers = {}) {
+  let eventSource = null;
+  let keepaliveTimer = null;
+  let isIntentionallyClosed = false;
+  let retryTimeout = null;
+  let retryAttempts = 0;
+  let connectionGen = 0;
+  const BASE_RETRY_DELAY_MS = 1000;
+  const MAX_RETRY_DELAY_MS = 15000;
+
+  const resetKeepaliveWatchdog = () => {
+    if (keepaliveTimer) clearTimeout(keepaliveTimer);
+    keepaliveTimer = setTimeout(() => {
+      console.warn('[SSE:Admin] Heartbeat timed out (>25s). Reconnecting...');
+      reconnect();
+    }, 25_000);
+  };
+
+  const markConnectionHealthy = () => {
+    retryAttempts = 0;
+    resetKeepaliveWatchdog();
+  };
+
+  const scheduleRetry = () => {
+    if (isIntentionallyClosed) return;
+    if (retryTimeout) clearTimeout(retryTimeout);
+    const delay = Math.min(BASE_RETRY_DELAY_MS * Math.pow(1.5, retryAttempts), MAX_RETRY_DELAY_MS);
+    retryAttempts++;
+    retryTimeout = setTimeout(() => {
+      init();
+    }, delay);
+  };
+
+  const init = async () => {
+    if (isIntentionallyClosed) return;
+
+    if (retryTimeout) {
+      clearTimeout(retryTimeout);
+      retryTimeout = null;
+    }
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+
+    const currentGen = ++connectionGen;
+    let ticket = null;
+
+    try {
+      const ticketRes = await fetch('/api/admin/stream-ticket', {
+        method: 'POST',
+        headers: { 'x-admin-token': adminToken || '' }
+      });
+      if (ticketRes.status === 401 || ticketRes.status === 403) {
+        handlers.onConnectionChange?.(false);
+        handlers.onError?.({ status: ticketRes.status });
+        return;
+      }
+      if (ticketRes.ok) {
+        const ticketData = await ticketRes.json();
+        ticket = ticketData?.ticket;
+      }
+    } catch (err) {
+      console.warn('[SSE:Admin] Ticket retrieval error:', err);
+    }
+
+    if (isIntentionallyClosed || currentGen !== connectionGen) return;
+
+    if (!ticket) {
+      console.warn('[SSE:Admin] Failed to acquire stream ticket. Retrying with backoff...');
+      scheduleRetry();
+      return;
+    }
+
+    const url = `/api/sse/admin?ticket=${encodeURIComponent(ticket)}`;
+    eventSource = new EventSource(url);
+
+    eventSource.onopen = () => {
+      handlers.onConnectionChange?.(true);
+      resetKeepaliveWatchdog();
+    };
+
+    eventSource.onerror = (err) => {
+      console.warn('[SSE:Admin] Connection error:', err);
+      handlers.onConnectionChange?.(false);
+      handlers.onError?.(err);
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      if (keepaliveTimer) {
+        clearTimeout(keepaliveTimer);
+        keepaliveTimer = null;
+      }
+
+      scheduleRetry();
+    };
+
+    eventSource.addEventListener('admin_telemetry', (e) => {
+      markConnectionHealthy();
+      try {
+        const data = JSON.parse(e.data);
+        handlers.onTelemetry?.(data);
+      } catch (err) {
+        console.error('[SSE:Admin] Telemetry parse error:', err);
+      }
+    });
+
+    eventSource.addEventListener('leaderboard_update', (e) => {
+      markConnectionHealthy();
+      try {
+        const data = JSON.parse(e.data);
+        handlers.onLeaderboardUpdate?.(data);
+      } catch (err) {
+        console.error('[SSE:Admin] Leaderboard parse error:', err);
+      }
+    });
+
+    eventSource.addEventListener('window_status', (e) => {
+      markConnectionHealthy();
+      try {
+        const data = JSON.parse(e.data);
+        handlers.onWindowStatus?.(data);
+      } catch (err) {
+        console.error('[SSE:Admin] Window status parse error:', err);
+      }
+    });
+
+    eventSource.addEventListener('room_snapshot', (e) => {
+      markConnectionHealthy();
+      try {
+        const data = JSON.parse(e.data);
+        handlers.onRoomSnapshot?.(data);
+      } catch (err) {
+        console.error('[SSE:Admin] Room snapshot parse error:', err);
+      }
+    });
+
+    eventSource.addEventListener('anomaly_flag', (e) => {
+      markConnectionHealthy();
+      try {
+        const data = JSON.parse(e.data);
+        handlers.onAnomalyFlag?.(data);
+      } catch (err) {
+        console.error('[SSE:Admin] Anomaly flag parse error:', err);
+      }
+    });
+  };
+
+  const reconnect = () => {
+    connectionGen++;
+    retryAttempts = 0;
+    if (retryTimeout) {
+      clearTimeout(retryTimeout);
+      retryTimeout = null;
+    }
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+    init();
+  };
+
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible' && !isIntentionallyClosed) {
+      if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
+        reconnect();
+      }
+    }
+  };
+
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  init();
+
+  return {
+    disconnect: () => {
+      connectionGen++;
+      isIntentionallyClosed = true;
+      retryAttempts = 0;
+      if (keepaliveTimer) clearTimeout(keepaliveTimer);
+      if (retryTimeout) clearTimeout(retryTimeout);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      handlers.onConnectionChange?.(false);
+    },
+    reconnect
+  };
+}
