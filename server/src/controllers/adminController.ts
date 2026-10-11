@@ -22,9 +22,10 @@ export function issueAdminStreamTicketHandler(req: Request, res: Response): void
 
   const ticket = randomUUID();
   adminStreamTickets.set(ticket, now + 60_000);
-  setTimeout(() => {
+  const cleanupTimer = setTimeout(() => {
     adminStreamTickets.delete(ticket);
   }, 60_000);
+  cleanupTimer.unref?.();
 
   res.status(200).json({ success: true, ticket });
 }

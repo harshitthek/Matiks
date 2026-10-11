@@ -525,6 +525,7 @@ export class RoomManager {
         console.error(`Error during sprint timeout for team ${room.teamCode}:`, err);
       }
     }, 122_500);
+    autoClose.unref?.();
     this.expiryTimers.set(room.teamCode, autoClose);
   }
 
@@ -908,6 +909,7 @@ export class RoomManager {
             console.error(`Error during resumed sprint timeout for team ${room.teamCode}:`, err);
           }
         }, maxRemaining);
+        autoClose.unref?.();
         this.expiryTimers.set(room.teamCode, autoClose);
       }
     }
