@@ -132,3 +132,25 @@ export function getTelemetryHandler(req: Request, res: Response): void {
 export function getAllRoomsHandler(req: Request, res: Response): void {
   res.status(200).json({ success: true, rooms: roomManager.getAllRooms() });
 }
+
+export function simulateTeamsHandler(req: Request, res: Response): void {
+  try {
+    const rawCount = req.body?.count;
+    const count = typeof rawCount === 'number' && Number.isInteger(rawCount) && rawCount > 0 ? rawCount : 5;
+    const generatedCodes = roomManager.simulateTeams(count);
+    res.status(200).json({ success: true, count: generatedCodes.length, generatedCodes });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to simulate teams';
+    res.status(400).json({ error: message });
+  }
+}
+
+export function clearSimulatedTeamsHandler(_req: Request, res: Response): void {
+  try {
+    roomManager.clearSimulatedTeams();
+    res.status(200).json({ success: true, message: 'Simulated demo teams cleared.' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to clear simulated teams';
+    res.status(400).json({ error: message });
+  }
+}

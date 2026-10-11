@@ -5,7 +5,10 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "test": "tsx --import ./tests/setup.ts --test tests/mathEngine.test.ts tests/roomManager.test.ts",
+    "test": "tsx --import ./tests/setup.ts --test --test-concurrency=1 tests/mathEngine.test.ts tests/roomManager.test.ts tests/chaosNetworkTest.ts tests/loadTest.ts",
+    "test:unit": "tsx --import ./tests/setup.ts --test tests/mathEngine.test.ts tests/roomManager.test.ts",
+    "test:chaos": "tsx --import ./tests/setup.ts --test tests/chaosNetworkTest.ts",
+    "test:load": "tsx --import ./tests/setup.ts --test tests/loadTest.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts"

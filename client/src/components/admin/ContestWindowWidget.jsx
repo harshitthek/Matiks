@@ -5,7 +5,13 @@ import { TactileButton } from '../common/TactileButton.jsx';
  * Contest Window Controller Widget for Hackathon Organizers.
  * Allows opening/closing the global window and setting announcement tickers.
  */
-export function ContestWindowWidget({ windowStatus, onToggleWindow, isLoading }) {
+export function ContestWindowWidget({
+  windowStatus,
+  onToggleWindow,
+  onSimulateTeams,
+  onClearSimulatedTeams,
+  isLoading
+}) {
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [ticker, setTicker] = useState('SPEED SPRINT ROUND 1 IS LIVE!');
   const [showConfig, setShowConfig] = useState(false);
@@ -41,6 +47,30 @@ export function ContestWindowWidget({ windowStatus, onToggleWindow, isLoading })
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {onSimulateTeams && (
+            <TactileButton
+              variant="butter"
+              onClick={onSimulateTeams}
+              disabled={isLoading}
+              className="px-3.5 py-2.5 text-xs font-bold"
+              title="Populates 5 demo teams on the leaderboard to test 4K projector display"
+            >
+              🎲 SIMULATE 5 TEAMS
+            </TactileButton>
+          )}
+
+          {onClearSimulatedTeams && (
+            <TactileButton
+              variant="muted"
+              onClick={onClearSimulatedTeams}
+              disabled={isLoading}
+              className="px-3 py-2.5 text-xs font-bold"
+              title="Clears all demo simulated teams"
+            >
+              🧹 CLEAR DEMO
+            </TactileButton>
+          )}
+
           {isOpen ? (
             <TactileButton
               variant="ember"

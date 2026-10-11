@@ -102,7 +102,9 @@ export type AuditAction =
   | 'ROOM_PAUSE'
   | 'ROOM_RESUME'
   | 'WINDOW_TOGGLE'
-  | 'REATTEMPT_GRANTED';
+  | 'REATTEMPT_GRANTED'
+  | 'ADMIN_SIMULATE_TEAMS'
+  | 'ADMIN_CLEAR_SIMULATED_TEAMS';
 
 export interface AuditRecord {
   id: string;
@@ -112,7 +114,7 @@ export interface AuditRecord {
   rollNumber?: string;
   adminId: string;
   reason?: string;
-  details?: Record<string, unknown>;
+  details?: string | Record<string, unknown>;
 }
 
 // -------------------------------------------------------------------------

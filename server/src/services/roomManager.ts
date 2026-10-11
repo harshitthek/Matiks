@@ -578,7 +578,7 @@ export class RoomManager {
     this.clearRoomTimers(room.teamCode);
 
     this.broadcastSnapshot(room);
-    this.syncLeaderboard(room);
+    this.syncLeaderboard(room, true);
   }
 
   /**
@@ -626,6 +626,11 @@ export class RoomManager {
       throw new Error(`Member ${cleanRoll} not found in team ${teamCode}.`);
     }
 
+    const activeMembers = Array.from(room.members.values()).filter(m => !m.isExcused);
+    if (activeMembers.length <= 1 && activeMembers.some(m => m.rollNumber === cleanRoll)) {
+      throw new Error(`Cannot excuse the last remaining active member in team ${teamCode}.`);
+    }
+
     member.isExcused = true;
     member.isReady = false;
 
@@ -638,9 +643,9 @@ export class RoomManager {
     }
 
     // Recalculate active members and team average
-    const activeMembers = Array.from(room.members.values()).filter(m => !m.isExcused);
-    const activeCount = activeMembers.length;
-    const totalScore = activeMembers.reduce((sum, m) => sum + m.individualScore, 0);
+    const remainingActive = Array.from(room.members.values()).filter(m => !m.isExcused);
+    const activeCount = remainingActive.length;
+    const totalScore = remainingActive.reduce((sum, m) => sum + m.individualScore, 0);
     const newAverage = activeCount > 0 ? Number((totalScore / activeCount).toFixed(2)) : 0;
 
     const auditId = `aud_excuse_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -660,7 +665,7 @@ export class RoomManager {
     this.auditLogs.push(auditRecord);
 
     this.broadcastSnapshot(room);
-    this.syncLeaderboard(room);
+    this.syncLeaderboard(room, true);
 
     // If room is in sprint, recheck if remaining active members are all finished
     if (room.status === 'IN_SPRINT') {
@@ -785,9 +790,9 @@ export class RoomManager {
   /**
    * Synchronizes team average score and telemetry with the LeaderboardManager.
    */
-  private syncLeaderboard(room: TeamRoom): void {
+  private syncLeaderboard(room: TeamRoom, immediate = false): void {
     if (room.status === 'LOBBY') {
-      leaderboardManager.removeTeam(room.teamCode);
+      leaderboardManager.removeTeam(room.teamCode, immediate);
       return;
     }
 
@@ -825,7 +830,7 @@ export class RoomManager {
       status
     };
 
-    leaderboardManager.updateTeam(entry);
+    leaderboardManager.updateTeam(entry, immediate);
   }
 
   /**
@@ -930,6 +935,134 @@ export class RoomManager {
       serverCpuPercent: 0,
       rssMemoryMb: Number((memoryUsage.rss / (1024 * 1024)).toFixed(1))
     };
+  }
+
+  /**
+   * Generates simulated demo teams with realistic scores to verify projector
+   * animations and leaderboard rank swaps prior to hackathon launch.
+   */
+  public simulateTeams(count = 5): string[] {
+    const demoPresets = [
+      { name: 'Cyber Phantoms', code: 'SIM-01', scores: [2840, 2690, 2720], time: 74.2 },
+      { name: 'Binary Blitz', code: 'SIM-02', scores: [2510, 2480, 2550], time: 82.5 },
+      { name: 'Quantum Vectors', code: 'SIM-03', scores: [2380, 2290, 2340], time: 89.1 },
+      { name: 'Logic Overlords', code: 'SIM-04', scores: [2190, 2080, 2120], time: 94.6 },
+      { name: 'Hexadecimal Hounds', code: 'SIM-05', scores: [1950, 1890, 1920], time: 101.4 },
+      { name: 'Null Pointers', code: 'SIM-06', scores: [1780, 1720, 1750], time: 108.0 },
+      { name: 'Kernel Panic', code: 'SIM-07', scores: [1590, 1620, 1550], time: 112.3 }
+    ];
+
+    const actualCount = Math.min(count, demoPresets.length);
+    const generatedCodes: string[] = [];
+
+    for (let i = 0; i < actualCount; i++) {
+      const preset = demoPresets[i];
+      // Clean up previous if existed
+      const existingRoom = this.rooms.get(preset.code);
+      if (existingRoom) {
+        for (const prevRoll of existingRoom.members.keys()) {
+          this.rollToTeamMap.delete(prevRoll);
+        }
+      }
+      this.rooms.delete(preset.code);
+      leaderboardManager.removeTeam(preset.code, false);
+
+      const members = new Map<string, TeamMember>();
+      const memberNames = ['Dev', 'Alex', 'Sam'];
+      preset.scores.forEach((score, mIdx) => {
+        const roll = `SIM_${preset.code.replace('-', '_')}_${mIdx + 1}`;
+        this.rollToTeamMap.set(roll, preset.code);
+        members.set(roll, {
+          rollNumber: roll,
+          name: `${memberNames[mIdx]} (${preset.name.split(' ')[0]})`,
+          isCaptain: mIdx === 0,
+          isReady: true,
+          isExcused: false,
+          connected: true,
+          token: `sim_token_${roll}`,
+          individualScore: score,
+          completedQuestions: 15,
+          lastActiveAt: Date.now()
+        });
+      });
+
+      const avgScore = Number((preset.scores.reduce((a, b) => a + b, 0) / preset.scores.length).toFixed(2));
+
+      const room: TeamRoom = {
+        teamCode: preset.code,
+        teamName: preset.name,
+        targetSize: 3,
+        status: 'FINISHED',
+        members,
+        isPaused: false,
+        createdAt: Date.now() - 120_000,
+        startedAt: Date.now() - 120_000,
+        completedAt: Date.now() - (120_000 - preset.time * 1000)
+      };
+
+      this.rooms.set(preset.code, room);
+      generatedCodes.push(preset.code);
+
+      leaderboardManager.updateTeam({
+        teamCode: preset.code,
+        teamName: preset.name,
+        teamAverageScore: avgScore,
+        membersCount: 3,
+        activeMembersCount: 3,
+        averageTimeSeconds: preset.time,
+        memberBreakdown: Array.from(members.values()).map(m => ({
+          name: m.name,
+          score: m.individualScore,
+          completedQuestions: 15,
+          isExcused: false
+        })),
+        status: 'FINISHED'
+      }, false);
+    }
+
+    leaderboardManager.broadcastLeaderboard();
+
+    this.auditLogs.push({
+      id: `aud_sim_${Date.now()}`,
+      timestamp: Date.now(),
+      action: 'ADMIN_SIMULATE_TEAMS',
+      teamCode: 'SYSTEM',
+      adminId: 'ORGANIZER',
+      details: `Generated ${actualCount} simulated demo teams.`
+    });
+
+    sseHub.broadcast('admin', 'admin_telemetry', this.getTelemetry());
+    return generatedCodes;
+  }
+
+  /**
+   * Clears simulated demo teams from memory and leaderboard.
+   */
+  public clearSimulatedTeams(): void {
+    const simCodes = Array.from(this.rooms.keys()).filter(code => code.startsWith('SIM-'));
+    for (const code of simCodes) {
+      const room = this.rooms.get(code);
+      if (room) {
+        for (const roll of room.members.keys()) {
+          this.rollToTeamMap.delete(roll);
+        }
+      }
+      this.rooms.delete(code);
+      leaderboardManager.removeTeam(code, false);
+    }
+
+    leaderboardManager.broadcastLeaderboard();
+
+    this.auditLogs.push({
+      id: `aud_sim_clear_${Date.now()}`,
+      timestamp: Date.now(),
+      action: 'ADMIN_CLEAR_SIMULATED_TEAMS',
+      teamCode: 'SYSTEM',
+      adminId: 'ORGANIZER',
+      details: `Cleared ${simCodes.length} simulated demo teams.`
+    });
+
+    sseHub.broadcast('admin', 'admin_telemetry', this.getTelemetry());
   }
 
   /**

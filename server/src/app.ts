@@ -28,7 +28,9 @@ import {
   getAuditLogsHandler,
   getTelemetryHandler,
   getAllRoomsHandler,
-  issueAdminStreamTicketHandler
+  issueAdminStreamTicketHandler,
+  simulateTeamsHandler,
+  clearSimulatedTeamsHandler
 } from './controllers/adminController.js';
 
 import {
@@ -75,6 +77,8 @@ export function createApp(): express.Application {
   app.get('/api/admin/telemetry', requireAdminAuth, getTelemetryHandler);
   app.get('/api/admin/rooms', requireAdminAuth, getAllRoomsHandler);
   app.post('/api/admin/stream-ticket', requireAdminAuth, issueAdminStreamTicketHandler);
+  app.post('/api/admin/simulate-teams', requireAdminAuth, simulateTeamsHandler);
+  app.post('/api/admin/clear-simulated-teams', requireAdminAuth, clearSimulatedTeamsHandler);
 
   return app;
 }

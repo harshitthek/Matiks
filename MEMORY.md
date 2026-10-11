@@ -131,7 +131,8 @@
 | **Phase 1** | Math Generation & Difficulty Normalization | **Completed** | Deterministic 4-bucket carry taxonomy, O(1) sum convergence, anti-chunking filters, 23/23 tests. |
 | **Phase 2** | Real-time SSE Hub & State Machine | **Completed** | Room lifecycle machine, atomic ready gate, parallel player dispatch, anti-cheat latency watchdog. |
 | **Phase 3** | Frontend UFC UI Primitives & Team Lobby | **Baseline (Incomplete)** | Tactile sticker UI, ransom tiles, washi tape, roster presence, and atomic ready gate functional; marked incomplete to revisit for deep tactile polish after full pipeline setup. |
-| **Phase 4** | 2-Minute Sprint Arena (Reflex Mode) | **Upcoming** | 60fps locked, custom tactile numpad with Thumb-Enter, physical Zetamac listeners, perimeter flash. |
-| **Phase 5** | Projector Leaderboard & Admin Command Center | **Upcoming** | Macro-telemetry stream, podium swaps, room excuse/pause controls, anti-cheat audit. |
-| **Phase 6** | Club OIDC Adapter & Concurrency Stress Test | **Upcoming** | FOSS club auth adapter, 50-team load simulation. |
+| **Phase 4** | 2-Minute Sprint Arena (Reflex Mode) | **Completed** | 60fps locked, custom tactile numpad with Thumb-Enter, physical Zetamac listeners, perimeter flash, teammate HUD. |
+| **Phase 5** | Projector Leaderboard & Admin Command Center | **Baseline (Incomplete)** | Macro-telemetry stream, 4K projector podium, room excuse/pause controls, anti-cheat audit feed; marked incomplete to revisit after pipeline setup. |
+| **Phase 6** | Chaos & Campus Wi-Fi Load Testing | **Completed** | 100 concurrent SSE streams, 30 teams/90 students, 1,350 submissions, 24.7ms avg latency (<50ms SLA), 33/33 tests pass. |
+| **Phase 7** | Club OIDC Drop-in Strategy | **Upcoming** | Pluggable IAuthProvider, FOSS club website OAuth token exchange, membership verification. |
 

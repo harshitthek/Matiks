@@ -17,7 +17,9 @@ import {
   toggleContestWindow,
   excuseMember,
   pauseTeam,
-  resumeTeam
+  resumeTeam,
+  simulateTeams,
+  clearSimulatedTeams
 } from '../../services/api.js';
 import { connectAdminStream } from '../../services/sse.js';
 
@@ -238,6 +240,39 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
     }
   };
 
+  // Handle Simulate Teams
+  const handleSimulateTeams = async () => {
+    setActionLoading('simulate');
+    setActionFeedback(null);
+    try {
+      const res = await simulateTeams(5, adminToken);
+      setActionFeedback({
+        type: 'success',
+        message: `Generated ${res?.count ?? 5} simulated demo teams on the leaderboard!`
+      });
+      refreshData();
+    } catch (err) {
+      setActionFeedback({ type: 'error', message: err?.message || 'Failed to simulate teams.' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Handle Clear Simulated Teams
+  const handleClearSimulatedTeams = async () => {
+    setActionLoading('clear-simulate');
+    setActionFeedback(null);
+    try {
+      await clearSimulatedTeams(adminToken);
+      setActionFeedback({ type: 'success', message: 'Cleared simulated demo teams.' });
+      refreshData();
+    } catch (err) {
+      setActionFeedback({ type: 'error', message: err?.message || 'Failed to clear simulated teams.' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Handle Excuse Member
   const handleExcuseMember = async (teamCode, rollNumber, reason) => {
     setActionLoading(teamCode);
@@ -338,7 +373,9 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
       <ContestWindowWidget
         windowStatus={windowStatus}
         onToggleWindow={handleToggleWindow}
-        isLoading={actionLoading === 'window'}
+        onSimulateTeams={handleSimulateTeams}
+        onClearSimulatedTeams={handleClearSimulatedTeams}
+        isLoading={actionLoading === 'window' || actionLoading === 'simulate' || actionLoading === 'clear-simulate'}
       />
 
       {/* Anti-Cheat Anomaly Stream */}

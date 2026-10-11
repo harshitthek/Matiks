@@ -13,7 +13,9 @@ function isValidStringField(val: unknown, maxLength = 64): val is string {
 
 export function createTeamHandler(req: Request, res: Response): void {
   try {
-    const { teamName, targetSize, captainRoll, captainName } = req.body;
+    const { teamName, targetSize } = req.body;
+    const captainRoll = req.body.captainRoll ?? req.body.rollNumber;
+    const captainName = req.body.captainName ?? req.body.name;
 
     if (!isValidStringField(teamName) || !isValidStringField(captainRoll) || !isValidStringField(captainName)) {
       res.status(400).json({ error: 'teamName, captainRoll, and captainName must be non-empty strings up to 64 characters.' });

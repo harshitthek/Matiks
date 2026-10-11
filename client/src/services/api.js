@@ -218,3 +218,29 @@ export async function getAdminStreamTicket(adminToken) {
   });
 }
 
+/**
+ * Admin: Generates 5 simulated teams to verify 4K projector rank swap animations.
+ */
+export async function simulateTeams(count = 5, adminToken) {
+  return request('/admin/simulate-teams', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': adminToken || ''
+    },
+    body: JSON.stringify({ count })
+  });
+}
+
+/**
+ * Admin: Clears simulated demo teams from leaderboard and memory.
+ */
+export async function clearSimulatedTeams(adminToken) {
+  return request('/admin/clear-simulated-teams', {
+    method: 'POST',
+    headers: {
+      'x-admin-token': adminToken || ''
+    }
+  });
+}
+
