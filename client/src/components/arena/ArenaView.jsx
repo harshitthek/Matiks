@@ -415,33 +415,33 @@ export function ArenaView({
   }
 
   return (
-    <div className="w-full max-w-2xl mx-auto px-4 py-4 sm:py-6">
+    <div className="w-full max-w-2xl mx-auto px-3 sm:px-4 py-1.5 sm:py-6">
       {/* Top Header Telemetry */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b-2 border-[#2ee58f]/20">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2 sm:mb-4 pb-2 sm:pb-3 border-b-2 border-[#2ee58f]/20">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button
             type="button"
             onClick={() => setShowExitConfirm(true)}
-            className="font-mono text-xs text-[#aab5ac] hover:text-[#ffe36e] px-2 py-0.5 border border-white/15 hover:border-[#ffe36e] transition-colors cursor-pointer"
+            className="font-mono text-[11px] sm:text-xs text-[#aab5ac] hover:text-[#ffe36e] px-2 py-0.5 border border-white/15 hover:border-[#ffe36e] transition-colors cursor-pointer"
             title="Return to Squad Lobby"
           >
             ← LOBBY
           </button>
-          <span className="font-mono text-xs font-bold bg-[#ffe36e] text-[#090c0a] px-2 py-0.5 border border-[#090c0a]">
+          <span className="font-mono text-[11px] sm:text-xs font-bold bg-[#ffe36e] text-[#090c0a] px-2 py-0.5 border border-[#090c0a]">
             #{teamCode || 'SQUAD'}
           </span>
-          <span className="font-mono text-xs text-[#2ee58f] font-bold tracking-widest uppercase">
+          <span className="hidden xs:inline font-mono text-xs text-[#2ee58f] font-bold tracking-widest uppercase">
             {currentName ? `${currentName} // ` : ''}§ 02 // SPRINT ARENA
           </span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {streak >= 3 && (
-            <span className="font-mono text-xs font-bold bg-[#f5a623] text-[#090c0a] px-2 py-0.5 border border-[#090c0a] shadow-[2px_2px_0_#090c0a] animate-pulse">
+            <span className="font-mono text-[11px] sm:text-xs font-bold bg-[#f5a623] text-[#090c0a] px-2 py-0.5 border border-[#090c0a] shadow-[2px_2px_0_#090c0a] animate-pulse">
               🔥 {streak}x STREAK
             </span>
           )}
-          <span className="font-mono text-sm md:text-base font-extrabold text-[#e8ece3]">
+          <span className="font-mono text-xs sm:text-sm md:text-base font-extrabold text-[#e8ece3]">
             SCORE: <strong className="text-[#2ee58f]">{score.toLocaleString()}</strong>
           </span>
         </div>
@@ -449,7 +449,7 @@ export function ArenaView({
 
       {/* Accidental Back / Exit Confirmation Bar */}
       {(showExitConfirm || exitPromptRequested) && (
-        <div className="border-2 border-[#f5a623] bg-[#f5a623]/15 p-3.5 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-[4px_4px_0_#090c0a]">
+        <div className="border-2 border-[#f5a623] bg-[#f5a623]/15 p-3 mb-2.5 sm:mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-[4px_4px_0_#090c0a]">
           <div className="font-mono text-xs text-[#e8ece3]">
             <strong className="text-[#f5a623] uppercase block">
               ⚠️ SPRINT IN PROGRESS!
@@ -476,7 +476,7 @@ export function ArenaView({
       )}
 
       {/* Teammate Live HUD */}
-      <div className="mb-4">
+      <div className="mb-2 sm:mb-4">
         <TeammateHud
           teammates={teammates}
           currentRoll={currentRoll}
@@ -486,13 +486,13 @@ export function ArenaView({
 
       {/* Submission Error Banner */}
       {submissionError && (
-        <div className="border-2 border-[#ff6b5e] bg-[#ff6b5e]/20 p-3 mb-4 text-center font-mono text-xs font-bold text-[#ff6b5e] tracking-widest uppercase">
+        <div className="border-2 border-[#ff6b5e] bg-[#ff6b5e]/20 p-2.5 sm:p-3 mb-2.5 sm:mb-4 text-center font-mono text-xs font-bold text-[#ff6b5e] tracking-widest uppercase">
           ⚠️ {submissionError}
         </div>
       )}
 
       {/* Precision 120s Timer */}
-      <div className="mb-6">
+      <div className="mb-2.5 sm:mb-6">
         <SprintTimer
           startedAt={startedAt}
           durationSeconds={durationSeconds}
@@ -503,13 +503,13 @@ export function ArenaView({
 
       {/* Paused Overlay Notice */}
       {isPaused && (
-        <div className="border-2 border-[#f5a623] bg-[#f5a623]/20 p-4 mb-6 text-center font-mono text-xs font-bold text-[#f5a623] tracking-widest uppercase animate-pulse">
+        <div className="border-2 border-[#f5a623] bg-[#f5a623]/20 p-3 sm:p-4 mb-2.5 sm:mb-6 text-center font-mono text-xs font-bold text-[#f5a623] tracking-widest uppercase animate-pulse">
           ⚠️ SPRINT PAUSED BY ORGANIZER — TIMER FROZEN
         </div>
       )}
 
       {/* Main Equation Card (Reflex 60fps) */}
-      <div className="mb-6">
+      <div className="mb-2.5 sm:mb-6">
         <EquationCard
           question={currentQuestion}
           questionNumber={currentIndex + 1}
@@ -522,7 +522,7 @@ export function ArenaView({
       </div>
 
       {/* Tactile On-Screen Numpad for Touch / Mobile */}
-      <div className="mt-4">
+      <div className="mt-2 sm:mt-4">
         <TactileNumpad
           onDigit={handleDigit}
           onClear={handleClear}

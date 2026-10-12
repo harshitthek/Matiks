@@ -12,20 +12,33 @@ export function TactileNumpad({
   disabled = false,
   className = ''
 }) {
+  const triggerHaptic = (ms = 8) => {
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(ms);
+      }
+    } catch {
+      // Ignore vibration errors
+    }
+  };
+
   const handleDigitPress = (digit) => {
     if (disabled) return;
+    triggerHaptic(8);
     soundFx.playKeyClick();
     onDigit(digit);
   };
 
   const handleClearPress = () => {
     if (disabled) return;
+    triggerHaptic(10);
     soundFx.playKeyClick();
     onClear();
   };
 
   const handleSubmitPress = () => {
     if (disabled) return;
+    triggerHaptic(12);
     soundFx.playKeyClick();
     onSubmit();
   };
@@ -34,7 +47,7 @@ export function TactileNumpad({
 
   return (
     <div className={`w-full max-w-sm mx-auto select-none ${className}`}>
-      <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
         {/* Digits 1 through 9 */}
         {digits.map((digit) => (
           <button
@@ -42,7 +55,7 @@ export function TactileNumpad({
             type="button"
             disabled={disabled}
             onClick={() => handleDigitPress(digit)}
-            className="numpad-btn py-3.5 sm:py-4 bg-[#0f1411] hover:bg-[#161d18] active:translate-y-0.5 border-2 border-[#2ee58f]/40 hover:border-[#2ee58f] text-[#e8ece3] font-display font-bold text-2xl sm:text-3xl shadow-[3px_3px_0_#090c0a] transition-all cursor-pointer"
+            className="numpad-btn py-2.5 sm:py-4 bg-[#0f1411] hover:bg-[#161d18] active:translate-y-0.5 border-2 border-[#2ee58f]/40 hover:border-[#2ee58f] text-[#e8ece3] font-display font-bold text-2xl sm:text-3xl shadow-[3px_3px_0_#090c0a] transition-all cursor-pointer"
           >
             {digit}
           </button>
@@ -53,7 +66,7 @@ export function TactileNumpad({
           type="button"
           disabled={disabled}
           onClick={handleClearPress}
-          className="numpad-btn py-3.5 sm:py-4 bg-[#090c0a] hover:bg-[#ff6b5e]/15 active:translate-y-0.5 border-2 border-[#ff6b5e]/60 text-[#ff6b5e] font-mono font-bold text-sm sm:text-base tracking-wider uppercase shadow-[3px_3px_0_#090c0a] transition-all cursor-pointer"
+          className="numpad-btn py-2.5 sm:py-4 bg-[#090c0a] hover:bg-[#ff6b5e]/15 active:translate-y-0.5 border-2 border-[#ff6b5e]/60 text-[#ff6b5e] font-mono font-bold text-xs sm:text-base tracking-wider uppercase shadow-[3px_3px_0_#090c0a] transition-all cursor-pointer"
         >
           ⌫ CLEAR
         </button>
@@ -62,7 +75,7 @@ export function TactileNumpad({
           type="button"
           disabled={disabled}
           onClick={() => handleDigitPress('0')}
-          className="numpad-btn py-3.5 sm:py-4 bg-[#0f1411] hover:bg-[#161d18] active:translate-y-0.5 border-2 border-[#2ee58f]/40 hover:border-[#2ee58f] text-[#e8ece3] font-display font-bold text-2xl sm:text-3xl shadow-[3px_3px_0_#090c0a] transition-all cursor-pointer"
+          className="numpad-btn py-2.5 sm:py-4 bg-[#0f1411] hover:bg-[#161d18] active:translate-y-0.5 border-2 border-[#2ee58f]/40 hover:border-[#2ee58f] text-[#e8ece3] font-display font-bold text-2xl sm:text-3xl shadow-[3px_3px_0_#090c0a] transition-all cursor-pointer"
         >
           0
         </button>
@@ -72,7 +85,7 @@ export function TactileNumpad({
           type="button"
           disabled={disabled}
           onClick={handleSubmitPress}
-          className="numpad-btn py-3.5 sm:py-4 bg-[#2ee58f] hover:bg-[#34f098] active:translate-y-1 border-2 border-[#090c0a] text-[#090c0a] font-mono font-extrabold text-sm sm:text-base tracking-wider uppercase shadow-[4px_4px_0_#090c0a] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+          className="numpad-btn py-2.5 sm:py-4 bg-[#2ee58f] hover:bg-[#34f098] active:translate-y-1 border-2 border-[#090c0a] text-[#090c0a] font-mono font-extrabold text-xs sm:text-base tracking-wider uppercase shadow-[4px_4px_0_#090c0a] transition-all cursor-pointer flex items-center justify-center gap-1.5"
         >
           ENTER ↵
         </button>
