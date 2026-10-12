@@ -175,11 +175,11 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
         this.onopen?.();
       }
 
-      emitEvent(type, payload) {
+      emitEvent(type, payload, lastEventId = null) {
         const list = this.listeners.get(type) || [];
         const data = typeof payload === 'string' ? payload : JSON.stringify(payload);
         for (const cb of list) {
-          cb({ data });
+          cb({ data, lastEventId });
         }
       }
 
@@ -220,7 +220,7 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
       globalThis.fetch = originalFetch;
     });
 
-    test('connectTeamStream routes all 9 SSE events and recovers on visibilitychange', () => {
+    test('connectTeamStream routes all 9 SSE events, tracks lastEventId, and recovers on visibilitychange', () => {
       const received = [];
       const stream = connectTeamStream('AP-34', 'tok_123', {
         onConnectionChange: (c) => received.push(['connected', c]),
@@ -240,15 +240,18 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
       assert.ok(es.url.includes('/api/sse/team/AP-34?token=tok_123'));
 
       es.emitOpen();
-      es.emitEvent('team_snapshot', { teamCode: 'AP-34' });
-      es.emitEvent('member_ready_changed', { rollNumber: 'R1' });
-      es.emitEvent('countdown_tick', { secondsRemaining: 3 });
-      es.emitEvent('sprint_start', { totalQuestions: 15 });
-      es.emitEvent('sprint_resume', { maxStreak: 4, submissions: [{}, {}] });
-      es.emitEvent('teammate_progress', { questionIndex: 7 });
-      es.emitEvent('room_paused', {});
-      es.emitEvent('room_resumed', {});
-      es.emitEvent('sprint_error', { message: 'Window closed' });
+      es.emitEvent('team_snapshot', { teamCode: 'AP-34' }, '101');
+      assert.equal(stream.getLastEventId(), '101');
+      es.emitEvent('member_ready_changed', { rollNumber: 'R1' }, '102');
+      assert.equal(stream.getLastEventId(), '102');
+      es.emitEvent('countdown_tick', { secondsRemaining: 3 }, '103');
+      es.emitEvent('sprint_start', { totalQuestions: 15 }, '104');
+      es.emitEvent('sprint_resume', { maxStreak: 4, submissions: [{}, {}] }, '105');
+      es.emitEvent('teammate_progress', { questionIndex: 7 }, '106');
+      es.emitEvent('room_paused', {}, '107');
+      es.emitEvent('room_resumed', {}, '108');
+      es.emitEvent('sprint_error', { message: 'Window closed' }, '109');
+      assert.equal(stream.getLastEventId(), '109');
 
       assert.deepEqual(received, [
         ['connected', true],
@@ -263,10 +266,11 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
         ['error', 'Window closed']
       ]);
 
-      // Simulate closed stream + visibilitychange -> automatically creates new EventSource
+      // Simulate closed stream + visibilitychange -> automatically creates new EventSource with lastEventId in query
       es.close();
       for (const fn of visibilityListeners) fn();
       assert.equal(instances.length, 2);
+      assert.ok(instances[1].url.includes('&lastEventId=109'), 'Reconnection URL must include lastEventId');
 
       stream.disconnect();
       assert.equal(visibilityListeners.length, 0);

@@ -22,6 +22,48 @@ export function clearMemberStreamCounts(): void {
   memberStreamCounts.clear();
 }
 
+import type { SseCursor } from '../services/sseHub.js';
+
+export function parseEventCursor(val: unknown): SseCursor | undefined {
+  if (val === undefined || val === null) return undefined;
+  let str: string;
+  if (typeof val === 'string') {
+    str = val.trim();
+  } else if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string') {
+    str = val[0].trim();
+  } else {
+    return undefined;
+  }
+  if (!str) return undefined;
+
+  // Support "<epoch>:<seq>" or plain "<seq>"
+  if (str.includes(':')) {
+    const parts = str.split(':');
+    if (parts.length !== 2 || !/^\d+$/.test(parts[0]) || !/^\d+$/.test(parts[1])) {
+      return undefined;
+    }
+    const epoch = Number(parts[0]);
+    const seq = Number(parts[1]);
+    if (!Number.isSafeInteger(epoch) || !Number.isSafeInteger(seq) || seq < 0) {
+      return undefined;
+    }
+    return { epoch, seq };
+  }
+
+  // Pure numeric seq
+  if (!/^\d+$/.test(str)) return undefined;
+  const seq = Number(str);
+  return Number.isSafeInteger(seq) && seq >= 0 ? { seq } : undefined;
+}
+
+function extractLastEventId(req: Request): SseCursor | undefined {
+  const fromHeader = parseEventCursor(req.headers['last-event-id']);
+  if (fromHeader !== undefined) {
+    return fromHeader;
+  }
+  return parseEventCursor(req.query['lastEventId']);
+}
+
 export function sseTeamHandler(req: Request, res: Response): void {
   const rawCode = req.params['teamCode'];
   const teamCode = (Array.isArray(rawCode) ? rawCode[0] : rawCode || '').trim().toUpperCase();
@@ -55,7 +97,8 @@ export function sseTeamHandler(req: Request, res: Response): void {
   }
 
   const channel = `team:${teamCode}`;
-  sseHub.registerClient(channel, res);
+  const lastEventId = extractLastEventId(req);
+  sseHub.registerClient(channel, res, lastEventId);
 
   const memberKey = `${teamCode}:${connectedMember.rollNumber}`;
   const prevCount = memberStreamCounts.get(memberKey) || 0;
@@ -132,7 +175,8 @@ export function sseTeamHandler(req: Request, res: Response): void {
 
 export function sseLeaderboardHandler(req: Request, res: Response): void {
   const channel = 'leaderboard';
-  sseHub.registerClient(channel, res);
+  const lastEventId = extractLastEventId(req);
+  sseHub.registerClient(channel, res, lastEventId);
 
   // Send immediate initial standings (respecting anti-screen-peeking delay) and window status
   sseHub.sendDirect(res, 'leaderboard_update', leaderboardManager.getPublicLeaderboard());
@@ -163,7 +207,8 @@ export function sseAdminHandler(req: Request, res: Response): void {
   }
 
   const channel = 'admin';
-  sseHub.registerClient(channel, res);
+  const lastEventId = extractLastEventId(req);
+  sseHub.registerClient(channel, res, lastEventId);
 
   // Send immediate telemetry, leaderboard, and window status
   sseHub.sendDirect(res, 'admin_telemetry', roomManager.getTelemetry());

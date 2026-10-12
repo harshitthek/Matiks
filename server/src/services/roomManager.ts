@@ -285,6 +285,7 @@ export class RoomManager {
       this.rooms.delete(cleanCode);
       this.roomUsedPairKeys.delete(cleanCode);
       leaderboardManager.removeTeam(cleanCode, true);
+      sseHub.clearChannelBuffer(`team:${cleanCode}`);
       this.notifyStateMutated();
       return { dissolved: true };
     }
@@ -350,6 +351,7 @@ export class RoomManager {
     }
 
     this.clearRoomTimers(cleanCode);
+    sseHub.clearChannelBuffer(`team:${cleanCode}`);
 
     for (const m of room.members.values()) {
       if (m.activeSessionId) {
@@ -1652,6 +1654,7 @@ export class RoomManager {
     }
     for (const teamCode of this.rooms.keys()) {
       this.clearRoomTimers(teamCode);
+      sseHub.clearChannelBuffer(`team:${teamCode}`);
     }
     this.rooms.clear();
     this.sessions.clear();

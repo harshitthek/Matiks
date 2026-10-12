@@ -23,6 +23,7 @@ import { SseHub } from '../src/services/sseHub.js';
 import { roomManager } from '../src/services/roomManager.js';
 import { StatePersistenceService } from '../src/services/statePersistence.js';
 import { escapeCsvCell } from '../src/controllers/adminController.js';
+import { parseEventCursor } from '../src/controllers/sseController.js';
 
 function createMockSseResponse(shouldThrowOnWrite = false) {
   const emitter = new EventEmitter();
@@ -269,7 +270,7 @@ describe('Matiks Hackathon — Core Services Unit Test Suite', () => {
   });
 
   describe('3. SseHub Channel Management, Headers & Fault Tolerance', () => {
-    test('registers clients with anti-buffering headers, broadcasts events, evicts dead sockets, and destroys cleanly', () => {
+    test('registers clients with anti-buffering headers, broadcasts events with monotonic IDs, evicts dead sockets, and destroys cleanly', () => {
       const hub = new SseHub();
       const healthyRes = createMockSseResponse(false);
       const brokenRes = createMockSseResponse(true);
@@ -284,9 +285,11 @@ describe('Matiks Hackathon — Core Services Unit Test Suite', () => {
       assert.equal(hub.getClientCount('team:TEST-01'), 2);
       assert.equal(hub.getClientCount(), 2);
 
-      // Broadcast to channel: healthyRes receives event, brokenRes throws and is evicted
-      hub.broadcast('team:TEST-01', 'countdown_tick', { secondsRemaining: 3 });
+      // Broadcast to channel: healthyRes receives event with monotonic id: 1, brokenRes throws and is evicted
+      const id = hub.broadcast('team:TEST-01', 'countdown_tick', { secondsRemaining: 3 });
+      assert.equal(id, 1);
       assert.equal(hub.getClientCount('team:TEST-01'), 1, 'Broken socket must be evicted on write error');
+      assert.ok(healthyRes.getChunks()[1].includes(`id: ${hub.epoch}:1`));
       assert.ok(healthyRes.getChunks()[1].includes('event: countdown_tick'));
       assert.ok(healthyRes.getChunks()[1].includes('"secondsRemaining":3'));
 
@@ -307,6 +310,123 @@ describe('Matiks Hackathon — Core Services Unit Test Suite', () => {
       hub.destroy();
       assert.equal(hub.getClientCount(), 0);
       assert.equal(finalRes.isEnded(), true);
+    });
+
+    test('replays missed events from circular replay buffer upon reconnection with lastEventId', () => {
+      const hub = new SseHub();
+
+      // Broadcast 5 events before client connects
+      const id1 = hub.broadcast('team:RECONNECT-01', 'e1', { val: 1 });
+      const id2 = hub.broadcast('team:RECONNECT-01', 'e2', { val: 2 });
+      const id3 = hub.broadcast('team:RECONNECT-01', 'e3', { val: 3 });
+      const id4 = hub.broadcast('team:RECONNECT-01', 'e4', { val: 4 });
+      const id5 = hub.broadcast('team:RECONNECT-01', 'e5', { val: 5 });
+
+      assert.equal(id1, 1);
+      assert.equal(id2, 2);
+      assert.equal(id3, 3);
+      assert.equal(id4, 4);
+      assert.equal(id5, 5);
+      assert.equal(hub.getLastEventId('team:RECONNECT-01'), 5);
+
+      // Client reconnects claiming lastEventId = 2 -> should receive e3, e4, e5
+      const reconnectRes = createMockSseResponse(false);
+      hub.registerClient('team:RECONNECT-01', reconnectRes, 2);
+
+      const chunks = reconnectRes.getChunks();
+      assert.equal(chunks[0], ':connected\n\n');
+      assert.equal(chunks.length, 4); // handshake + 3 replayed events
+      assert.ok(chunks[1].includes(`id: ${hub.epoch}:3\nevent: e3`));
+      assert.ok(chunks[2].includes(`id: ${hub.epoch}:4\nevent: e4`));
+      assert.ok(chunks[3].includes(`id: ${hub.epoch}:5\nevent: e5`));
+
+      hub.destroy();
+    });
+
+    test('enforces circular buffer max size limit and supports clearing buffers', () => {
+      const hub = new SseHub();
+      for (let i = 1; i <= 120; i++) {
+        hub.broadcast('buffer-test', 'event', { i });
+      }
+
+      const buffer = hub.getEventBuffer('buffer-test');
+      assert.equal(buffer.length, SseHub.MAX_BUFFER_SIZE);
+      assert.equal(buffer[0].id, 21); // First 20 dropped
+      assert.equal(buffer[buffer.length - 1].id, 120);
+
+      hub.clearChannelBuffer('buffer-test');
+      assert.equal(hub.getEventBuffer('buffer-test').length, 0);
+
+      hub.destroy();
+    });
+
+    test('emits stream_resync without partial suffix when lastEventId predates oldest retained event', () => {
+      const hub = new SseHub();
+      // Broadcast 120 events so 1..20 are pruned and oldest retained is 21, currentId is 120
+      for (let i = 1; i <= 120; i++) {
+        hub.broadcast('overflow-channel', 'msg', { i });
+      }
+
+      const overflowRes = createMockSseResponse(false);
+      // Client connects asking for lastEventId = 5 (which was pruned)
+      hub.registerClient('overflow-channel', overflowRes, 5);
+
+      const chunks = overflowRes.getChunks();
+      assert.equal(chunks[0], ':connected\n\n');
+      assert.ok(chunks[1].includes(`id: ${hub.epoch}:120\nevent: stream_resync`));
+      assert.ok(chunks[1].includes('"reason":"BUFFER_OVERFLOW"'));
+      assert.ok(chunks[1].includes('"oldestAvailableId":21'));
+      assert.ok(chunks[1].includes('"latestAvailableId":120'));
+      assert.equal(chunks.length, 2, 'Must not replay incomplete suffix on buffer gap');
+
+      hub.destroy();
+    });
+
+    test('emits stream_resync when lastEventId is ahead of current channel event sequence', () => {
+      const hub = new SseHub();
+      hub.broadcast('ahead-channel', 'msg', { ok: true }); // currentId is 1
+
+      const aheadRes = createMockSseResponse(false);
+      // Client connects with lastEventId = 99 (future cursor)
+      hub.registerClient('ahead-channel', aheadRes, 99);
+
+      const chunks = aheadRes.getChunks();
+      assert.equal(chunks[0], ':connected\n\n');
+      assert.ok(chunks[1].includes(`id: ${hub.epoch}:1\nevent: stream_resync`));
+      assert.ok(chunks[1].includes('"reason":"CURSOR_AHEAD"'));
+      assert.ok(chunks[1].includes('"latestAvailableId":1'));
+      assert.ok(chunks[1].includes('"requestedLastEventId":99'));
+
+      hub.destroy();
+    });
+
+    test('emits stream_resync when client epoch mismatches current process epoch or buffer is cleared', () => {
+      const hub = new SseHub();
+      hub.broadcast('epoch-channel', 'msg', { n: 1 });
+      hub.broadcast('epoch-channel', 'msg', { n: 2 });
+
+      // 1. Epoch mismatch
+      const mismatchRes = createMockSseResponse(false);
+      hub.registerClient('epoch-channel', mismatchRes, { epoch: 1000000000, seq: 1 });
+      const chunksMismatch = mismatchRes.getChunks();
+      assert.ok(chunksMismatch[1].includes('reason":"EPOCH_MISMATCH'));
+      assert.ok(chunksMismatch[1].includes(`"serverEpoch":${hub.epoch}`));
+
+      // 2. Buffer cleared but client cursor behind currentId
+      hub.clearChannelBuffer('epoch-channel');
+      const clearedRes = createMockSseResponse(false);
+      hub.registerClient('epoch-channel', clearedRes, { epoch: hub.epoch, seq: 1 });
+      const chunksCleared = clearedRes.getChunks();
+      assert.ok(chunksCleared[1].includes('reason":"BUFFER_OVERFLOW'));
+
+      // 3. parseEventCursor validation
+      assert.deepEqual(parseEventCursor('1700000000:42'), { epoch: 1700000000, seq: 42 });
+      assert.deepEqual(parseEventCursor('42'), { seq: 42 });
+      assert.equal(parseEventCursor('1e3'), undefined);
+      assert.equal(parseEventCursor('invalid'), undefined);
+      assert.equal(parseEventCursor(''), undefined);
+
+      hub.destroy();
     });
   });
 

@@ -1,0 +1,30 @@
+# MATIKS HACKATHON ENGINE — CADDYFILE REVERSE PROXY CONFIGURATION
+# Turnkey HTTPS / reverse-proxy configuration for Matiks hackathon.
+#
+# Usage from project root:
+#   caddy run --config server/deploy/Caddyfile
+#
+# Environment variables:
+#   SITE_ADDRESS: domain name or host to bind (defaults to :80 for local LAN, or set e.g. matiks.fossclub.tech for automated HTTPS)
+
+{$SITE_ADDRESS::80} {
+    # 1. Realtime SSE Streams: Unbuffered instant flush (Caddy natively handles text/event-stream)
+    handle /api/sse/* {
+        reverse_proxy localhost:3000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    # 2. REST API Endpoints
+    handle /api/* {
+        reverse_proxy localhost:3000
+    }
+
+    # 3. Static Client Build (Vite) with SPA Fallback
+    handle {
+        root * client/dist
+        try_files {path} /index.html
+        file_server
+    }
+}

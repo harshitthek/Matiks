@@ -15,6 +15,7 @@ export function connectTeamStream(teamCode, token, handlers = {}) {
   let isIntentionallyClosed = false;
   let retryTimeout = null;
   let retryAttempts = 0;
+  let lastEventId = null;
   const BASE_RETRY_DELAY_MS = 1000;
   const MAX_RETRY_DELAY_MS = 15000;
 
@@ -25,6 +26,12 @@ export function connectTeamStream(teamCode, token, handlers = {}) {
       console.warn('[SSE] Heartbeat timed out (>25s). Reconnecting stream...');
       reconnect();
     }, 25_000);
+  };
+
+  const updateEventId = (e) => {
+    if (e?.lastEventId) {
+      lastEventId = e.lastEventId;
+    }
   };
 
   const init = () => {
@@ -39,7 +46,10 @@ export function connectTeamStream(teamCode, token, handlers = {}) {
       eventSource = null;
     }
 
-    const url = `${API_ORIGIN}/api/sse/team/${encodeURIComponent(teamCode)}?token=${encodeURIComponent(token)}`;
+    let url = `${API_ORIGIN}/api/sse/team/${encodeURIComponent(teamCode)}?token=${encodeURIComponent(token)}`;
+    if (lastEventId) {
+      url += `&lastEventId=${encodeURIComponent(lastEventId)}`;
+    }
     eventSource = new EventSource(url);
 
     eventSource.onopen = () => {
@@ -73,6 +83,7 @@ export function connectTeamStream(teamCode, token, handlers = {}) {
 
     // 1. Initial snapshot
     eventSource.addEventListener('team_snapshot', (e) => {
+      updateEventId(e);
       resetKeepaliveWatchdog();
       try {
         const data = JSON.parse(e.data);
@@ -84,6 +95,7 @@ export function connectTeamStream(teamCode, token, handlers = {}) {
 
     // 2. Member ready status change
     eventSource.addEventListener('member_ready_changed', (e) => {
+      updateEventId(e);
       resetKeepaliveWatchdog();
       try {
         const data = JSON.parse(e.data);
@@ -95,6 +107,7 @@ export function connectTeamStream(teamCode, token, handlers = {}) {
 
     // 3. Synchronized countdown ticks (3, 2, 1)
     eventSource.addEventListener('countdown_tick', (e) => {
+      updateEventId(e);
       resetKeepaliveWatchdog();
       try {
         const data = JSON.parse(e.data);
@@ -106,6 +119,7 @@ export function connectTeamStream(teamCode, token, handlers = {}) {
 
     // 4. Synchronized sprint launch
     eventSource.addEventListener('sprint_start', (e) => {
+      updateEventId(e);
       resetKeepaliveWatchdog();
       try {
         const data = JSON.parse(e.data);
@@ -117,6 +131,7 @@ export function connectTeamStream(teamCode, token, handlers = {}) {
 
     // 5. Mid-sprint reconnection resume
     eventSource.addEventListener('sprint_resume', (e) => {
+      updateEventId(e);
       resetKeepaliveWatchdog();
       try {
         const data = JSON.parse(e.data);
@@ -128,6 +143,7 @@ export function connectTeamStream(teamCode, token, handlers = {}) {
 
     // 6. Teammate progress HUD update
     eventSource.addEventListener('teammate_progress', (e) => {
+      updateEventId(e);
       resetKeepaliveWatchdog();
       try {
         const data = JSON.parse(e.data);
@@ -138,24 +154,39 @@ export function connectTeamStream(teamCode, token, handlers = {}) {
     });
 
     // 7. Room pause/resume
-    eventSource.addEventListener('room_paused', () => {
+    eventSource.addEventListener('room_paused', (e) => {
+      updateEventId(e);
       resetKeepaliveWatchdog();
       handlers.onRoomPaused?.();
     });
 
-    eventSource.addEventListener('room_resumed', () => {
+    eventSource.addEventListener('room_resumed', (e) => {
+      updateEventId(e);
       resetKeepaliveWatchdog();
       handlers.onRoomResumed?.();
     });
 
     // 8. Error / launch failure
     eventSource.addEventListener('sprint_error', (e) => {
+      updateEventId(e);
       resetKeepaliveWatchdog();
       try {
         const data = JSON.parse(e.data);
         handlers.onSprintError?.(data);
       } catch (err) {
         console.error('[SSE] Failed to parse sprint_error:', err);
+      }
+    });
+
+    // 9. Unrecoverable buffer gap / forced resynchronization
+    eventSource.addEventListener('stream_resync', (e) => {
+      updateEventId(e);
+      resetKeepaliveWatchdog();
+      try {
+        const data = JSON.parse(e.data);
+        handlers.onStreamResync?.(data);
+      } catch (err) {
+        console.error('[SSE] Failed to parse stream_resync:', err);
       }
     });
   };
@@ -200,7 +231,8 @@ export function connectTeamStream(teamCode, token, handlers = {}) {
       }
       handlers.onConnectionChange?.(false);
     },
-    reconnect
+    reconnect,
+    getLastEventId: () => lastEventId
   };
 }
 
@@ -214,6 +246,7 @@ export function connectLeaderboardStream(handlers = {}) {
   let isIntentionallyClosed = false;
   let retryTimeout = null;
   let retryAttempts = 0;
+  let lastEventId = null;
   const BASE_RETRY_DELAY_MS = 1000;
   const MAX_RETRY_DELAY_MS = 15000;
 
@@ -237,7 +270,11 @@ export function connectLeaderboardStream(handlers = {}) {
       eventSource = null;
     }
 
-    eventSource = new EventSource(`${API_ORIGIN}/api/sse/leaderboard`);
+    let url = `${API_ORIGIN}/api/sse/leaderboard`;
+    if (lastEventId) {
+      url += `?lastEventId=${encodeURIComponent(lastEventId)}`;
+    }
+    eventSource = new EventSource(url);
 
     const markConnectionHealthy = () => {
       retryAttempts = 0;
@@ -273,6 +310,7 @@ export function connectLeaderboardStream(handlers = {}) {
     };
 
     eventSource.addEventListener('leaderboard_update', (e) => {
+      if (e?.lastEventId) lastEventId = e.lastEventId;
       markConnectionHealthy();
       try {
         const data = JSON.parse(e.data);
@@ -283,12 +321,24 @@ export function connectLeaderboardStream(handlers = {}) {
     });
 
     eventSource.addEventListener('window_status', (e) => {
+      if (e?.lastEventId) lastEventId = e.lastEventId;
       markConnectionHealthy();
       try {
         const data = JSON.parse(e.data);
         handlers.onWindowStatus?.(data);
       } catch (err) {
         console.error('[SSE:Leaderboard] Window status parse error:', err);
+      }
+    });
+
+    eventSource.addEventListener('stream_resync', (e) => {
+      if (e?.lastEventId) lastEventId = e.lastEventId;
+      markConnectionHealthy();
+      try {
+        const data = JSON.parse(e.data);
+        handlers.onStreamResync?.(data);
+      } catch (err) {
+        console.error('[SSE:Leaderboard] Stream resync parse error:', err);
       }
     });
   };
@@ -330,7 +380,8 @@ export function connectLeaderboardStream(handlers = {}) {
       }
       handlers.onConnectionChange?.(false);
     },
-    reconnect
+    reconnect,
+    getLastEventId: () => lastEventId
   };
 }
 
@@ -344,6 +395,7 @@ export function connectAdminStream(adminToken, handlers = {}) {
   let retryTimeout = null;
   let retryAttempts = 0;
   let connectionGen = 0;
+  let lastEventId = null;
   const BASE_RETRY_DELAY_MS = 1000;
   const MAX_RETRY_DELAY_MS = 15000;
 
@@ -411,7 +463,10 @@ export function connectAdminStream(adminToken, handlers = {}) {
       return;
     }
 
-    const url = `${API_ORIGIN}/api/sse/admin?ticket=${encodeURIComponent(ticket)}`;
+    let url = `${API_ORIGIN}/api/sse/admin?ticket=${encodeURIComponent(ticket)}`;
+    if (lastEventId) {
+      url += `&lastEventId=${encodeURIComponent(lastEventId)}`;
+    }
     eventSource = new EventSource(url);
 
     eventSource.onopen = () => {
@@ -436,6 +491,7 @@ export function connectAdminStream(adminToken, handlers = {}) {
     };
 
     eventSource.addEventListener('admin_telemetry', (e) => {
+      if (e?.lastEventId) lastEventId = e.lastEventId;
       markConnectionHealthy();
       try {
         const data = JSON.parse(e.data);
@@ -446,6 +502,7 @@ export function connectAdminStream(adminToken, handlers = {}) {
     });
 
     eventSource.addEventListener('leaderboard_update', (e) => {
+      if (e?.lastEventId) lastEventId = e.lastEventId;
       markConnectionHealthy();
       try {
         const data = JSON.parse(e.data);
@@ -456,6 +513,7 @@ export function connectAdminStream(adminToken, handlers = {}) {
     });
 
     eventSource.addEventListener('window_status', (e) => {
+      if (e?.lastEventId) lastEventId = e.lastEventId;
       markConnectionHealthy();
       try {
         const data = JSON.parse(e.data);
@@ -466,6 +524,7 @@ export function connectAdminStream(adminToken, handlers = {}) {
     });
 
     eventSource.addEventListener('room_snapshot', (e) => {
+      if (e?.lastEventId) lastEventId = e.lastEventId;
       markConnectionHealthy();
       try {
         const data = JSON.parse(e.data);
@@ -476,12 +535,25 @@ export function connectAdminStream(adminToken, handlers = {}) {
     });
 
     eventSource.addEventListener('anomaly_flag', (e) => {
+      if (e?.lastEventId) lastEventId = e.lastEventId;
       markConnectionHealthy();
       try {
         const data = JSON.parse(e.data);
         handlers.onAnomalyFlag?.(data);
       } catch (err) {
         console.error('[SSE:Admin] Anomaly flag parse error:', err);
+      }
+    });
+
+    eventSource.addEventListener('stream_resync', (e) => {
+      if (e?.lastEventId) lastEventId = e.lastEventId;
+      markConnectionHealthy();
+      try {
+        const data = JSON.parse(e.data);
+        handlers.onStreamResync?.(data);
+        handlers.onFullRefreshNeeded?.(data);
+      } catch (err) {
+        console.error('[SSE:Admin] Stream resync parse error:', err);
       }
     });
   };
@@ -525,6 +597,7 @@ export function connectAdminStream(adminToken, handlers = {}) {
       }
       handlers.onConnectionChange?.(false);
     },
-    reconnect
+    reconnect,
+    getLastEventId: () => lastEventId
   };
 }
