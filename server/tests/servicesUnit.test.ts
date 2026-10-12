@@ -24,6 +24,19 @@ import { roomManager } from '../src/services/roomManager.js';
 import { StatePersistenceService } from '../src/services/statePersistence.js';
 import { escapeCsvCell } from '../src/controllers/adminController.js';
 import { parseEventCursor } from '../src/controllers/sseController.js';
+import {
+  metrics,
+  normalizeRoute,
+  normalizeMethod,
+  Counter,
+  Gauge,
+  Histogram,
+  metricsMiddleware
+} from '../src/services/metrics.js';
+import { Logger, logger, requestLoggingMiddleware } from '../src/config/logger.js';
+import { createApp } from '../src/app.js';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 
 function createMockSseResponse(shouldThrowOnWrite = false) {
   const emitter = new EventEmitter();
@@ -592,6 +605,287 @@ describe('Matiks Hackathon — Core Services Unit Test Suite', () => {
         roomManager.setAuditDir(originalAuditDir);
         roomManager.clear();
         fs.rmSync(tmpAuditDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('7. Low-Cardinality Prometheus Metrics Engine', () => {
+    beforeEach(() => {
+      metrics.reset();
+    });
+
+    test('Counter increments, tracks labels, rejects negative amounts, and serializes Prometheus format', () => {
+      const counter = new Counter('test_counter_total', 'Test counter description', ['method', 'status']);
+      assert.equal(counter.get({ method: 'GET', status: '200' }), 0);
+
+      counter.inc({ method: 'GET', status: '200' });
+      assert.equal(counter.get({ method: 'GET', status: '200' }), 1);
+
+      counter.inc({ method: 'GET', status: '200' }, 5);
+      assert.equal(counter.get({ method: 'GET', status: '200' }), 6);
+
+      counter.inc({ method: 'POST', status: '201' }, 2);
+      assert.equal(counter.get({ method: 'POST', status: '201' }), 2);
+
+      assert.throws(() => counter.inc({ method: 'GET', status: '200' }, -1), /cannot be decremented/);
+
+      const serialized = counter.serialize();
+      assert.ok(serialized.some(l => l === '# HELP test_counter_total Test counter description'));
+      assert.ok(serialized.some(l => l === '# TYPE test_counter_total counter'));
+      assert.ok(serialized.some(l => l.includes('test_counter_total{method="GET",status="200"} 6')));
+      assert.ok(serialized.some(l => l.includes('test_counter_total{method="POST",status="201"} 2')));
+
+      counter.reset();
+      assert.equal(counter.get({ method: 'GET', status: '200' }), 0);
+    });
+
+    test('Gauge sets, increments, decrements, and serializes Prometheus format', () => {
+      const gauge = new Gauge('test_gauge', 'Test gauge description', ['pool']);
+      assert.equal(gauge.get({ pool: 'worker' }), 0);
+
+      gauge.set(10, { pool: 'worker' });
+      assert.equal(gauge.get({ pool: 'worker' }), 10);
+
+      gauge.inc({ pool: 'worker' }, 3);
+      assert.equal(gauge.get({ pool: 'worker' }), 13);
+
+      gauge.dec({ pool: 'worker' }, 5);
+      assert.equal(gauge.get({ pool: 'worker' }), 8);
+
+      const serialized = gauge.serialize();
+      assert.ok(serialized.some(l => l === '# HELP test_gauge Test gauge description'));
+      assert.ok(serialized.some(l => l === '# TYPE test_gauge gauge'));
+      assert.ok(serialized.some(l => l.includes('test_gauge{pool="worker"} 8')));
+    });
+
+    test('Histogram sorts buckets, tallies counts, accumulates sum, and computes +Inf', () => {
+      const histogram = new Histogram('test_lat_seconds', 'Latency histogram', [0.1, 0.5, 1.0], ['env']);
+      histogram.observe(0.05, { env: 'prod' });
+      histogram.observe(0.4, { env: 'prod' });
+      histogram.observe(0.8, { env: 'prod' });
+      histogram.observe(2.5, { env: 'prod' });
+
+      const stats = histogram.get({ env: 'prod' });
+      assert.equal(stats.count, 4);
+      assert.equal(stats.buckets[0.1], 1);
+      assert.equal(stats.buckets[0.5], 2);
+      assert.equal(stats.buckets[1.0], 3);
+      assert.equal(Math.round(stats.sum * 100) / 100, 3.75);
+
+      const serialized = histogram.serialize();
+      assert.ok(serialized.some(l => l === '# HELP test_lat_seconds Latency histogram'));
+      assert.ok(serialized.some(l => l === '# TYPE test_lat_seconds histogram'));
+      assert.ok(serialized.some(l => l.includes('test_lat_seconds_bucket{env="prod",le="0.1"} 1')));
+      assert.ok(serialized.some(l => l.includes('test_lat_seconds_bucket{env="prod",le="0.5"} 2')));
+      assert.ok(serialized.some(l => l.includes('test_lat_seconds_bucket{env="prod",le="1"} 3')));
+      assert.ok(serialized.some(l => l.includes('test_lat_seconds_bucket{env="prod",le="+Inf"} 4')));
+      assert.ok(serialized.some(l => l.includes('test_lat_seconds_count{env="prod"} 4')));
+      assert.ok(serialized.some(l => l.includes('test_lat_seconds_sum{env="prod"} 3.75')));
+    });
+
+    test('normalizeRoute and normalizeMethod sanitize high-cardinality paths and methods', () => {
+      // Methods
+      assert.equal(normalizeMethod('GET'), 'GET');
+      assert.equal(normalizeMethod('post'), 'POST');
+      assert.equal(normalizeMethod('DELETE'), 'DELETE');
+      assert.equal(normalizeMethod('MALICIOUS_METHOD_ATTACK'), 'OTHER');
+      assert.equal(normalizeMethod(''), 'OTHER');
+
+      // Static routes
+      assert.equal(normalizeRoute('/api/health'), '/api/health');
+      assert.equal(normalizeRoute('/api/auth/login'), '/api/auth/login');
+      assert.equal(normalizeRoute('/api/sprint/submit'), '/api/sprint/submit');
+      assert.equal(normalizeRoute('/metrics'), '/metrics');
+
+      // Parameterized routes
+      assert.equal(normalizeRoute('/api/team/TM-ALPHA'), '/api/team/:teamCode');
+      assert.equal(normalizeRoute('/api/sse/team/TM-BETA?token=abc'), '/api/sse/team/:teamCode');
+      assert.equal(normalizeRoute('/api/auth/verify-membership/23ucs101'), '/api/auth/verify-membership/:identifier');
+      assert.equal(normalizeRoute('/api/admin/teams/TM-GAMMA/excuse-member'), '/api/admin/teams/:teamCode/excuse-member');
+      assert.equal(normalizeRoute('/api/admin/teams/TM-GAMMA/pause'), '/api/admin/teams/:teamCode/pause');
+      assert.equal(normalizeRoute('/api/admin/teams/TM-GAMMA/resume'), '/api/admin/teams/:teamCode/resume');
+      assert.equal(normalizeRoute('/api/admin/replay/session-abc-123'), '/api/admin/replay/:sessionId');
+
+      // Unmatched malicious/random paths clamped to 'unknown'
+      assert.equal(normalizeRoute('/attacker/path/overflow'), 'unknown');
+      assert.equal(normalizeRoute('/api/nonexistent'), 'unknown');
+    });
+
+    test('metrics.recordSubmission maps arithmetic operators, buckets, and anomaly results', () => {
+      metrics.recordSubmission({
+        operator: 'add',
+        bucket: 'DOUBLE_CARRY',
+        isCorrect: true,
+        latencySeconds: 2.4
+      });
+
+      metrics.recordSubmission({
+        operator: 'sub',
+        bucket: 'ONES_BORROW',
+        isCorrect: false,
+        latencySeconds: 4.1
+      });
+
+      metrics.recordSubmission({
+        operator: 'add',
+        bucket: 'NO_CARRY',
+        isCorrect: true,
+        isAnomaly: true,
+        latencySeconds: 0.15
+      });
+
+      assert.equal(metrics.sprintSubmissionsTotal.get({ operator: 'add', bucket: 'double_carry', result: 'correct' }), 1);
+      assert.equal(metrics.sprintSubmissionsTotal.get({ operator: 'sub', bucket: 'ones_borrow', result: 'incorrect' }), 1);
+      assert.equal(metrics.sprintSubmissionsTotal.get({ operator: 'add', bucket: 'no_carry', result: 'anomaly' }), 1);
+
+      const snapshot = metrics.getMetricsSnapshot();
+      assert.ok(snapshot.includes('# TYPE sprint_submissions_total counter'));
+      assert.ok(snapshot.includes('sprint_submissions_total{bucket="double_carry",operator="add",result="correct"} 1'));
+      assert.ok(snapshot.includes('sprint_submissions_total{bucket="ones_borrow",operator="sub",result="incorrect"} 1'));
+      assert.ok(snapshot.includes('sprint_submissions_total{bucket="no_carry",operator="add",result="anomaly"} 1'));
+      assert.ok(snapshot.includes('# TYPE process_memory_rss_bytes gauge'));
+      assert.ok(snapshot.includes('# TYPE contest_window_open gauge'));
+      assert.ok(snapshot.includes('# TYPE active_rooms gauge'));
+      assert.ok(snapshot.includes('# TYPE connected_sse_clients gauge'));
+    });
+
+    test('GET /metrics returns 200 with standard Prometheus text exposition headers and respects auth', async () => {
+      const app = createApp();
+      const server = http.createServer(app);
+      await new Promise<void>((resolve) => server.listen(0, resolve));
+      const port = (server.address() as AddressInfo).port;
+      const baseUrl = `http://127.0.0.1:${port}`;
+
+      try {
+        const res = await fetch(`${baseUrl}/metrics`);
+        assert.equal(res.status, 200);
+        assert.equal(res.headers.get('content-type'), 'text/plain; version=0.0.4; charset=utf-8');
+
+        const body = await res.text();
+        assert.ok(body.includes('# HELP http_requests_total'));
+        assert.ok(body.includes('# TYPE http_requests_total counter'));
+        assert.ok(body.includes('# HELP http_request_duration_seconds'));
+        assert.ok(body.includes('# TYPE http_request_duration_seconds histogram'));
+        assert.ok(body.includes('# TYPE active_rooms gauge'));
+        assert.ok(body.includes('# TYPE connected_sse_clients gauge'));
+
+        // Test auth enforcement when REQUIRE_METRICS_AUTH is active
+        process.env.REQUIRE_METRICS_AUTH = 'true';
+        process.env.METRICS_TOKEN = 'test_metrics_token_secret_42';
+        try {
+          const unauthRes = await fetch(`${baseUrl}/metrics`);
+          assert.equal(unauthRes.status, 401);
+
+          const tokenRes = await fetch(`${baseUrl}/metrics`, {
+            headers: { Authorization: 'Bearer test_metrics_token_secret_42' }
+          });
+          assert.equal(tokenRes.status, 200);
+
+          const adminRes = await fetch(`${baseUrl}/metrics`, {
+            headers: { Authorization: 'Bearer hackathon_admin_secret' }
+          });
+          assert.equal(adminRes.status, 200);
+        } finally {
+          delete process.env.REQUIRE_METRICS_AUTH;
+          delete process.env.METRICS_TOKEN;
+        }
+      } finally {
+        server.closeAllConnections?.();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+  });
+
+  describe('8. Structured NDJSON Logger & Correlation Middleware', () => {
+    test('Logger outputs valid NDJSON with level, timestamp, pid, and message', () => {
+      const captured: Array<{ line: string; level: string }> = [];
+      const testLogger = new Logger('debug');
+      testLogger.setOutputInterceptor((line, level) => {
+        captured.push({ line, level });
+      });
+
+      testLogger.info('Game engine booted', { environment: 'production', activeRooms: 5 });
+      assert.equal(captured.length, 1);
+      assert.equal(captured[0].level, 'info');
+
+      const parsed = JSON.parse(captured[0].line.trim());
+      assert.equal(parsed.level, 'info');
+      assert.equal(parsed.msg, 'Game engine booted');
+      assert.equal(parsed.environment, 'production');
+      assert.equal(parsed.activeRooms, 5);
+      assert.ok(typeof parsed.pid === 'number');
+      assert.ok(typeof parsed.timestamp === 'string');
+    });
+
+    test('Logger formats Error instances with stack, name, and message', () => {
+      const testLogger = new Logger('debug');
+      const errorEntry = testLogger.formatEntry(
+        'error',
+        'Database connection timed out',
+        { retryCount: 3 },
+        new Error('Socket hung up')
+      );
+
+      assert.equal(errorEntry.level, 'error');
+      assert.equal(errorEntry.msg, 'Database connection timed out');
+      assert.equal(errorEntry.retryCount, 3);
+      assert.ok(errorEntry.err && typeof errorEntry.err === 'object');
+      assert.equal((errorEntry.err as any).name, 'Error');
+      assert.equal((errorEntry.err as any).message, 'Socket hung up');
+      assert.ok(typeof (errorEntry.err as any).stack === 'string');
+    });
+
+    test('Logger enforces severity hierarchy and suppresses lower levels', () => {
+      const captured: string[] = [];
+      const testLogger = new Logger('warn');
+      testLogger.setOutputInterceptor((line) => {
+        captured.push(line);
+      });
+
+      testLogger.debug('Debug trace');
+      testLogger.info('Informational notification');
+      assert.equal(captured.length, 0, 'Debug and info should be suppressed when level is warn');
+
+      testLogger.warn('Warning condition');
+      testLogger.error('Critical failure');
+      assert.equal(captured.length, 2, 'Warn and error should be recorded');
+    });
+
+    test('requestLoggingMiddleware binds correlation ID, sanitizes invalid IDs, and echoes X-Request-Id header', async () => {
+      const app = createApp();
+      const server = http.createServer(app);
+      await new Promise<void>((resolve) => server.listen(0, resolve));
+      const port = (server.address() as AddressInfo).port;
+      const baseUrl = `http://127.0.0.1:${port}`;
+
+      try {
+        // 1. Without incoming correlation ID -> generates new one
+        const res1 = await fetch(`${baseUrl}/api/health`);
+        assert.equal(res1.status, 200);
+        const reqId1 = res1.headers.get('x-request-id');
+        assert.ok(reqId1, 'X-Request-Id must be set');
+        assert.ok(reqId1.startsWith('req_'));
+
+        // 2. With valid client-provided correlation ID -> preserves incoming ID
+        const customTraceId = 'trace_external_987654321';
+        const res2 = await fetch(`${baseUrl}/api/health`, {
+          headers: { 'x-request-id': customTraceId }
+        });
+        assert.equal(res2.status, 200);
+        assert.equal(res2.headers.get('x-request-id'), customTraceId);
+
+        // 3. With malicious/invalid client-supplied ID (newlines/excessive chars) -> sanitized to generated ID
+        const maliciousId = 'bad_header_injection_too_long_' + 'x'.repeat(100);
+        const res3 = await fetch(`${baseUrl}/api/health`, {
+          headers: { 'x-request-id': maliciousId }
+        });
+        assert.equal(res3.status, 200);
+        const reqId3 = res3.headers.get('x-request-id');
+        assert.ok(reqId3 && reqId3.startsWith('req_'));
+        assert.notEqual(reqId3, maliciousId);
+      } finally {
+        server.closeAllConnections?.();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
       }
     });
   });

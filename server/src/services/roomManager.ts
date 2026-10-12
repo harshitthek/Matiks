@@ -25,7 +25,8 @@ import type {
   AnomalyFlagEvent,
   AuditRecord,
   SessionReplayData,
-  SessionReplaySummary
+  SessionReplaySummary,
+  RoomStatus
 } from '../types/sse.js';
 import type { QuestionSanitized, OperatorMode } from '../types/math.js';
 import { mathEngine } from './mathEngine.js';
@@ -33,6 +34,7 @@ import { scoringEngine } from './scoringEngine.js';
 import { sseHub } from './sseHub.js';
 import { leaderboardManager } from './leaderboardManager.js';
 import { windowManager } from './windowManager.js';
+import { metrics } from './metrics.js';
 
 export interface SerializedTeamRoom extends Omit<TeamRoom, 'members'> {
   members: Array<[string, TeamMember]>;
@@ -727,6 +729,13 @@ export class RoomManager {
       anomalyReason: finalAnomalyReason
     };
     session.submissions.push(submission);
+    metrics.recordSubmission({
+      operator: question.operator,
+      bucket: question.bucket,
+      isCorrect: evalResult.isCorrect,
+      isAnomaly: finalIsAnomaly,
+      latencySeconds: validatedLatency / 1000
+    });
 
     // Update room member state
     const member = room.members.get(session.rollNumber);
@@ -1530,7 +1539,7 @@ export class RoomManager {
 
       const targetPath = path.join(this.auditDir, `${session.sessionId}.json`);
       const tmpPath = `${targetPath}.tmp.${randomBytes(4).toString('hex')}`;
-      fs.writeFileSync(tmpPath, JSON.stringify(replayData, null, 2), 'utf-8');
+      fs.writeFileSync(tmpPath, JSON.stringify(replayData), 'utf-8');
       fs.renameSync(tmpPath, targetPath);
     } catch (err: unknown) {
       console.error(`[RoomManager] Failed to persist session audit for ${session.sessionId}:`, err);
@@ -1642,6 +1651,27 @@ export class RoomManager {
     }
 
     return Array.from(replayMap.values()).sort((a, b) => b.startedAt - a.startedAt);
+  }
+
+  /**
+   * Returns counts of active rooms grouped by lifecycle status.
+   */
+  public getRoomsCountByStatus(): Record<RoomStatus, number> {
+    const counts: Record<RoomStatus, number> = {
+      LOBBY: 0,
+      AWAITING_READY: 0,
+      COUNTDOWN: 0,
+      IN_SPRINT: 0,
+      PAUSED: 0,
+      FINISHED: 0
+    };
+    for (const room of this.rooms.values()) {
+      const status: RoomStatus = room.isPaused ? 'PAUSED' : room.status;
+      if (counts[status] !== undefined) {
+        counts[status]++;
+      }
+    }
+    return counts;
   }
 
   /**

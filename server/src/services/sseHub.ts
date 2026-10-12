@@ -278,6 +278,30 @@ export class SseHub {
   }
 
   /**
+   * Returns active client connection counts grouped by channel category.
+   */
+  public getClientCounts(): { team: number; leaderboard: number; admin: number; total: number } {
+    let team = 0;
+    let leaderboard = 0;
+    let admin = 0;
+    let total = 0;
+
+    for (const [channel, clients] of this.channels.entries()) {
+      const count = clients.size;
+      total += count;
+      if (channel.startsWith('team:')) {
+        team += count;
+      } else if (channel === 'leaderboard') {
+        leaderboard += count;
+      } else if (channel === 'admin') {
+        admin += count;
+      }
+    }
+
+    return { team, leaderboard, admin, total };
+  }
+
+  /**
    * Cleans up all connections, buffers, and timers on server shutdown.
    */
   public destroy(): void {

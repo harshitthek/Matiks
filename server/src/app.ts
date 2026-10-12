@@ -59,7 +59,9 @@ import {
   redirectOidcCallbackHandler
 } from './controllers/authController.js';
 
-import { requireAdminAuth } from './middleware/auth.js';
+import { requireAdminAuth, requireMetricsAuth } from './middleware/auth.js';
+import { requestLoggingMiddleware } from './config/logger.js';
+import { metrics, metricsMiddleware } from './services/metrics.js';
 
 const PRIVATE_LAN_ORIGIN_REGEX =
   /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/;
@@ -107,9 +109,14 @@ export function createApp(): express.Application {
   const loginLimiter = createRateLimiter(60 * 1000, 30);
   const oidcExchangeLimiter = createRateLimiter(60 * 1000, 30);
   const membershipLimiter = createRateLimiter(60 * 1000, 60);
+  const metricsLimiter = createRateLimiter(60 * 1000, 120);
 
   // Trust reverse proxy (Nginx, Cloudflare, ALB) for accurate client IP and protocol detection
   app.set('trust proxy', 1);
+
+  // Structured NDJSON logging and low-cardinality Prometheus metrics telemetry
+  app.use(requestLoggingMiddleware);
+  app.use(metricsMiddleware);
 
   // CORS configuration with explicit trusted origins allowlist + nearby LAN support in dev
   const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,https://matiks.fossclub.tech,https://fossclub.tech,https://www.fossclub.tech')
@@ -141,6 +148,12 @@ export function createApp(): express.Application {
   // Health check
   app.get('/api/health', (_req, res) => {
     res.status(200).json({ status: 'ok', serverTime: Date.now() });
+  });
+
+  // Prometheus Metrics exposition
+  app.get('/metrics', metricsLimiter, requireMetricsAuth, (_req, res) => {
+    res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+    res.status(200).send(metrics.getMetricsSnapshot());
   });
 
   // Authentication REST endpoints (Pluggable Local & Club OIDC)
