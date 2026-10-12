@@ -172,6 +172,68 @@ describe('Matiks Hackathon — Core Services Unit Test Suite', () => {
       lb.clear();
       assert.equal(lb.getLeaderboard().length, 0);
     });
+
+    test('enforces anti-screen-peeking delay buffer on public channel while keeping admin immediate, and flushes instantly', async () => {
+      assert.equal(lb.getStreamDelayMs(), 0);
+      lb.setStreamDelayMs(NaN);
+      assert.equal(lb.getStreamDelayMs(), 0);
+
+      // Clamps to max 300_000ms
+      lb.setStreamDelayMs(500_000);
+      assert.equal(lb.getStreamDelayMs(), 300_000);
+
+      lb.setStreamDelayMs(100);
+      assert.equal(lb.getStreamDelayMs(), 100);
+
+      lb.updateTeam({
+        teamCode: 'DELAY-01',
+        teamName: 'Delayed Squad',
+        teamAverageScore: 2500,
+        membersCount: 3,
+        activeMembersCount: 3,
+        averageTimeSeconds: 45,
+        memberBreakdown: [],
+        status: 'FINISHED'
+      }, true);
+
+      // Prior to flush or delay maturity, public snapshot must be empty to prevent leaking un-delayed standings
+      assert.equal(lb.getPublicLeaderboard().length, 0);
+      assert.equal(lb.getLeaderboard().length, 1);
+
+      // Verify flush immediately flushes any pending delay timer
+      lb.flush();
+      assert.equal(lb.getLeaderboard().length, 1);
+      assert.equal(lb.getPublicLeaderboard().length, 1);
+      assert.equal(lb.getLeaderboard()[0].teamCode, 'DELAY-01');
+
+      // Test delay reconciliation when delay is adjusted down
+      lb.setStreamDelayMs(500);
+      lb.updateTeam({
+        teamCode: 'DELAY-02',
+        teamName: 'Second Squad',
+        teamAverageScore: 2400,
+        membersCount: 2,
+        activeMembersCount: 2,
+        averageTimeSeconds: 50,
+        memberBreakdown: [],
+        status: 'FINISHED'
+      }, true);
+      assert.equal(lb.getPublicLeaderboard().length, 1, 'New team not visible yet');
+
+      // Reconcile by lowering delay to 20ms and waiting for release
+      lb.setStreamDelayMs(20);
+      await new Promise((r) => setTimeout(r, 150));
+      assert.equal(lb.getPublicLeaderboard().length, 2, 'Delayed queue drained following delay reconciliation');
+
+      // Test tournament wipe clears immediately without queue delay
+      lb.setStreamDelayMs(100);
+      lb.clear();
+      assert.equal(lb.getLeaderboard().length, 0);
+      assert.equal(lb.getPublicLeaderboard().length, 0);
+
+      lb.setStreamDelayMs(0);
+      assert.equal(lb.getStreamDelayMs(), 0);
+    });
   });
 
   describe('2. WindowManager Lifecycle, Expiration & Callback Isolation', () => {

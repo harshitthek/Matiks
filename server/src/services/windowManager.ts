@@ -7,6 +7,7 @@
 
 import type { ContestWindowConfig, WindowStatusEvent } from '../types/sse.js';
 import { sseHub } from './sseHub.js';
+import { leaderboardManager } from './leaderboardManager.js';
 
 export class WindowManager {
   private config: ContestWindowConfig;
@@ -36,7 +37,7 @@ export class WindowManager {
   public isOpen(): boolean {
     if (!this.config.isOpen) return false;
     if (Date.now() > this.config.closesAt) {
-      this.config.isOpen = false;
+      this.closeWindow();
       return false;
     }
     return true;
@@ -79,6 +80,7 @@ export class WindowManager {
   public closeWindow(): ContestWindowConfig {
     this.config.isOpen = false;
     this.broadcastStatus();
+    leaderboardManager.flush();
     return this.getConfig();
   }
 

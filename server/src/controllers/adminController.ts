@@ -231,3 +231,33 @@ export function exportTournamentJsonHandler(_req: Request, res: Response): void 
   );
   res.status(200).send(JSON.stringify(report, null, 2));
 }
+
+export function setStreamDelayHandler(req: Request, res: Response): void {
+  try {
+    const { delayMs } = req.body;
+    if (
+      typeof delayMs !== 'number' ||
+      !Number.isFinite(delayMs) ||
+      delayMs < 0 ||
+      delayMs > 60_000
+    ) {
+      res.status(400).json({ error: 'delayMs must be a finite number between 0 and 60000' });
+      return;
+    }
+
+    leaderboardManager.setStreamDelayMs(delayMs);
+    res.status(200).json({ success: true, delayMs: leaderboardManager.getStreamDelayMs() });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to set stream delay';
+    res.status(400).json({ error: message });
+  }
+}
+
+export function getStreamDelayHandler(_req: Request, res: Response): void {
+  res.status(200).json({ delayMs: leaderboardManager.getStreamDelayMs() });
+}
+
+export function flushLeaderboardHandler(_req: Request, res: Response): void {
+  leaderboardManager.flush();
+  res.status(200).json({ success: true, flushedAt: Date.now() });
+}

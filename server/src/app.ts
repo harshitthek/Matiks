@@ -34,7 +34,10 @@ import {
   simulateTeamsHandler,
   clearSimulatedTeamsHandler,
   exportTournamentCsvHandler,
-  exportTournamentJsonHandler
+  exportTournamentJsonHandler,
+  setStreamDelayHandler,
+  getStreamDelayHandler,
+  flushLeaderboardHandler
 } from './controllers/adminController.js';
 
 import {
@@ -176,6 +179,9 @@ export function createApp(): express.Application {
   app.post('/api/admin/clear-simulated-teams', requireAdminAuth, clearSimulatedTeamsHandler);
   app.get('/api/admin/export/csv', requireAdminAuth, exportTournamentCsvHandler);
   app.get('/api/admin/export/json', requireAdminAuth, exportTournamentJsonHandler);
+  app.get('/api/admin/stream-delay', requireAdminAuth, getStreamDelayHandler);
+  app.post('/api/admin/stream-delay', requireAdminAuth, setStreamDelayHandler);
+  app.post('/api/admin/flush-leaderboard', requireAdminAuth, flushLeaderboardHandler);
 
   return app;
 }

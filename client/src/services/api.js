@@ -388,4 +388,41 @@ export async function verifyClubMembership(identifier) {
   return request(`/auth/verify-membership/${encodeURIComponent(identifier)}`);
 }
 
+/**
+ * Admin: Gets current anti-screen-peeking stream delay.
+ */
+export async function adminGetStreamDelay(adminToken) {
+  return request('/admin/stream-delay', {
+    headers: {
+      'x-admin-token': adminToken || ''
+    }
+  });
+}
+
+/**
+ * Admin: Sets anti-screen-peeking stream delay in milliseconds.
+ */
+export async function adminSetStreamDelay(delayMs, adminToken) {
+  return request('/admin/stream-delay', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': adminToken || ''
+    },
+    body: JSON.stringify({ delayMs })
+  });
+}
+
+/**
+ * Admin: Immediately flushes pending delayed leaderboard broadcasts to stage screen.
+ */
+export async function adminFlushLeaderboard(adminToken) {
+  return request('/admin/flush-leaderboard', {
+    method: 'POST',
+    headers: {
+      'x-admin-token': adminToken || ''
+    }
+  });
+}
+
 

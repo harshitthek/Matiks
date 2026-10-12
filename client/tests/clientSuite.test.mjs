@@ -364,25 +364,28 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
       soundFx.muted = false;
     });
 
-    test('synthesizes key click, correct, incorrect, and finish fanfare and respects mute toggle', () => {
+    test('synthesizes key click, correct, incorrect, finish fanfare, countdown tick, and podium fanfare and respects mute toggle', () => {
       assert.equal(soundFx.isMuted(), false);
       soundFx.playKeyClick();
       soundFx.playCorrect();
       soundFx.playIncorrect();
       soundFx.playFinish(); // plays 4-note chord
+      soundFx.playCountdownTick(false); // 1 osc
+      soundFx.playPodiumFanfare(); // 7 osc
 
-      assert.equal(soundFx.ctx.getOscCount(), 7);
+      assert.equal(soundFx.ctx.getOscCount(), 15);
 
       // Mute suppresses further oscillators
       assert.equal(soundFx.toggleMute(), true);
       assert.equal(soundFx.isMuted(), true);
       soundFx.playKeyClick();
       soundFx.playCorrect();
-      assert.equal(soundFx.ctx.getOscCount(), 7);
+      soundFx.playPodiumFanfare();
+      assert.equal(soundFx.ctx.getOscCount(), 15);
 
       assert.equal(soundFx.toggleMute(), false);
       soundFx.playKeyClick();
-      assert.equal(soundFx.ctx.getOscCount(), 8);
+      assert.equal(soundFx.ctx.getOscCount(), 16);
     });
 
     test('resumes suspended AudioContext and gracefully survives missing Web Audio API', () => {

@@ -134,8 +134,8 @@ export function sseLeaderboardHandler(req: Request, res: Response): void {
   const channel = 'leaderboard';
   sseHub.registerClient(channel, res);
 
-  // Send immediate initial standings and window status
-  sseHub.sendDirect(res, 'leaderboard_update', leaderboardManager.getLeaderboard());
+  // Send immediate initial standings (respecting anti-screen-peeking delay) and window status
+  sseHub.sendDirect(res, 'leaderboard_update', leaderboardManager.getPublicLeaderboard());
 
   const windowConfig = windowManager.getConfig();
   sseHub.sendDirect(res, 'window_status', {

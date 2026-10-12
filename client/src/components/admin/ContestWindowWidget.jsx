@@ -12,6 +12,9 @@ export function ContestWindowWidget({
   onClearSimulatedTeams,
   onExportCsv,
   onExportJson,
+  streamDelayMs = 0,
+  onSetStreamDelay,
+  onFlushLeaderboard,
   isLoading
 }) {
   const [durationMinutes, setDurationMinutes] = useState(30);
@@ -184,6 +187,56 @@ export function ContestWindowWidget({
               TICKER: <strong className="text-[#2ee58f]">"{windowStatus.announcementTicker}"</strong>
             </span>
           )}
+        </div>
+      )}
+
+      {/* Anti-Screen-Peeking Stream Buffer Controls */}
+      {onSetStreamDelay && (
+        <div className="mt-4 pt-4 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs text-[#aab5ac] uppercase font-bold">
+              STAGE STREAM DELAY:
+            </span>
+            <span className="font-mono text-xs text-[#ffe36e] font-bold">
+              {streamDelayMs === 0 ? '0s (LIVE STREAM)' : `${(streamDelayMs / 1000).toFixed(0)}s DELAY`}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {[0, 5000, 10000, 15000].map((ms) => {
+              const label = ms === 0 ? '0s (LIVE)' : `${ms / 1000}s`;
+              const isSelected = streamDelayMs === ms;
+              return (
+                <button
+                  key={ms}
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() => onSetStreamDelay(ms)}
+                  className={`font-mono text-xs px-2.5 py-1 border transition-all ${
+                    isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                  } ${
+                    isSelected
+                      ? 'border-[#2ee58f] bg-[#2ee58f] text-[#090c0a] font-black shadow-[2px_2px_0_#2ee58f]'
+                      : 'border-white/20 bg-[#090c0a] text-[#aab5ac] hover:border-[#2ee58f]/60 hover:text-[#e8ece3]'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+
+            {onFlushLeaderboard && (
+              <TactileButton
+                variant="signal"
+                onClick={onFlushLeaderboard}
+                disabled={isLoading}
+                className="px-3 py-1 text-xs font-bold ml-1"
+                title="Immediately flush pending delayed broadcasts to stage screen"
+              >
+                ⚡ FLUSH TO STAGE
+              </TactileButton>
+            )}
+          </div>
         </div>
       )}
     </div>

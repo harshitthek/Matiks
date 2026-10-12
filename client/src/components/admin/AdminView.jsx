@@ -21,7 +21,10 @@ import {
   simulateTeams,
   clearSimulatedTeams,
   exportTournamentCsv,
-  exportTournamentJson
+  exportTournamentJson,
+  adminGetStreamDelay,
+  adminSetStreamDelay,
+  adminFlushLeaderboard
 } from '../../services/api.js';
 import { connectAdminStream } from '../../services/sse.js';
 
@@ -45,6 +48,7 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
   const [telemetry, setTelemetry] = useState(null);
   const [rooms, setRooms] = useState([]);
   const [windowStatus, setWindowStatus] = useState(null);
+  const [streamDelayMs, setStreamDelayMs] = useState(0);
   const [anomalies, setAnomalies] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -82,17 +86,18 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
   const refreshData = useCallback(async () => {
     if (!adminToken) return;
     try {
-      const [roomsRes, telemRes, logsRes] = await Promise.allSettled([
+      const [roomsRes, telemRes, logsRes, delayRes] = await Promise.allSettled([
         getAdminRooms(adminToken),
         getAdminTelemetry(adminToken),
-        getAdminAuditLogs(adminToken)
+        getAdminAuditLogs(adminToken),
+        adminGetStreamDelay(adminToken)
       ]);
 
       const isAuthError = (res) =>
         res.status === 'rejected' &&
         (res.reason?.status === 401 || res.reason?.status === 403);
 
-      if (isAuthError(roomsRes) || isAuthError(telemRes) || isAuthError(logsRes)) {
+      if (isAuthError(roomsRes) || isAuthError(telemRes) || isAuthError(logsRes) || isAuthError(delayRes)) {
         handleLogout();
         return;
       }
@@ -106,6 +111,9 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
       if (logsRes.status === 'fulfilled' && Array.isArray(logsRes.value)) {
         setAuditLogs(logsRes.value);
       }
+      if (delayRes.status === 'fulfilled' && typeof delayRes.value?.delayMs === 'number') {
+        setStreamDelayMs(delayRes.value.delayMs);
+      }
     } catch (err) {
       console.warn('[Admin] Data fetch error:', err);
     }
@@ -117,14 +125,15 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
       Promise.allSettled([
         getAdminRooms(adminToken),
         getAdminTelemetry(adminToken),
-        getAdminAuditLogs(adminToken)
-      ]).then(([roomsRes, telemRes, logsRes]) => {
+        getAdminAuditLogs(adminToken),
+        adminGetStreamDelay(adminToken)
+      ]).then(([roomsRes, telemRes, logsRes, delayRes]) => {
         if (isCancelled) return;
         const isAuthError = (res) =>
           res.status === 'rejected' &&
           (res.reason?.status === 401 || res.reason?.status === 403);
 
-        if (isAuthError(roomsRes) || isAuthError(telemRes) || isAuthError(logsRes)) {
+        if (isAuthError(roomsRes) || isAuthError(telemRes) || isAuthError(logsRes) || isAuthError(delayRes)) {
           handleLogout();
           return;
         }
@@ -137,6 +146,9 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
         }
         if (logsRes.status === 'fulfilled' && Array.isArray(logsRes.value)) {
           setAuditLogs(logsRes.value);
+        }
+        if (delayRes.status === 'fulfilled' && typeof delayRes.value?.delayMs === 'number') {
+          setStreamDelayMs(delayRes.value.delayMs);
         }
       });
     }
@@ -347,6 +359,41 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
     }
   };
 
+  // Handle Anti-Screen-Peeking Stream Delay
+  const handleSetStreamDelay = async (delayMs) => {
+    setActionLoading('delay');
+    setActionFeedback(null);
+    try {
+      const res = await adminSetStreamDelay(delayMs, adminToken);
+      setStreamDelayMs(res.delayMs);
+      setActionFeedback({
+        type: 'success',
+        message: `Stage stream delay updated to ${res.delayMs / 1000}s.`
+      });
+    } catch (err) {
+      setActionFeedback({ type: 'error', message: err?.message || 'Failed to update stream delay.' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Handle Flush Leaderboard to Stage
+  const handleFlushLeaderboard = async () => {
+    setActionLoading('flush');
+    setActionFeedback(null);
+    try {
+      await adminFlushLeaderboard(adminToken);
+      setActionFeedback({
+        type: 'success',
+        message: 'Flushed live leaderboard directly to stage projector screen.'
+      });
+    } catch (err) {
+      setActionFeedback({ type: 'error', message: err?.message || 'Failed to flush leaderboard.' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Render Auth Gate if unauthenticated
   if (!adminToken) {
     return (
@@ -438,12 +485,17 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
         onClearSimulatedTeams={handleClearSimulatedTeams}
         onExportCsv={handleExportCsv}
         onExportJson={handleExportJson}
+        streamDelayMs={streamDelayMs}
+        onSetStreamDelay={handleSetStreamDelay}
+        onFlushLeaderboard={handleFlushLeaderboard}
         isLoading={
           actionLoading === 'window' ||
           actionLoading === 'simulate' ||
           actionLoading === 'clear-simulate' ||
           actionLoading === 'export-csv' ||
-          actionLoading === 'export-json'
+          actionLoading === 'export-json' ||
+          actionLoading === 'delay' ||
+          actionLoading === 'flush'
         }
       />
 

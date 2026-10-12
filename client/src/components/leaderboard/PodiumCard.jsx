@@ -9,7 +9,7 @@ import { RadarDot } from '../common/RadarDot.jsx';
  * 2nd: Silver/Signal (#2ee58f)
  * 3rd: Bronze/Amber (#f5a623)
  */
-export function PodiumCard({ entry, position = 1 }) {
+export function PodiumCard({ entry, position = 1, isRevealed = true }) {
   if (!entry) return null;
 
   const isFirst = position === 1;
@@ -48,9 +48,27 @@ export function PodiumCard({ entry, position = 1 }) {
         glow: 'shadow-[0_0_20px_rgba(245,166,35,0.15)]'
       };
 
+  if (!isRevealed) {
+    return (
+      <div
+        className={`relative bg-[#090c0a]/80 border-2 border-dashed border-white/20 p-6 md:p-8 text-center flex flex-col items-center justify-center min-h-[240px] transition-all duration-500 animate-pulse ${
+          isFirst ? 'md:-translate-y-4 z-10' : 'z-0'
+        }`}
+      >
+        <span className="font-mono text-3xl mb-2">🔒</span>
+        <span className="font-mono text-xs font-black tracking-widest text-[#aab5ac] uppercase">
+          {theme.medal}
+        </span>
+        <span className="font-mono text-[10px] text-[#ffe36e] mt-1 font-bold">
+          [ AWAITING REVEAL... ]
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div
-      className={`relative bg-[#090c0a] border-2 ${theme.border} p-5 md:p-6 transition-all duration-300 ${theme.shadow} ${theme.glow} flex flex-col justify-between ${
+      className={`relative bg-[#090c0a] border-2 ${theme.border} p-5 md:p-6 transition-all duration-700 ease-out transform ${theme.shadow} ${theme.glow} flex flex-col justify-between ${
         isFirst ? 'md:-translate-y-4 z-10' : 'z-0'
       }`}
     >
