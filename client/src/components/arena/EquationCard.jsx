@@ -38,23 +38,23 @@ export function EquationCard({
 
   return (
     <div
-      className={`cyber-card p-3.5 sm:p-6 md:p-10 text-center relative transition-colors duration-150 ${cardBorderClass}`}
+      className={`cyber-card p-2.5 sm:p-4 md:p-6 text-center relative transition-colors duration-150 flex flex-col justify-between ${cardBorderClass}`}
     >
       {/* Top Question Category & Progress Header */}
-      <div className="flex items-center justify-between pb-2 sm:pb-3 mb-3 sm:mb-6 border-b border-[#2ee58f]/20 font-mono text-xs">
+      <div className="flex items-center justify-between pb-1 sm:pb-2 mb-1.5 sm:mb-3 border-b border-[#2ee58f]/20 font-mono text-xs">
         <span className={`px-2 py-0.5 border font-bold text-[10px] sm:text-[11px] ${badge.bg} ${badge.border} ${badge.text}`}>
           {badge.label}
         </span>
-        <span className="text-[#aab5ac] tracking-widest font-bold text-[11px] sm:text-xs">
+        <span className="text-[#aab5ac] tracking-widest font-bold text-[10px] sm:text-xs">
           QUESTION <strong className="text-[#e8ece3]">{String(questionNumber).padStart(2, '0')}</strong> / {totalQuestions}
         </span>
       </div>
 
       {/* Floating Delta Callout Feedback */}
       {lastResult && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-12 sm:-translate-y-16 pointer-events-none z-20">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-10 sm:-translate-y-14 pointer-events-none z-20">
           {lastResult.isCorrect ? (
-            <div className="animate-float-up bg-[#2ee58f] text-[#090c0a] font-mono font-extrabold text-xs sm:text-sm md:text-base px-3 py-1 border-2 border-[#090c0a] shadow-[3px_3px_0_#090c0a] flex items-center gap-1.5 whitespace-nowrap">
+            <div className="animate-float-up bg-[#2ee58f] text-[#090c0a] font-mono font-extrabold text-xs sm:text-sm md:text-base px-2.5 py-1 border-2 border-[#090c0a] shadow-[3px_3px_0_#090c0a] flex items-center gap-1.5 whitespace-nowrap">
               <span>+{lastResult.pointsAwarded} PTS</span>
               {lastResult.consecutiveStreak >= 3 && (
                 <span className="text-xs bg-[#090c0a] text-[#ffe36e] px-1 py-0.5">
@@ -63,7 +63,7 @@ export function EquationCard({
               )}
             </div>
           ) : (
-            <div className="animate-float-up bg-[#ff6b5e] text-[#090c0a] font-mono font-extrabold text-xs sm:text-sm md:text-base px-3 py-1 border-2 border-[#090c0a] shadow-[3px_3px_0_#090c0a] whitespace-nowrap">
+            <div className="animate-float-up bg-[#ff6b5e] text-[#090c0a] font-mono font-extrabold text-xs sm:text-sm md:text-base px-2.5 py-1 border-2 border-[#090c0a] shadow-[3px_3px_0_#090c0a] whitespace-nowrap">
               {lastResult.pointsAwarded} PTS
             </div>
           )}
@@ -71,17 +71,17 @@ export function EquationCard({
       )}
 
       {/* Equation Display */}
-      <div className="my-2.5 sm:my-6 md:my-8">
-        <div className="flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 md:gap-5 font-display font-extrabold text-4xl sm:text-6xl md:text-7xl text-[#e8ece3] tracking-tight">
+      <div className="my-1 sm:my-3 md:my-5">
+        <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-3 md:gap-5 font-display font-extrabold text-3xl sm:text-5xl md:text-6xl text-[#e8ece3] tracking-tight">
           <span>{question.a}</span>
-          <span className="text-[#2ee58f] font-mono font-normal text-3xl sm:text-5xl md:text-6xl">
+          <span className="text-[#2ee58f] font-mono font-normal text-2xl sm:text-4xl md:text-5xl">
             {question.operation || question.operator || '+'}
           </span>
           <span>{question.b}</span>
-          <span className="text-[#aab5ac] font-mono font-normal text-3xl sm:text-5xl md:text-6xl">=</span>
+          <span className="text-[#aab5ac] font-mono font-normal text-2xl sm:text-4xl md:text-5xl">=</span>
 
           {/* User Input Answer Box */}
-          <div className="min-w-[100px] sm:min-w-[120px] md:min-w-[150px] h-[54px] sm:h-[70px] md:h-[84px] bg-[#090c0a] border-3 border-[#2ee58f] flex items-center justify-center px-3 sm:px-4 shadow-[4px_4px_0_#2ee58f] text-[#2ee58f] font-mono text-3xl sm:text-5xl md:text-6xl">
+          <div className="min-w-[80px] sm:min-w-[110px] md:min-w-[140px] h-[46px] sm:h-[60px] md:h-[74px] bg-[#090c0a] border-3 border-[#2ee58f] flex items-center justify-center px-2.5 sm:px-3 shadow-[3px_3px_0_#2ee58f] text-[#2ee58f] font-mono text-2xl sm:text-4xl md:text-5xl">
             {currentInput ? (
               <span>{currentInput}</span>
             ) : (
@@ -92,7 +92,7 @@ export function EquationCard({
       </div>
 
       {/* Helper Prompt */}
-      <div className="font-mono text-[10px] sm:text-xs text-[#aab5ac] tracking-wider mt-1 sm:mt-4">
+      <div className="font-mono text-[9px] sm:text-xs text-[#aab5ac] tracking-wider mt-1 sm:mt-2">
         {isSubmitting ? (
           <span className="text-[#ffe36e] animate-pulse">VALIDATING LATENCY...</span>
         ) : hasAutoSubmit ? (

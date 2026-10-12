@@ -45,6 +45,45 @@ export function SprintSummary({
     squadScores.reduce((a, b) => a + b, 0) / (squadScores.length || 1)
   );
 
+  // Cognitive Latency Diagnostics
+  const categoryDiagnostics = (() => {
+    if (!submissions || submissions.length === 0) return null;
+
+    const categories = [
+      { id: 'clean', label: 'CLEAN // NO CARRY', buckets: ['B1', 'S1'], targetMs: 3600, color: '#2ee58f' },
+      { id: 'ones', label: 'ONES CARRY // OVERLOAD', buckets: ['B2'], targetMs: 5500, color: '#ffe36e' },
+      { id: 'century', label: 'CENTURY // 100+ BREAKER', buckets: ['B3'], targetMs: 6000, color: '#f5a623' },
+      { id: 'double', label: 'DOUBLE / REGROUP BORROW', buckets: ['B4', 'S2'], targetMs: 7200, color: '#ff6b5e' }
+    ];
+
+    const data = categories
+      .map((cat) => {
+        const items = submissions.filter((s) => cat.buckets.includes(s.bucket));
+        if (items.length === 0) return null;
+        const totalLat = items.reduce((acc, s) => acc + (s.latencyMs || 0), 0);
+        const avgLatMs = Math.round(totalLat / items.length);
+        const correct = items.filter((s) => s.isCorrect).length;
+        const acc = Math.round((correct / items.length) * 100);
+        const ratio = avgLatMs / cat.targetMs;
+        return {
+          ...cat,
+          count: items.length,
+          correct,
+          avgLatSec: (avgLatMs / 1000).toFixed(1),
+          avgLatMs,
+          accuracy: acc,
+          ratio
+        };
+      })
+      .filter(Boolean);
+
+    if (data.length === 0) return null;
+
+    const bottleneck = [...data].sort((a, b) => b.ratio - a.ratio)[0];
+
+    return { data, bottleneck };
+  })();
+
   return (
     <div className="w-full max-w-3xl mx-auto px-4 py-8">
       {/* Title Card */}
@@ -139,6 +178,53 @@ export function SprintSummary({
         </div>
       </div>
 
+      {/* Cognitive Latency Diagnostics */}
+      {categoryDiagnostics && (
+        <div className="cyber-card p-5 sm:p-6 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 mb-4 border-b border-[#2ee58f]/20">
+            <div>
+              <span className="font-mono text-[10px] text-[#2ee58f] font-bold tracking-widest uppercase block">
+                COGNITIVE LATENCY DIAGNOSTICS
+              </span>
+              <h3 className="font-display font-bold text-base sm:text-lg text-[#e8ece3]">
+                SPEED & TAXONOMY BOTTLENECK ANALYSIS
+              </h3>
+            </div>
+            {categoryDiagnostics.bottleneck && (
+              <div className="px-2.5 py-1 bg-[#ff6b5e]/15 border border-[#ff6b5e] font-mono text-[11px] text-[#ff6b5e] font-bold shrink-0">
+                BOTTLENECK: {categoryDiagnostics.bottleneck.label.split(' // ')[0]} ({categoryDiagnostics.bottleneck.avgLatSec}s)
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {categoryDiagnostics.data.map((cat) => (
+              <div key={cat.id} className="p-3 bg-[#090c0a] border border-[#2ee58f]/20 flex flex-col justify-between">
+                <div className="flex items-center justify-between text-xs font-mono mb-2">
+                  <span className="font-bold text-[#e8ece3] truncate">{cat.label}</span>
+                  <span className="text-[#aab5ac] shrink-0 font-bold">
+                    {cat.count} attempted ({cat.correct} correct)
+                  </span>
+                </div>
+                <div className="w-full bg-[#161d18] h-2.5 mb-2 border border-[#090c0a] overflow-hidden">
+                  <div
+                    className="h-full transition-all"
+                    style={{
+                      width: `${Math.min(100, Math.round((cat.avgLatMs / 8000) * 100))}%`,
+                      backgroundColor: cat.color
+                    }}
+                  />
+                </div>
+                <div className="flex items-center justify-between font-mono text-[11px] text-[#aab5ac]">
+                  <span>AVG: <strong className="text-[#e8ece3]">{cat.avgLatSec}s</strong> (target {(cat.targetMs / 1000).toFixed(1)}s)</span>
+                  <span>ACCURACY: <strong className={cat.accuracy >= 80 ? 'text-[#2ee58f]' : 'text-[#ff6b5e]'}>{cat.accuracy}%</strong></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Question by Question Audit Log */}
       {submissions.length > 0 && (
         <div className="cyber-card p-6">
@@ -155,10 +241,15 @@ export function SprintSummary({
                     : 'border-[#ff6b5e]/30 bg-[#ff6b5e]/5 text-[#ff6b5e]'
                 }`}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3">
                   <span className="text-[#aab5ac]">#{idx + 1}</span>
+                  {sub.bucket && (
+                    <span className="text-[10px] px-1 py-0.5 border border-[#2ee58f]/30 text-[#2ee58f] font-mono font-bold">
+                      {sub.bucket}
+                    </span>
+                  )}
                   <span className="font-bold">
-                    {sub.a} + {sub.b} = {sub.answer}
+                    {sub.a} {sub.operator || '+'} {sub.b} = {sub.answer}
                   </span>
                 </div>
                 <div className="flex items-center gap-3">

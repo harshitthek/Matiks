@@ -95,6 +95,130 @@ export function ArenaView({
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [submissionError, setSubmissionError] = useState(null);
   const [teammates, setTeammates] = useState([]);
+  const [isFullscreen, setIsFullscreen] = useState(() =>
+    typeof document !== 'undefined'
+      ? Boolean(document.fullscreenElement || document.webkitFullscreenElement)
+      : false
+  );
+
+  const enteredFullscreenByArenaRef = useRef(false);
+  const userOptedOutOfFullscreenRef = useRef(false);
+  const isUnmountedRef = useRef(false);
+
+  const requestFullscreenSafe = useCallback(async (isManual = false) => {
+    try {
+      if (
+        typeof document !== 'undefined' &&
+        !(document.fullscreenElement || document.webkitFullscreenElement)
+      ) {
+        if (!isManual && userOptedOutOfFullscreenRef.current) {
+          return;
+        }
+        const root = document.documentElement;
+        if (root.requestFullscreen) {
+          await root.requestFullscreen();
+        } else if (root.webkitRequestFullscreen) {
+          await root.webkitRequestFullscreen();
+        }
+
+        if (isUnmountedRef.current || isFinishedRef.current) {
+          if (
+            typeof document !== 'undefined' &&
+            (document.fullscreenElement || document.webkitFullscreenElement)
+          ) {
+            if (document.exitFullscreen) {
+              await document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) {
+              await document.webkitExitFullscreen();
+            }
+          }
+        } else {
+          enteredFullscreenByArenaRef.current = true;
+        }
+      }
+    } catch {
+      // Browser rejected due to transient activation requirements
+    }
+  }, []);
+
+  const exitFullscreenSafe = useCallback(async (isUserAction = false) => {
+    try {
+      if (isUserAction) {
+        userOptedOutOfFullscreenRef.current = true;
+      }
+      if (
+        typeof document !== 'undefined' &&
+        (document.fullscreenElement || document.webkitFullscreenElement)
+      ) {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          await document.webkitExitFullscreen();
+        }
+      }
+    } catch {
+      // Ignore exit error
+    }
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (
+      typeof document !== 'undefined' &&
+      (document.fullscreenElement || document.webkitFullscreenElement)
+    ) {
+      void exitFullscreenSafe(true);
+    } else {
+      userOptedOutOfFullscreenRef.current = false;
+      void requestFullscreenSafe(true);
+    }
+  }, [exitFullscreenSafe, requestFullscreenSafe]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const handleFullscreenChange = () => {
+      const activeEl = document.fullscreenElement || document.webkitFullscreenElement;
+      setIsFullscreen(Boolean(activeEl));
+      if (!activeEl && enteredFullscreenByArenaRef.current) {
+        // User exited via Escape or browser chrome
+        userOptedOutOfFullscreenRef.current = true;
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  // Proactively attempt auto-fullscreen when entering arena
+  useEffect(() => {
+    void requestFullscreenSafe(false);
+  }, [requestFullscreenSafe]);
+
+  // Cleanly exit fullscreen on sprint completion or unmount ONLY if entered by arena
+  useEffect(() => {
+    if (
+      isFinished &&
+      enteredFullscreenByArenaRef.current &&
+      (document.fullscreenElement || document.webkitFullscreenElement)
+    ) {
+      void exitFullscreenSafe(false);
+    }
+  }, [isFinished, exitFullscreenSafe]);
+
+  useEffect(() => {
+    return () => {
+      isUnmountedRef.current = true;
+      if (
+        enteredFullscreenByArenaRef.current &&
+        typeof document !== 'undefined' &&
+        (document.fullscreenElement || document.webkitFullscreenElement)
+      ) {
+        void exitFullscreenSafe(false);
+      }
+    };
+  }, [exitFullscreenSafe]);
 
   const flashTimerRef = useRef(null);
   const lastResultTimerRef = useRef(null);
@@ -309,6 +433,8 @@ export function ArenaView({
           ...prev,
           {
             questionIndex: activeIndex,
+            bucket: activeQuestion?.bucket,
+            operator: activeQuestion?.operator || activeQuestion?.operation || '+',
             a: activeQuestion?.a,
             b: activeQuestion?.b,
             answer: parsedAnswer,
@@ -390,6 +516,14 @@ export function ArenaView({
     (digit) => {
       if (isFinishedRef.current || isFinished || isPaused) return;
 
+      if (
+        typeof document !== 'undefined' &&
+        !(document.fullscreenElement || document.webkitFullscreenElement) &&
+        !userOptedOutOfFullscreenRef.current
+      ) {
+        void requestFullscreenSafe(false);
+      }
+
       // If a submission is currently in flight, buffer the typed digit for the next question
       if (isSubmittingRef.current) {
         if (pendingInputBufferRef.current.length < 6) {
@@ -415,7 +549,7 @@ export function ArenaView({
         void submitAnswerValue(next);
       }
     },
-    [isFinished, isPaused, questions, submitAnswerValue]
+    [isFinished, isPaused, questions, requestFullscreenSafe, submitAnswerValue]
   );
 
   // Sync handleDigit ref to avoid circular useCallback dependencies during buffered replay
@@ -458,6 +592,23 @@ export function ArenaView({
       if (isEditable) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
+      const isGameKey =
+        (e.key >= '0' && e.key <= '9') ||
+        e.key === 'Backspace' ||
+        e.key === 'Escape' ||
+        e.key === 'Enter' ||
+        e.key === ' ';
+
+      if (!isGameKey) return;
+
+      if (
+        typeof document !== 'undefined' &&
+        !(document.fullscreenElement || document.webkitFullscreenElement) &&
+        !userOptedOutOfFullscreenRef.current
+      ) {
+        void requestFullscreenSafe(false);
+      }
+
       if (e.key >= '0' && e.key <= '9') {
         soundFx.playKeyClick();
         handleDigit(e.key);
@@ -476,7 +627,7 @@ export function ArenaView({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleDigit, handleBackspace, handleClear, submitAnswerValue, isActiveView, isFinished, isPaused]);
+  }, [handleDigit, handleBackspace, handleClear, submitAnswerValue, isActiveView, isFinished, isPaused, requestFullscreenSafe]);
 
   // Handle 120s sprint timeout
   const handleTimerExpire = useCallback(async () => {
@@ -532,30 +683,38 @@ export function ArenaView({
   }
 
   return (
-    <div className="w-full max-w-2xl mx-auto px-3 sm:px-4 py-1.5 sm:py-6">
+    <div className="w-full max-w-2xl mx-auto h-full max-h-[100dvh] flex flex-col justify-between overflow-hidden px-2.5 sm:px-4 py-1 sm:py-3 select-none">
       {/* Top Header Telemetry */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-2 sm:mb-4 pb-2 sm:pb-3 border-b-2 border-[#2ee58f]/20">
-        <div className="flex items-center gap-1.5 sm:gap-2">
+      <div className="shrink-0 flex items-center justify-between gap-1.5 sm:gap-2 mb-1 sm:mb-2 pb-1 sm:pb-2 border-b-2 border-[#2ee58f]/20">
+        <div className="flex items-center gap-1 sm:gap-2">
           <button
             type="button"
             onClick={() => setShowExitConfirm(true)}
-            className="font-mono text-[11px] sm:text-xs text-[#aab5ac] hover:text-[#ffe36e] px-2 py-0.5 border border-white/15 hover:border-[#ffe36e] transition-colors cursor-pointer"
+            className="font-mono text-[10px] sm:text-xs text-[#aab5ac] hover:text-[#ffe36e] px-1.5 sm:px-2 py-0.5 border border-white/15 hover:border-[#ffe36e] transition-colors cursor-pointer"
             title="Return to Squad Lobby"
           >
             ← LOBBY
           </button>
-          <span className="font-mono text-[11px] sm:text-xs font-bold bg-[#ffe36e] text-[#090c0a] px-2 py-0.5 border border-[#090c0a]">
+          <span className="font-mono text-[10px] sm:text-xs font-bold bg-[#ffe36e] text-[#090c0a] px-1.5 sm:px-2 py-0.5 border border-[#090c0a]">
             #{teamCode || 'SQUAD'}
           </span>
-          <span className="hidden xs:inline font-mono text-xs text-[#2ee58f] font-bold tracking-widest uppercase">
-            {currentName ? `${currentName} // ` : ''}§ 02 // SPRINT ARENA
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className="font-mono text-[10px] sm:text-xs text-[#aab5ac] hover:text-[#2ee58f] px-1.5 sm:px-2 py-0.5 border border-white/15 hover:border-[#2ee58f] transition-colors cursor-pointer"
+            title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+          >
+            {isFullscreen ? '⛶ EXIT FULL' : '⛶ FULL'}
+          </button>
+          <span className="hidden sm:inline font-mono text-xs text-[#2ee58f] font-bold tracking-widest uppercase truncate max-w-[140px] md:max-w-[200px]">
+            {currentName ? `${currentName} // ` : ''}§ 02 ARENA
           </span>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           {streak >= 3 && (
-            <span className="font-mono text-[11px] sm:text-xs font-bold bg-[#f5a623] text-[#090c0a] px-2 py-0.5 border border-[#090c0a] shadow-[2px_2px_0_#090c0a] animate-pulse">
-              🔥 {streak}x STREAK
+            <span className="font-mono text-[10px] sm:text-xs font-bold bg-[#f5a623] text-[#090c0a] px-1.5 py-0.5 border border-[#090c0a] shadow-[2px_2px_0_#090c0a] animate-pulse">
+              🔥 {streak}x
             </span>
           )}
           <span className="font-mono text-xs sm:text-sm md:text-base font-extrabold text-[#e8ece3]">
@@ -566,7 +725,7 @@ export function ArenaView({
 
       {/* Accidental Back / Exit Confirmation Bar */}
       {(showExitConfirm || exitPromptRequested) && (
-        <div className="border-2 border-[#f5a623] bg-[#f5a623]/15 p-3 mb-2.5 sm:mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-[4px_4px_0_#090c0a]">
+        <div className="shrink-0 border-2 border-[#f5a623] bg-[#f5a623]/15 p-2 sm:p-2.5 mb-1 sm:mb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-[3px_3px_0_#090c0a]">
           <div className="font-mono text-xs text-[#e8ece3]">
             <strong className="text-[#f5a623] uppercase block">
               ⚠️ SPRINT IN PROGRESS!
@@ -577,14 +736,14 @@ export function ArenaView({
             <button
               type="button"
               onClick={handleCancelExit}
-              className="px-3 py-1.5 bg-[#2ee58f] border-2 border-[#090c0a] text-[#090c0a] font-mono font-bold text-xs uppercase shadow-[2px_2px_0_#090c0a] cursor-pointer"
+              className="px-2.5 py-1 bg-[#2ee58f] border-2 border-[#090c0a] text-[#090c0a] font-mono font-bold text-xs uppercase shadow-[2px_2px_0_#090c0a] cursor-pointer"
             >
               STAY IN SPRINT
             </button>
             <button
               type="button"
               onClick={onReturnToLobby}
-              className="px-3 py-1.5 bg-[#090c0a] border-2 border-[#ff6b5e] text-[#ff6b5e] font-mono font-bold text-xs uppercase cursor-pointer"
+              className="px-2.5 py-1 bg-[#090c0a] border-2 border-[#ff6b5e] text-[#ff6b5e] font-mono font-bold text-xs uppercase cursor-pointer"
             >
               EXIT TO LOBBY
             </button>
@@ -593,7 +752,7 @@ export function ArenaView({
       )}
 
       {/* Teammate Live HUD */}
-      <div className="mb-2 sm:mb-4">
+      <div className="shrink-0 mb-1 sm:mb-1.5">
         <TeammateHud
           teammates={teammates}
           currentRoll={currentRoll}
@@ -603,13 +762,13 @@ export function ArenaView({
 
       {/* Submission Error Banner */}
       {submissionError && (
-        <div className="border-2 border-[#ff6b5e] bg-[#ff6b5e]/20 p-2.5 sm:p-3 mb-2.5 sm:mb-4 text-center font-mono text-xs font-bold text-[#ff6b5e] tracking-widest uppercase">
+        <div className="shrink-0 border-2 border-[#ff6b5e] bg-[#ff6b5e]/20 p-1.5 sm:p-2 mb-1 sm:mb-1.5 text-center font-mono text-xs font-bold text-[#ff6b5e] tracking-widest uppercase">
           ⚠️ {submissionError}
         </div>
       )}
 
       {/* Precision 120s Timer */}
-      <div className="mb-2.5 sm:mb-6">
+      <div className="shrink-0 mb-1 sm:mb-2">
         <SprintTimer
           startedAt={startedAt}
           durationSeconds={durationSeconds}
@@ -620,13 +779,13 @@ export function ArenaView({
 
       {/* Paused Overlay Notice */}
       {isPaused && (
-        <div className="border-2 border-[#f5a623] bg-[#f5a623]/20 p-3 sm:p-4 mb-2.5 sm:mb-6 text-center font-mono text-xs font-bold text-[#f5a623] tracking-widest uppercase animate-pulse">
+        <div className="shrink-0 border-2 border-[#f5a623] bg-[#f5a623]/20 p-2 sm:p-2.5 mb-1 sm:mb-2 text-center font-mono text-xs font-bold text-[#f5a623] tracking-widest uppercase animate-pulse">
           ⚠️ SPRINT PAUSED BY ORGANIZER — TIMER FROZEN
         </div>
       )}
 
-      {/* Main Equation Card (Reflex 60fps) */}
-      <div className="mb-2.5 sm:mb-6">
+      {/* Main Equation Card (Reflex 60fps) — expands/shrinks to fit viewport height */}
+      <div className="flex-1 min-h-0 my-auto flex flex-col justify-center">
         <EquationCard
           question={currentQuestion}
           questionNumber={currentIndex + 1}
@@ -640,7 +799,7 @@ export function ArenaView({
       </div>
 
       {/* Tactile On-Screen Numpad for Touch / Mobile */}
-      <div className="mt-2 sm:mt-4">
+      <div className="shrink-0 w-full max-w-sm mx-auto mt-1 sm:mt-2">
         <TactileNumpad
           onDigit={handleDigit}
           onBackspace={handleBackspace}

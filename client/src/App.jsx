@@ -378,83 +378,89 @@ export function App() {
   const isInActiveArena = Boolean(sprintSession && !isSprintFinished && currentView === 'squad');
 
   return (
-    <div className="min-h-screen min-h-[100dvh] bg-[#090c0a] text-[#e8ece3] flex flex-col relative selection:bg-[#2ee58f] selection:text-[#090c0a]">
+    <div
+      className={
+        isInActiveArena
+          ? 'h-[100dvh] max-h-[100dvh] overflow-hidden overscroll-none bg-[#090c0a] text-[#e8ece3] flex flex-col relative selection:bg-[#2ee58f] selection:text-[#090c0a]'
+          : 'min-h-screen min-h-[100dvh] bg-[#090c0a] text-[#e8ece3] flex flex-col relative selection:bg-[#2ee58f] selection:text-[#090c0a]'
+      }
+    >
       {/* Procedural Film Grain Overlay */}
       <GrainOverlay />
 
-      {/* Top Banner Marquee (hidden on mobile during active sprint to keep numpad above the fold) */}
-      <div className={isInActiveArena ? 'hidden sm:block' : 'block'}>
-        <MarqueeTicker />
-      </div>
+      {/* Top Banner Marquee (hidden completely during active sprint to give 100% vertical space to arena) */}
+      {!isInActiveArena && <MarqueeTicker />}
 
-      {/* Main Top Header */}
-      <header className="border-b-2 border-[#2ee58f]/20 bg-[#0f1411] px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between flex-wrap gap-2 sm:gap-3">
-        <button
-          type="button"
-          onClick={() => navigateTo('squad')}
-          className="flex items-center gap-2 sm:gap-3 text-left group cursor-pointer"
-        >
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded bg-[#2ee58f] text-[#090c0a] font-display font-extrabold flex items-center justify-center text-base sm:text-lg border-2 border-[#090c0a] shadow-[2px_2px_0_#2ee58f] group-hover:-translate-y-0.5 transition-transform">
-            M
-          </div>
-          <div>
-            <span className="font-display font-extrabold text-base sm:text-lg tracking-tight text-[#e8ece3] group-hover:text-[#2ee58f] transition-colors">
-              MATIKS
-            </span>
-            <span className="font-mono text-[9px] sm:text-[10px] tracking-widest text-[#2ee58f] block -mt-1 uppercase">
-              SPEED SPRINT HACKATHON
-            </span>
-          </div>
-        </button>
-
-        {/* Global Navigation Tabs */}
-        <div className="flex items-center gap-1 sm:gap-2">
+      {/* Main Top Header (hidden during active sprint to eliminate distraction and free vertical real estate) */}
+      {!isInActiveArena && (
+        <header className="border-b-2 border-[#2ee58f]/20 bg-[#0f1411] px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between flex-wrap gap-2 sm:gap-3">
           <button
             type="button"
             onClick={() => navigateTo('squad')}
-            className={`font-mono text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 border transition-all ${
-              currentView === 'squad'
-                ? 'border-[#2ee58f] bg-[#2ee58f] text-[#090c0a] font-bold shadow-[2px_2px_0_#090c0a]'
-                : 'border-white/10 text-[#aab5ac] hover:text-[#e8ece3]'
-            }`}
+            className="flex items-center gap-2 sm:gap-3 text-left group cursor-pointer"
           >
-            {sprintSession && !isSprintFinished ? 'ARENA ⚡' : 'SQUAD ⚡'}
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded bg-[#2ee58f] text-[#090c0a] font-display font-extrabold flex items-center justify-center text-base sm:text-lg border-2 border-[#090c0a] shadow-[2px_2px_0_#2ee58f] group-hover:-translate-y-0.5 transition-transform">
+              M
+            </div>
+            <div>
+              <span className="font-display font-extrabold text-base sm:text-lg tracking-tight text-[#e8ece3] group-hover:text-[#2ee58f] transition-colors">
+                MATIKS
+              </span>
+              <span className="font-mono text-[9px] sm:text-[10px] tracking-widest text-[#2ee58f] block -mt-1 uppercase">
+                SPEED SPRINT HACKATHON
+              </span>
+            </div>
           </button>
 
-          <button
-            type="button"
-            onClick={() => navigateTo('leaderboard')}
-            className={`font-mono text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 border transition-all ${
-              currentView === 'leaderboard'
-                ? 'border-[#ffe36e] bg-[#ffe36e] text-[#090c0a] font-bold shadow-[2px_2px_0_#090c0a]'
-                : 'border-white/10 text-[#aab5ac] hover:text-[#e8ece3]'
-            }`}
-          >
-            LEADERBOARD 🏆
-          </button>
+          {/* Global Navigation Tabs */}
+          <div className="flex items-center gap-1 sm:gap-2">
+            <button
+              type="button"
+              onClick={() => navigateTo('squad')}
+              className={`font-mono text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 border transition-all ${
+                currentView === 'squad'
+                  ? 'border-[#2ee58f] bg-[#2ee58f] text-[#090c0a] font-bold shadow-[2px_2px_0_#090c0a]'
+                  : 'border-white/10 text-[#aab5ac] hover:text-[#e8ece3]'
+              }`}
+            >
+              {sprintSession && !isSprintFinished ? 'ARENA ⚡' : 'SQUAD ⚡'}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => navigateTo('admin')}
-            className={`font-mono text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 border transition-all ${
-              currentView === 'admin'
-                ? 'border-[#ff6b5e] bg-[#ff6b5e] text-[#090c0a] font-bold shadow-[2px_2px_0_#090c0a]'
-                : 'border-white/10 text-[#aab5ac] hover:text-[#e8ece3]'
-            }`}
-          >
-            ADMIN ⚙️
-          </button>
+            <button
+              type="button"
+              onClick={() => navigateTo('leaderboard')}
+              className={`font-mono text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 border transition-all ${
+                currentView === 'leaderboard'
+                  ? 'border-[#ffe36e] bg-[#ffe36e] text-[#090c0a] font-bold shadow-[2px_2px_0_#090c0a]'
+                  : 'border-white/10 text-[#aab5ac] hover:text-[#e8ece3]'
+              }`}
+            >
+              LEADERBOARD 🏆
+            </button>
 
-          {teamSession && currentView === 'squad' && (
-            <span className="hidden xs:inline-block sm:inline-block font-mono text-xs font-bold bg-[#ffe36e] text-[#090c0a] px-2 py-0.5 border border-[#090c0a] shadow-[2px_2px_0_#090c0a] ml-1">
-              #{teamSession.teamCode}
-            </span>
-          )}
-        </div>
-      </header>
+            <button
+              type="button"
+              onClick={() => navigateTo('admin')}
+              className={`font-mono text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 border transition-all ${
+                currentView === 'admin'
+                  ? 'border-[#ff6b5e] bg-[#ff6b5e] text-[#090c0a] font-bold shadow-[2px_2px_0_#090c0a]'
+                  : 'border-white/10 text-[#aab5ac] hover:text-[#e8ece3]'
+              }`}
+            >
+              ADMIN ⚙️
+            </button>
+
+            {teamSession && currentView === 'squad' && (
+              <span className="hidden xs:inline-block sm:inline-block font-mono text-xs font-bold bg-[#ffe36e] text-[#090c0a] px-2 py-0.5 border border-[#090c0a] shadow-[2px_2px_0_#090c0a] ml-1">
+                #{teamSession.teamCode}
+              </span>
+            )}
+          </div>
+        </header>
+      )}
 
       {/* Main View Body */}
-      <main className={`flex-1 flex flex-col justify-center ${isInActiveArena ? 'py-1.5 sm:py-6' : 'py-4 sm:py-6'}`}>
+      <main className={isInActiveArena ? 'flex-1 flex flex-col h-full max-h-full overflow-hidden p-0' : 'flex-1 flex flex-col justify-center py-4 sm:py-6'}>
         {currentView === 'leaderboard' && (
           <LeaderboardView onReturnToLobby={() => navigateTo('squad')} />
         )}
@@ -466,7 +472,7 @@ export function App() {
           />
         )}
 
-        <div className={currentView === 'squad' ? 'w-full' : 'hidden'}>
+        <div className={currentView === 'squad' ? (isInActiveArena ? 'w-full h-full flex flex-col min-h-0' : 'w-full') : 'hidden'}>
           {sprintSession ? (
             <ArenaView
               key={sprintSession.sessionId}
@@ -538,19 +544,21 @@ export function App() {
         </div>
       </main>
 
-      {/* Footer (hidden on mobile during active sprint) */}
-      <footer className={`${isInActiveArena ? 'hidden sm:block' : 'block'} border-t border-[#2ee58f]/10 bg-[#090c0a] py-4 px-4 text-center font-mono text-xs text-[#aab5ac]`}>
-        <span>MATIKS HACKATHON ENGINE • BUILT FOR USAR FOSS CLUB</span>
-        <span className="mx-2">•</span>
-        <a
-          href="https://www.fossclub.tech"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[#2ee58f] hover:underline"
-        >
-          FOSSCLUB.TECH
-        </a>
-      </footer>
+      {/* Footer (hidden during active sprint to give 100% vertical space to arena) */}
+      {!isInActiveArena && (
+        <footer className="border-t border-[#2ee58f]/10 bg-[#090c0a] py-4 px-4 text-center font-mono text-xs text-[#aab5ac]">
+          <span>MATIKS HACKATHON ENGINE • BUILT FOR USAR FOSS CLUB</span>
+          <span className="mx-2">•</span>
+          <a
+            href="https://www.fossclub.tech"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[#2ee58f] hover:underline"
+          >
+            FOSSCLUB.TECH
+          </a>
+        </footer>
+      )}
     </div>
   );
 }
