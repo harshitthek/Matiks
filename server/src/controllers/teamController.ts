@@ -6,7 +6,7 @@
 
 import type { Request, Response } from 'express';
 import { roomManager } from '../services/roomManager.js';
-import { getAuthProvider } from '../services/auth/authProviderFactory.js';
+import { verifyAnySession } from '../services/auth/authProviderFactory.js';
 
 function isValidStringField(val: unknown, maxLength = 64): val is string {
   return typeof val === 'string' && val.trim().length > 0 && val.trim().length <= maxLength;
@@ -28,6 +28,16 @@ function extractSessionToken(req: Request): string | undefined {
   return undefined;
 }
 
+async function resolveOptionalSession(req: Request) {
+  const sessionToken = extractSessionToken(req);
+  if (!sessionToken) return null;
+  try {
+    return await verifyAnySession(sessionToken);
+  } catch {
+    return null;
+  }
+}
+
 export async function createTeamHandler(req: Request, res: Response): Promise<void> {
   try {
     const { teamName, targetSize } = req.body;
@@ -40,9 +50,12 @@ export async function createTeamHandler(req: Request, res: Response): Promise<vo
     }
 
     const cleanCaptainRoll = captainRoll.trim().toUpperCase();
-    const sessionToken = extractSessionToken(req);
-    const sessionUser = sessionToken ? await getAuthProvider().verifySession(sessionToken) : null;
-    const isClubMember = (sessionUser && sessionUser.rollNumber === cleanCaptainRoll)
+    const sessionUser = await resolveOptionalSession(req);
+    const isClubMember = (
+      sessionUser &&
+      sessionUser.role === 'participant' &&
+      sessionUser.rollNumber === cleanCaptainRoll
+    )
       ? sessionUser.isClubMember
       : undefined;
 
@@ -77,9 +90,12 @@ export async function joinTeamHandler(req: Request, res: Response): Promise<void
     }
 
     const cleanRoll = rollNumber.trim().toUpperCase();
-    const sessionToken = extractSessionToken(req);
-    const sessionUser = sessionToken ? await getAuthProvider().verifySession(sessionToken) : null;
-    const isClubMember = (sessionUser && sessionUser.rollNumber === cleanRoll)
+    const sessionUser = await resolveOptionalSession(req);
+    const isClubMember = (
+      sessionUser &&
+      sessionUser.role === 'participant' &&
+      sessionUser.rollNumber === cleanRoll
+    )
       ? sessionUser.isClubMember
       : undefined;
 

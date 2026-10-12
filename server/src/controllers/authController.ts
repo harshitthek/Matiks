@@ -11,7 +11,11 @@
  */
 
 import type { Request, Response } from 'express';
-import { getAuthProvider } from '../services/auth/authProviderFactory.js';
+import {
+  getAuthProvider,
+  getClubOidcProvider,
+  verifyAnySession
+} from '../services/auth/authProviderFactory.js';
 
 function extractBearerToken(req: Request): string | undefined {
   const authHeader = req.headers['authorization'];
@@ -40,15 +44,19 @@ function extractCookie(req: Request, name: string): string | null {
 }
 
 export function getAuthConfigHandler(req: Request, res: Response): void {
-  const provider = getAuthProvider();
+  const primaryProvider = getAuthProvider();
+  const forceOidc = req.query['oidc'] === 'true' || req.query['oidc'] === '1';
+  const urlProvider = (!primaryProvider.getAuthUrl && forceOidc)
+    ? getClubOidcProvider()
+    : primaryProvider;
 
   let authUrl: string | null = null;
   let state: string | null = null;
 
   const existingStateCookie = extractCookie(req, 'matiks_oidc_state');
 
-  if (provider.getAuthUrl) {
-    authUrl = provider.getAuthUrl(existingStateCookie || undefined);
+  if (urlProvider.getAuthUrl) {
+    authUrl = urlProvider.getAuthUrl(existingStateCookie || undefined);
     if (authUrl) {
       try {
         const parsed = new URL(authUrl);
@@ -68,8 +76,9 @@ export function getAuthConfigHandler(req: Request, res: Response): void {
   }
 
   res.status(200).json({
-    mode: provider.providerName === 'club_oidc' ? 'club_oidc' : 'local',
-    providerName: provider.providerName,
+    mode: primaryProvider.providerName === 'club_oidc' ? 'club_oidc' : 'local',
+    providerName: primaryProvider.providerName,
+    oidcIssuer: process.env.CLUB_OIDC_ISSUER_URL || 'https://oidc.fossclub.tech',
     authUrl,
     state
   });
@@ -141,8 +150,7 @@ export async function getMeHandler(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const provider = getAuthProvider();
-    const user = await provider.verifySession(token);
+    const user = await verifyAnySession(token);
 
     if (!user) {
       res.status(401).json({
@@ -174,7 +182,12 @@ export async function exchangeOidcCodeHandler(req: Request, res: Response): Prom
       return;
     }
 
-    const provider = getAuthProvider();
+    const clientStateCookie = extractCookie(req, 'matiks_oidc_state');
+    const primaryProvider = getAuthProvider();
+    const provider = (!primaryProvider.exchangeCode && clientStateCookie)
+      ? getClubOidcProvider()
+      : primaryProvider;
+
     if (!provider.exchangeCode) {
       res.status(400).json({
         error: 'OIDC_UNSUPPORTED',
@@ -191,7 +204,6 @@ export async function exchangeOidcCodeHandler(req: Request, res: Response): Prom
       return;
     }
 
-    const clientStateCookie = extractCookie(req, 'matiks_oidc_state');
     if (!clientStateCookie) {
       res.status(400).json({
         error: 'INVALID_OIDC_STATE',
@@ -216,7 +228,7 @@ export async function exchangeOidcCodeHandler(req: Request, res: Response): Prom
       return;
     }
 
-    const result = await provider.exchangeCode(code);
+    const result = await provider.exchangeCode(code, state);
 
     const isSecure = process.env.NODE_ENV === 'production' || req.secure || req.headers['x-forwarded-proto'] === 'https';
     res.setHeader(

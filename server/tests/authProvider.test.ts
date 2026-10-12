@@ -131,29 +131,35 @@ describe('Matiks Hackathon — Phase 7: Pluggable Auth & Club OIDC Adapter', () 
     });
   });
 
-  describe('2. ClubOidcAuthProvider Integration & Resiliency', () => {
-    test('Constructs compliant OAuth2 / OIDC authorization URL', () => {
+  describe('2. ClubOidcAuthProvider Integration & Resiliency (oidc.fossclub.tech)', () => {
+    test('Constructs compliant oidc.fossclub.tech authorization URL with S256 PKCE and club scope', () => {
       const provider = new ClubOidcAuthProvider({
-        issuerUrl: 'https://fossclub.tech',
-        clientId: 'matiks_sprint',
+        issuerUrl: 'https://oidc.fossclub.tech',
+        clientId: 'matiks',
         redirectUri: 'http://localhost:5173/auth/callback'
       });
 
       const authUrl = provider.getAuthUrl('test_state_123');
       const parsed = new URL(authUrl);
 
-      assert.equal(parsed.origin, 'https://fossclub.tech');
-      assert.equal(parsed.pathname, '/oauth/authorize');
-      assert.equal(parsed.searchParams.get('client_id'), 'matiks_sprint');
+      assert.equal(parsed.origin, 'https://oidc.fossclub.tech');
+      assert.equal(parsed.pathname, '/auth');
+      assert.equal(parsed.searchParams.get('client_id'), 'matiks');
       assert.equal(parsed.searchParams.get('redirect_uri'), 'http://localhost:5173/auth/callback');
       assert.equal(parsed.searchParams.get('response_type'), 'code');
       assert.equal(parsed.searchParams.get('state'), 'test_state_123');
-      assert.ok(parsed.searchParams.get('scope')?.includes('openid'));
+      assert.equal(parsed.searchParams.get('scope'), 'openid profile email club');
+      assert.equal(parsed.searchParams.get('code_challenge_method'), 'S256');
+
+      const expectedVerifier = provider.deriveCodeVerifier('test_state_123');
+      const expectedChallenge = provider.deriveCodeChallenge(expectedVerifier);
+      assert.equal(parsed.searchParams.get('code_challenge'), expectedChallenge);
+      assert.equal(parsed.searchParams.get('nonce'), provider.deriveNonce('test_state_123'));
     });
 
     test('Generates cryptographically signed HMAC states with replay protection and tamper resistance', () => {
       const provider = new ClubOidcAuthProvider({
-        issuerUrl: 'https://fossclub.tech',
+        issuerUrl: 'https://oidc.fossclub.tech',
         clientSecret: 'super_secret_key_123'
       });
 
@@ -178,7 +184,151 @@ describe('Matiks Hackathon — Phase 7: Pluggable Auth & Club OIDC Adapter', () 
       assert.equal(provider.validateState('random_unsigned_string'), false);
     });
 
-    test('Exchanges authorization code against mock central OIDC provider', async () => {
+    test('Verifies RS256 id_token via /jwks, enforces S256 PKCE at /token, and maps /me claims', async () => {
+      const { generateKeyPairSync, createSign, createHash } = await import('node:crypto');
+      const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+      const publicJwk = publicKey.export({ format: 'jwk' });
+      const kid = 'test-key-2026';
+
+      let capturedAuthHeader = '';
+      let capturedCodeVerifier = '';
+      let mockIssuer = '';
+      let expectedNonceForTest = '';
+
+      function signJwt(payload: Record<string, unknown>, keyToSign = privateKey): string {
+        const headerB64 = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid })).toString('base64url');
+        const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+        const signer = createSign('RSA-SHA256');
+        signer.update(`${headerB64}.${payloadB64}`);
+        const sigB64 = signer.sign(keyToSign).toString('base64url');
+        return `${headerB64}.${payloadB64}.${sigB64}`;
+      }
+
+      const mockOidcServer = http.createServer((req, res) => {
+        if (req.method === 'GET' && req.url === '/jwks') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            keys: [{ ...publicJwk, kid, use: 'sig', alg: 'RS256' }]
+          }));
+        } else if (req.method === 'POST' && req.url === '/token') {
+          capturedAuthHeader = req.headers['authorization'] || '';
+          let body = '';
+          req.on('data', chunk => { body += chunk; });
+          req.on('end', () => {
+            const params = new URLSearchParams(body);
+            const code = params.get('code');
+            capturedCodeVerifier = params.get('code_verifier') || '';
+
+            if (code === 'valid_pkce_code') {
+              const nowSec = Math.floor(Date.now() / 1000);
+              const idToken = signJwt({
+                iss: mockIssuer,
+                sub: 'usr_998877',
+                aud: 'matiks',
+                iat: nowSec,
+                exp: nowSec + 600,
+                nonce: expectedNonceForTest,
+                preferred_username: 'harshitthek',
+                email: 'harshit@fossclub.tech',
+                member: true,
+                role: 'core'
+              });
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                access_token: 'access_tok_live_123',
+                id_token: idToken,
+                token_type: 'Bearer',
+                expires_in: 600
+              }));
+            } else {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'invalid_grant' }));
+            }
+          });
+        } else if (req.method === 'GET' && req.url === '/me') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            sub: 'usr_998877',
+            name: 'Harshit K',
+            preferred_username: 'harshitthek',
+            picture: 'https://avatars.githubusercontent.com/u/1?v=4',
+            member: true,
+            role: 'core'
+          }));
+        } else {
+          res.writeHead(404);
+          res.end();
+        }
+      });
+
+      await new Promise<void>((resolve) => mockOidcServer.listen(0, resolve));
+      const port = (mockOidcServer.address() as AddressInfo).port;
+      mockIssuer = `http://127.0.0.1:${port}`;
+
+      try {
+        const provider = new ClubOidcAuthProvider({
+          issuerUrl: mockIssuer,
+          clientId: 'matiks',
+          clientSecret: 'secret_xyz_999',
+          redirectUri: 'http://localhost:5173/auth/callback',
+          timeoutMs: 2000
+        });
+
+        const authUrl = provider.getAuthUrl();
+        const parsedAuth = new URL(authUrl);
+        const state = parsedAuth.searchParams.get('state')!;
+        const codeChallenge = parsedAuth.searchParams.get('code_challenge')!;
+        expectedNonceForTest = parsedAuth.searchParams.get('nonce')!;
+
+        const result = await provider.exchangeCode('valid_pkce_code', state);
+
+        // Verify client_secret_basic Authorization header
+        const expectedBasic = Buffer.from('matiks:secret_xyz_999').toString('base64');
+        assert.equal(capturedAuthHeader, `Basic ${expectedBasic}`);
+
+        // Verify PKCE S256: SHA256(capturedCodeVerifier) === codeChallenge
+        const recomputedChallenge = createHash('sha256').update(capturedCodeVerifier).digest('base64url');
+        assert.equal(recomputedChallenge, codeChallenge);
+
+        // Verify mapped AuthUser claims from RS256 id_token + /me
+        assert.equal(result.user.id, 'oidc_usr_998877');
+        assert.equal(result.user.rollNumber, 'HARSHITTHEK');
+        assert.equal(result.user.displayName, 'Harshit K');
+        assert.equal(result.user.githubUsername, 'harshitthek');
+        assert.equal(result.user.email, 'harshit@fossclub.tech');
+        assert.equal(result.user.isClubMember, true);
+        assert.equal(result.user.clubRole, 'core');
+
+        // Verify missing nonce claim is rejected when expectedNonce is supplied
+        const missingNonceJwt = signJwt({
+          iss: mockIssuer,
+          sub: 'usr_998877',
+          aud: 'matiks',
+          exp: Math.floor(Date.now() / 1000) + 600
+        });
+        await assert.rejects(
+          () => provider.verifyIdToken(missingNonceJwt, expectedNonceForTest),
+          /missing required nonce claim/
+        );
+
+        // Verify forged RS256 signature is rejected
+        const attackerKey = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey;
+        const forgedJwt = signJwt({
+          iss: mockIssuer,
+          sub: 'attacker',
+          aud: 'matiks',
+          exp: Math.floor(Date.now() / 1000) + 600
+        }, attackerKey);
+        await assert.rejects(
+          () => provider.verifyIdToken(forgedJwt),
+          /cryptographic signature verification failed/
+        );
+      } finally {
+        await new Promise<void>((resolve) => mockOidcServer.close(() => resolve()));
+      }
+    });
+
+    test('Exchanges authorization code against legacy mock central OIDC provider', async () => {
       // Create mock OIDC server
       const mockServer = http.createServer((req, res) => {
         if (req.method === 'POST' && req.url === '/api/auth/token') {

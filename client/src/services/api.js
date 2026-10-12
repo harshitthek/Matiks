@@ -51,26 +51,33 @@ async function request(endpoint, options = {}) {
 /**
  * Creates a new squad room.
  */
-export async function createTeam(teamName, targetSize, captainRoll, captainName) {
+export async function createTeam(teamName, targetSize, captainRoll, captainName, sessionToken) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (sessionToken) {
+    headers['x-session-token'] = sessionToken;
+  }
   return request('/team/create', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ teamName, targetSize, captainRoll, captainName })
+    headers,
+    body: JSON.stringify({ teamName, targetSize, captainRoll, captainName, sessionToken })
   });
 }
 
 /**
  * Joins an existing squad room.
  */
-export async function joinTeam(teamCode, rollNumber, name, token) {
+export async function joinTeam(teamCode, rollNumber, name, token, sessionToken) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) {
     headers['x-member-token'] = token;
   }
+  if (sessionToken) {
+    headers['x-session-token'] = sessionToken;
+  }
   return request('/team/join', {
     method: 'POST',
     headers,
-    body: JSON.stringify({ teamCode, rollNumber, name, token })
+    body: JSON.stringify({ teamCode, rollNumber, name, token, sessionToken })
   });
 }
 
@@ -322,8 +329,11 @@ export async function exportTournamentJson(adminToken) {
 /**
  * Auth: Fetches active authentication configuration, OIDC URL, and server-generated state.
  */
-export async function getAuthConfig() {
-  return request('/auth/config');
+export async function getAuthConfig(forceOidc = false) {
+  const query = forceOidc ? '?oidc=true' : '';
+  return request(`/auth/config${query}`, {
+    credentials: 'include'
+  });
 }
 
 /**
@@ -365,6 +375,7 @@ export async function getAuthUser(token) {
 export async function exchangeOidcCode(code, state) {
   return request('/auth/oidc/exchange', {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code, state })
   });

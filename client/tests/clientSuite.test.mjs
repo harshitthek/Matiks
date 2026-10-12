@@ -47,8 +47,8 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
         };
       };
 
-      await api.createTeam('Cyber Squad', 3, 'CS001', 'Alice');
-      await api.joinTeam('CY-01', 'CS002', 'Bob', 'tok_bob');
+      await api.createTeam('Cyber Squad', 3, 'CS001', 'Alice', 'oidc_sess_tok');
+      await api.joinTeam('CY-01', 'CS002', 'Bob', 'tok_bob', 'oidc_sess_tok');
       await api.leaveTeam('CY-01', 'CS002', 'tok_bob');
       await api.resetTeamSprint('CY-01', 'CS001', 'tok_alice');
       await api.toggleReady('CY-01', 'CS001', true, 'tok_alice');
@@ -67,7 +67,7 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
       await api.clearSimulatedTeams('adm_tok');
       await api.exportTournamentCsv('adm_tok');
       await api.exportTournamentJson('adm_tok');
-      await api.getAuthConfig();
+      await api.getAuthConfig(true);
       await api.loginPlayer('CS001', 'Alice', 'CY-01');
       await api.loginAdmin('secret');
       await api.getAuthUser('jwt_tok');
@@ -83,11 +83,16 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
         );
       }
 
-      // Verify token headers on joinTeam, submitAnswer, and getAuthUser
+      // Verify token headers on createTeam, joinTeam, submitAnswer, getAuthConfig, and exchangeOidcCode
+      assert.equal(capturedCalls[0].options.headers['x-session-token'], 'oidc_sess_tok');
       assert.equal(capturedCalls[1].options.headers['x-member-token'], 'tok_bob');
+      assert.equal(capturedCalls[1].options.headers['x-session-token'], 'oidc_sess_tok');
       assert.equal(capturedCalls[6].options.headers['x-member-token'], 'tok_alice');
       assert.equal(capturedCalls[8].options.headers['x-admin-token'], 'adm_tok');
+      assert.ok(capturedCalls[20].url.endsWith('/api/auth/config?oidc=true'));
+      assert.equal(capturedCalls[20].options.credentials, 'include');
       assert.equal(capturedCalls[23].options.headers['Authorization'], 'Bearer jwt_tok');
+      assert.equal(capturedCalls[24].options.credentials, 'include');
     });
 
     test('parses JSON and plain-text HTTP errors with status code and error payload attached', async () => {
