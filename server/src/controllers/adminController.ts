@@ -261,3 +261,91 @@ export function flushLeaderboardHandler(_req: Request, res: Response): void {
   leaderboardManager.flush();
   res.status(200).json({ success: true, flushedAt: Date.now() });
 }
+
+export function getSessionReplayHandler(req: Request, res: Response): void {
+  try {
+    const rawId = req.params['sessionId'];
+    const sessionId = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (!sessionId) {
+      res.status(400).json({ error: 'sessionId is required' });
+      return;
+    }
+
+    const replay = roomManager.getSessionReplay(sessionId);
+    if (!replay) {
+      res.status(404).json({ error: `Replay for session ${sessionId} not found.` });
+      return;
+    }
+
+    res.status(200).json({ success: true, replay });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to retrieve session replay';
+    res.status(500).json({ error: message });
+  }
+}
+
+export function listSessionReplaysHandler(_req: Request, res: Response): void {
+  try {
+    const replays = roomManager.listSessionReplays();
+    res.status(200).json({ success: true, replays });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to list session replays';
+    res.status(500).json({ error: message });
+  }
+}
+
+export function exportPlayerAuditsCsvHandler(_req: Request, res: Response): void {
+  try {
+    const replays = roomManager.listSessionReplays();
+    const headers = [
+      'SessionId',
+      'TeamCode',
+      'RollNumber',
+      'PlayerName',
+      'CompletedQuestions',
+      'FinalScore',
+      'AnomalyCount',
+      'StartedAt',
+      'IsFinished'
+    ];
+
+    const rows = replays.map((r) => {
+      let startedAtFormatted = '';
+      if (typeof r.startedAt === 'number' && Number.isFinite(r.startedAt) && r.startedAt > 0) {
+        try {
+          startedAtFormatted = new Date(r.startedAt).toISOString();
+        } catch {
+          startedAtFormatted = String(r.startedAt);
+        }
+      } else if (r.startedAt) {
+        startedAtFormatted = String(r.startedAt);
+      }
+
+      return [
+        r.sessionId,
+        r.teamCode,
+        r.rollNumber,
+        r.memberName,
+        r.completedQuestions,
+        r.finalScore,
+        r.anomalyCount,
+        startedAtFormatted,
+        r.isFinished ? 'FINISHED' : 'IN_PROGRESS'
+      ]
+        .map(escapeCsvCell)
+        .join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\r\n') + '\r\n';
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="matiks-player-audits.csv"'
+    );
+    res.status(200).send(csvContent);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to export player audits';
+    res.status(500).json({ error: message });
+  }
+}
+

@@ -73,8 +73,11 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
       await api.getAuthUser('jwt_tok');
       await api.exchangeOidcCode('code_123', 'state_456');
       await api.verifyClubMembership('UFC202601');
+      await api.adminGetSessionReplays('adm_tok');
+      await api.adminGetSessionReplay('sess_123', 'adm_tok');
+      await api.exportPlayerAuditsCsv('adm_tok');
 
-      assert.equal(capturedCalls.length, 26);
+      assert.equal(capturedCalls.length, 29);
       for (const call of capturedCalls) {
         assert.equal(
           call.options.headers['ngrok-skip-browser-warning'],

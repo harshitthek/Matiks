@@ -12,6 +12,7 @@ export function ContestWindowWidget({
   onClearSimulatedTeams,
   onExportCsv,
   onExportJson,
+  onExportPlayerAuditsCsv,
   streamDelayMs = 0,
   onSetStreamDelay,
   onFlushLeaderboard,
@@ -73,6 +74,18 @@ export function ContestWindowWidget({
               title="Download full tournament report (standings, rooms, telemetry, and audit logs) as JSON"
             >
               📦 EXPORT JSON
+            </TactileButton>
+          )}
+
+          {onExportPlayerAuditsCsv && (
+            <TactileButton
+              variant="muted"
+              onClick={onExportPlayerAuditsCsv}
+              disabled={isLoading}
+              className="px-3 py-2.5 text-xs font-bold"
+              title="Download player-by-player audit telemetry and anomaly records as CSV"
+            >
+              📋 PLAYER AUDITS CSV
             </TactileButton>
           )}
 

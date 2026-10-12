@@ -425,4 +425,52 @@ export async function adminFlushLeaderboard(adminToken) {
   });
 }
 
+/**
+ * Admin: Fetches summary list of all available sprint session replays.
+ */
+export async function adminGetSessionReplays(adminToken) {
+  return request('/admin/replays', {
+    headers: {
+      'x-admin-token': adminToken || ''
+    }
+  });
+}
+
+/**
+ * Admin: Fetches full question-by-question chronology and timing diagnostics for a sprint session.
+ */
+export async function adminGetSessionReplay(sessionId, adminToken) {
+  return request(`/admin/replay/${encodeURIComponent(sessionId)}`, {
+    headers: {
+      'x-admin-token': adminToken || ''
+    }
+  });
+}
+
+/**
+ * Admin: Exports per-player audit chronology as an RFC-4180 CSV string.
+ */
+export async function exportPlayerAuditsCsv(adminToken) {
+  const res = await fetch(`${BASE_URL}/admin/export/player-audits-csv`, {
+    headers: {
+      'ngrok-skip-browser-warning': 'true',
+      'x-admin-token': adminToken || ''
+    }
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    let errorMsg = `HTTP ${res.status} (${res.statusText || 'Export failed'})`;
+    try {
+      const parsed = JSON.parse(text);
+      errorMsg = parsed?.message || parsed?.error || errorMsg;
+    } catch {
+      if (text) errorMsg = text;
+    }
+    const err = new Error(errorMsg);
+    err.status = res.status;
+    throw err;
+  }
+  return text;
+}
+
 

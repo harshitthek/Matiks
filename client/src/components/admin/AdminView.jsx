@@ -10,6 +10,7 @@ import { RoomTelemetryTable } from './RoomTelemetryTable.jsx';
 import { ExcuseMemberModal } from './ExcuseMemberModal.jsx';
 import { AnomalyFeed } from './AnomalyFeed.jsx';
 import { AuditLogViewer } from './AuditLogViewer.jsx';
+import { ReplayInspectorModal } from './ReplayInspectorModal.jsx';
 import {
   getAdminRooms,
   getAdminTelemetry,
@@ -22,6 +23,7 @@ import {
   clearSimulatedTeams,
   exportTournamentCsv,
   exportTournamentJson,
+  exportPlayerAuditsCsv,
   adminGetStreamDelay,
   adminSetStreamDelay,
   adminFlushLeaderboard
@@ -53,6 +55,7 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
   const [auditLogs, setAuditLogs] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [selectedExcuseRoom, setSelectedExcuseRoom] = useState(null);
+  const [inspectSessionId, setInspectSessionId] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
   const [actionFeedback, setActionFeedback] = useState(null);
 
@@ -340,6 +343,24 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
     }
   };
 
+  // Handle Export Player Audits CSV
+  const handleExportPlayerAuditsCsv = async () => {
+    setActionLoading('export-player-audits');
+    setActionFeedback(null);
+    try {
+      const csvText = await exportPlayerAuditsCsv(adminToken);
+      downloadTextFile(csvText, 'matiks-player-audits.csv', 'text/csv;charset=utf-8');
+      setActionFeedback({
+        type: 'success',
+        message: 'Exported player audit chronologies as CSV.'
+      });
+    } catch (err) {
+      setActionFeedback({ type: 'error', message: err?.message || 'Failed to export player audits CSV.' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Handle Excuse Member
   const handleExcuseMember = async (teamCode, rollNumber, reason) => {
     setActionLoading(teamCode);
@@ -485,6 +506,7 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
         onClearSimulatedTeams={handleClearSimulatedTeams}
         onExportCsv={handleExportCsv}
         onExportJson={handleExportJson}
+        onExportPlayerAuditsCsv={handleExportPlayerAuditsCsv}
         streamDelayMs={streamDelayMs}
         onSetStreamDelay={handleSetStreamDelay}
         onFlushLeaderboard={handleFlushLeaderboard}
@@ -494,13 +516,17 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
           actionLoading === 'clear-simulate' ||
           actionLoading === 'export-csv' ||
           actionLoading === 'export-json' ||
+          actionLoading === 'export-player-audits' ||
           actionLoading === 'delay' ||
           actionLoading === 'flush'
         }
       />
 
       {/* Anti-Cheat Anomaly Stream */}
-      <AnomalyFeed anomalies={anomalies} />
+      <AnomalyFeed
+        anomalies={anomalies}
+        onInspectSession={(id) => setInspectSessionId(id)}
+      />
 
       {/* Room Telemetry Table & Controls */}
       <RoomTelemetryTable
@@ -508,6 +534,7 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
         onPauseRoom={handlePauseRoom}
         onResumeRoom={handleResumeRoom}
         onOpenExcuseModal={(room) => setSelectedExcuseRoom(room)}
+        onInspectSession={(id) => setInspectSessionId(id)}
         actionLoading={actionLoading}
       />
 
@@ -525,6 +552,15 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
           onClose={() => setSelectedExcuseRoom(null)}
           onExcuse={handleExcuseMember}
           isLoading={actionLoading === selectedExcuseRoom.teamCode}
+        />
+      )}
+
+      {/* Dispute Replay Inspector Modal */}
+      {inspectSessionId && (
+        <ReplayInspectorModal
+          sessionId={inspectSessionId}
+          onClose={() => setInspectSessionId(null)}
+          adminToken={adminToken}
         />
       )}
     </div>

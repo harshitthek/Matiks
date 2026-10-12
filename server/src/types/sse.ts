@@ -5,7 +5,7 @@
  * anti-cheat audit logs, and Server-Sent Event payloads.
  */
 
-import type { Question, QuestionSanitized, OperatorMode } from './math.js';
+import type { Question, QuestionSanitized, OperatorMode, MathBucket, CarryType } from './math.js';
 
 export type RoomStatus =
   | 'LOBBY'
@@ -48,12 +48,53 @@ export interface TeamRoom {
 export interface SubmissionRecord {
   questionIndex: number;
   submittedAnswer: number;
+  actualAnswer?: number;
+  a?: number;
+  b?: number;
+  operator?: '+' | '-';
+  bucket?: MathBucket;
+  carryType?: CarryType;
+  targetLatencyMs?: number;
   isCorrect: boolean;
   latencyMs: number;
+  serverDeltaMs?: number;
+  packetJitterMs?: number;
   pointsAwarded: number;
+  streakAfter?: number;
+  scoreAfter?: number;
   timestamp: number;
   isAnomaly: boolean;
   anomalyReason?: string;
+}
+
+export interface SessionReplayData {
+  sessionId: string;
+  teamCode: string;
+  teamName: string;
+  rollNumber: string;
+  memberName: string;
+  startedAt: number;
+  completedAt?: number;
+  totalTimeSeconds: number;
+  finalScore: number;
+  consecutiveStreak: number;
+  completedQuestions: number;
+  isFinished: boolean;
+  operatorMode?: OperatorMode;
+  anomalyCount: number;
+  submissions: SubmissionRecord[];
+}
+
+export interface SessionReplaySummary {
+  sessionId: string;
+  teamCode: string;
+  rollNumber: string;
+  memberName: string;
+  completedQuestions: number;
+  finalScore: number;
+  anomalyCount: number;
+  startedAt: number;
+  isFinished: boolean;
 }
 
 export interface SprintSession {
@@ -143,6 +184,7 @@ export interface TeamSnapshotEvent {
     individualScore: number;
     completedQuestions: number;
     isClubMember?: boolean;
+    activeSessionId?: string;
   }[];
   allReady: boolean;
   contestWindow: {

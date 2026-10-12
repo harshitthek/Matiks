@@ -11,6 +11,7 @@ export function RoomTelemetryTable({
   onPauseRoom,
   onResumeRoom,
   onOpenExcuseModal,
+  onInspectSession,
   actionLoading
 }) {
   if (!rooms || rooms.length === 0) {
@@ -139,6 +140,16 @@ export function RoomTelemetryTable({
                         <span className="text-[10px] text-[#aab5ac]">
                           {m.isExcused ? 'EXCUSED' : m.isReady ? 'READY 🟢' : 'NOT READY ⚪'}
                         </span>
+                        {m.activeSessionId && onInspectSession && (
+                          <button
+                            type="button"
+                            onClick={() => onInspectSession(m.activeSessionId)}
+                            className="mt-1 px-1.5 py-0.5 border border-[#2ee58f]/40 bg-[#2ee58f]/10 text-[#2ee58f] hover:bg-[#2ee58f] hover:text-[#090c0a] font-bold text-[9px] transition-all cursor-pointer block ml-auto"
+                            title="Inspect sprint chronology"
+                          >
+                            🔍 REPLAY
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}

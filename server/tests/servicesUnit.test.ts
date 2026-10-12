@@ -398,4 +398,81 @@ describe('Matiks Hackathon — Core Services Unit Test Suite', () => {
       assert.equal(escapeCsvCell(undefined), '');
     });
   });
+
+  describe('6. Disk-Backed Admin Dispute Replay & Audit Chronology', () => {
+    test('atomically writes replay chronology to disk and retrieves full question telemetry', async () => {
+      const tmpAuditDir = fs.mkdtempSync(path.join(os.tmpdir(), 'matiks-audit-'));
+      const originalAuditDir = roomManager.getAuditDir();
+      roomManager.setAuditDir(tmpAuditDir);
+
+      try {
+        roomManager.clear();
+        const { teamCode, memberToken } = roomManager.createTeam(
+          'Replay Squad',
+          2,
+          'REP01',
+          'Audit Player'
+        );
+        const { memberToken: partnerToken } = roomManager.joinTeam(teamCode, 'REP02', 'Partner');
+
+        // Toggle ready for both to start countdown & sprint
+        roomManager.toggleReady(teamCode, 'REP01', true, memberToken);
+        roomManager.toggleReady(teamCode, 'REP02', true, partnerToken);
+
+        const room = roomManager.getRoom(teamCode)!;
+        assert.equal(room.status, 'COUNTDOWN');
+
+        // Fast-forward countdown
+        (roomManager as any).launchSprint(room);
+        assert.equal(room.status, 'IN_SPRINT');
+
+        const repMember = room.members.get('REP01')!;
+        const sessionId = repMember.activeSessionId!;
+        assert.ok(sessionId, 'Active session ID must be generated');
+
+        // Submit first 3 questions
+        const s1 = roomManager.submitAnswer(sessionId, 0, 99, 1200, Date.now(), memberToken);
+        assert.ok(s1);
+
+        const session = roomManager.getSession(sessionId)!;
+        assert.equal(session.submissions.length, 1);
+        const firstSub = session.submissions[0];
+        assert.equal(firstSub.questionIndex, 0);
+        assert.ok(firstSub.a !== undefined);
+        assert.ok(firstSub.b !== undefined);
+        assert.ok(firstSub.operator !== undefined);
+        assert.ok(firstSub.actualAnswer !== undefined);
+        assert.equal(firstSub.latencyMs, 1200);
+        assert.ok(firstSub.serverDeltaMs !== undefined);
+
+        // Explicitly trigger session audit persistence
+        session.isFinished = true;
+        roomManager.persistSessionAudit(session);
+
+        // Verify audit file written to disk
+        const targetAuditFile = path.join(tmpAuditDir, `${sessionId}.json`);
+        assert.equal(fs.existsSync(targetAuditFile), true, 'Session replay JSON must exist on disk');
+
+        // Read through getSessionReplay
+        const replay = roomManager.getSessionReplay(sessionId);
+        assert.ok(replay, 'Replay must be returned');
+        assert.equal(replay.sessionId, sessionId);
+        assert.equal(replay.teamCode, teamCode);
+        assert.equal(replay.rollNumber, 'REP01');
+        assert.equal(replay.submissions.length, 1);
+        assert.equal(replay.submissions[0].latencyMs, 1200);
+
+        // List session replays includes this session
+        const replayList = roomManager.listSessionReplays();
+        assert.ok(replayList.some(r => r.sessionId === sessionId));
+
+        // Test non-existent session
+        assert.equal(roomManager.getSessionReplay('non-existent-session-id'), null);
+      } finally {
+        roomManager.setAuditDir(originalAuditDir);
+        roomManager.clear();
+        fs.rmSync(tmpAuditDir, { recursive: true, force: true });
+      }
+    });
+  });
 });

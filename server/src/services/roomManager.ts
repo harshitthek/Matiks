@@ -6,6 +6,8 @@
  * answer evaluations with timing anti-cheat, and [EXCUSE MEMBER] hardware recovery.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type {
   TeamRoom,
@@ -21,7 +23,9 @@ import type {
   TeammateProgressEvent,
   AdminTelemetryEvent,
   AnomalyFlagEvent,
-  AuditRecord
+  AuditRecord,
+  SessionReplayData,
+  SessionReplaySummary
 } from '../types/sse.js';
 import type { QuestionSanitized, OperatorMode } from '../types/math.js';
 import { mathEngine } from './mathEngine.js';
@@ -52,7 +56,16 @@ export class RoomManager {
   private countdownTimers = new Map<string, NodeJS.Timeout[]>();
   private expiryTimers = new Map<string, NodeJS.Timeout>();
   private lastQuestionTimes = new Map<string, number>(); // sessionId -> timestamp
+  private auditDir = process.env.AUDIT_LOG_DIR || path.join(process.cwd(), '.data', 'audits');
   private onStateMutated?: () => void;
+
+  public setAuditDir(dir: string): void {
+    this.auditDir = dir;
+  }
+
+  public getAuditDir(): string {
+    return this.auditDir;
+  }
 
   public setPersistenceHook(hook?: () => void): void {
     this.onStateMutated = hook;
@@ -256,6 +269,7 @@ export class RoomManager {
       const sess = this.sessions.get(member.activeSessionId);
       if (sess) {
         sess.isFinished = true;
+        this.persistSessionAudit(sess);
       }
       this.lastQuestionTimes.delete(member.activeSessionId);
     }
@@ -339,6 +353,10 @@ export class RoomManager {
 
     for (const m of room.members.values()) {
       if (m.activeSessionId) {
+        const sess = this.sessions.get(m.activeSessionId);
+        if (sess) {
+          this.persistSessionAudit(sess);
+        }
         this.sessions.delete(m.activeSessionId);
         this.lastQuestionTimes.delete(m.activeSessionId);
       }
@@ -688,9 +706,20 @@ export class RoomManager {
     const submission: SubmissionRecord = {
       questionIndex,
       submittedAnswer,
+      actualAnswer: question.answer,
+      a: question.a,
+      b: question.b,
+      operator: question.operator,
+      bucket: question.bucket,
+      carryType: question.carryType,
+      targetLatencyMs: question.targetLatencyMs,
       isCorrect: evalResult.isCorrect,
       latencyMs: clientDeltaMs,
+      serverDeltaMs,
+      packetJitterMs: Math.abs(serverDeltaMs - clientDeltaMs),
       pointsAwarded: evalResult.pointsAwarded,
+      streakAfter: session.consecutiveStreak,
+      scoreAfter: session.currentScore,
       timestamp: now,
       isAnomaly: finalIsAnomaly,
       anomalyReason: finalAnomalyReason
@@ -718,6 +747,7 @@ export class RoomManager {
     // Check if player finished all 15 questions
     if (session.completedQuestions >= session.questions.length) {
       session.isFinished = true;
+      this.persistSessionAudit(session);
       this.checkRoomCompletion(room);
     }
 
@@ -760,6 +790,16 @@ export class RoomManager {
     room.status = 'FINISHED';
     room.completedAt = Date.now();
 
+    for (const member of room.members.values()) {
+      if (member.activeSessionId) {
+        const session = this.sessions.get(member.activeSessionId);
+        if (session) {
+          session.isFinished = true;
+          this.persistSessionAudit(session);
+        }
+      }
+    }
+
     this.clearRoomTimers(room.teamCode);
 
     this.broadcastSnapshot(room);
@@ -776,7 +816,10 @@ export class RoomManager {
     for (const member of room.members.values()) {
       if (member.activeSessionId) {
         const session = this.sessions.get(member.activeSessionId);
-        if (session) session.isFinished = true;
+        if (session) {
+          session.isFinished = true;
+          this.persistSessionAudit(session);
+        }
       }
     }
 
@@ -824,6 +867,7 @@ export class RoomManager {
       const activeSession = this.sessions.get(member.activeSessionId);
       if (activeSession) {
         activeSession.isFinished = true;
+        this.persistSessionAudit(activeSession);
       }
     }
 
@@ -1085,7 +1129,8 @@ export class RoomManager {
       connected: m.connected,
       individualScore: m.individualScore,
       completedQuestions: m.completedQuestions,
-      isClubMember: m.isClubMember ?? false
+      isClubMember: m.isClubMember ?? false,
+      activeSessionId: m.activeSessionId
     }));
 
     const activeMembers = membersList.filter(m => !m.isExcused);
@@ -1444,6 +1489,157 @@ export class RoomManager {
     } finally {
       this.onStateMutated = prevHook;
     }
+  }
+
+  /**
+   * Serializes a finished or timed-out sprint session to an atomic disk audit log.
+   * Ensures zero memory heap exhaustion during multi-round tournaments.
+   */
+  public persistSessionAudit(session: SprintSession): void {
+    try {
+      const room = this.rooms.get(session.teamCode);
+      const member = room?.members.get(session.rollNumber);
+      if (!fs.existsSync(this.auditDir)) {
+        fs.mkdirSync(this.auditDir, { recursive: true });
+      }
+
+      const lastSub = session.submissions[session.submissions.length - 1];
+      const fallbackEnd = Math.min(Date.now(), session.expiresAt || Date.now());
+      const completedAt = session.isFinished ? (lastSub?.timestamp || fallbackEnd) : undefined;
+      const totalTimeSeconds = Math.round(((completedAt || Date.now()) - session.startedAt) / 1000);
+
+      const replayData: SessionReplayData = {
+        sessionId: session.sessionId,
+        teamCode: session.teamCode,
+        teamName: room?.teamName || session.teamCode,
+        rollNumber: session.rollNumber,
+        memberName: member?.name || session.rollNumber,
+        startedAt: session.startedAt,
+        completedAt,
+        totalTimeSeconds: Math.max(0, totalTimeSeconds),
+        finalScore: session.currentScore,
+        consecutiveStreak: session.consecutiveStreak,
+        completedQuestions: session.completedQuestions,
+        isFinished: session.isFinished,
+        operatorMode: session.operatorMode || room?.operatorMode || 'add',
+        anomalyCount: session.submissions.filter(s => s.isAnomaly).length,
+        submissions: [...session.submissions]
+      };
+
+      const targetPath = path.join(this.auditDir, `${session.sessionId}.json`);
+      const tmpPath = `${targetPath}.tmp.${randomBytes(4).toString('hex')}`;
+      fs.writeFileSync(tmpPath, JSON.stringify(replayData, null, 2), 'utf-8');
+      fs.renameSync(tmpPath, targetPath);
+    } catch (err: unknown) {
+      console.error(`[RoomManager] Failed to persist session audit for ${session.sessionId}:`, err);
+    }
+  }
+
+  /**
+   * Retrieves complete dispute replay data for a sprint session from memory or disk.
+   */
+  public getSessionReplay(sessionId: string): SessionReplayData | null {
+    if (!sessionId || typeof sessionId !== 'string') return null;
+    const cleanId = path.basename(sessionId.trim());
+
+    // 1. Check in-memory active session
+    const session = this.sessions.get(cleanId);
+    if (session) {
+      const room = this.rooms.get(session.teamCode);
+      const member = room?.members.get(session.rollNumber);
+      const lastSub = session.submissions[session.submissions.length - 1];
+      const fallbackEnd = Math.min(Date.now(), session.expiresAt || Date.now());
+      const completedAt = session.isFinished ? (lastSub?.timestamp || fallbackEnd) : undefined;
+      const totalTimeSeconds = Math.round(((completedAt || Date.now()) - session.startedAt) / 1000);
+
+      return {
+        sessionId: session.sessionId,
+        teamCode: session.teamCode,
+        teamName: room?.teamName || session.teamCode,
+        rollNumber: session.rollNumber,
+        memberName: member?.name || session.rollNumber,
+        startedAt: session.startedAt,
+        completedAt,
+        totalTimeSeconds: Math.max(0, totalTimeSeconds),
+        finalScore: session.currentScore,
+        consecutiveStreak: session.consecutiveStreak,
+        completedQuestions: session.completedQuestions,
+        isFinished: session.isFinished,
+        operatorMode: session.operatorMode || room?.operatorMode || 'add',
+        anomalyCount: session.submissions.filter(s => s.isAnomaly).length,
+        submissions: [...session.submissions]
+      };
+    }
+
+    // 2. Check disk-persisted audit
+    try {
+      const targetPath = path.join(this.auditDir, `${cleanId}.json`);
+      if (fs.existsSync(targetPath)) {
+        const raw = fs.readFileSync(targetPath, 'utf-8');
+        return JSON.parse(raw) as SessionReplayData;
+      }
+    } catch (err: unknown) {
+      console.warn(`[RoomManager] Failed to read session audit file for ${cleanId}:`, err);
+    }
+
+    return null;
+  }
+
+  /**
+   * Lists all available session replays from both memory and disk archives.
+   */
+  public listSessionReplays(): SessionReplaySummary[] {
+    const replayMap = new Map<string, SessionReplaySummary>();
+
+    // In-memory sessions
+    for (const s of this.sessions.values()) {
+      const room = this.rooms.get(s.teamCode);
+      const member = room?.members.get(s.rollNumber);
+      replayMap.set(s.sessionId, {
+        sessionId: s.sessionId,
+        teamCode: s.teamCode,
+        rollNumber: s.rollNumber,
+        memberName: member?.name || s.rollNumber,
+        completedQuestions: s.completedQuestions,
+        finalScore: s.currentScore,
+        anomalyCount: s.submissions.filter(sub => sub.isAnomaly).length,
+        startedAt: s.startedAt,
+        isFinished: s.isFinished
+      });
+    }
+
+    // Disk archive
+    try {
+      if (fs.existsSync(this.auditDir)) {
+        const files = fs.readdirSync(this.auditDir).filter(f => f.endsWith('.json'));
+        for (const f of files) {
+          const sessionId = f.slice(0, -5);
+          if (!replayMap.has(sessionId)) {
+            try {
+              const raw = fs.readFileSync(path.join(this.auditDir, f), 'utf-8');
+              const data = JSON.parse(raw) as SessionReplayData;
+              replayMap.set(sessionId, {
+                sessionId: data.sessionId,
+                teamCode: data.teamCode,
+                rollNumber: data.rollNumber,
+                memberName: data.memberName,
+                completedQuestions: data.completedQuestions,
+                finalScore: data.finalScore,
+                anomalyCount: data.anomalyCount,
+                startedAt: data.startedAt,
+                isFinished: data.isFinished
+              });
+            } catch {
+              // Ignore corrupt or unreadable audit files
+            }
+          }
+        }
+      }
+    } catch (err: unknown) {
+      console.warn('[RoomManager] Failed to read audit logs directory:', err);
+    }
+
+    return Array.from(replayMap.values()).sort((a, b) => b.startedAt - a.startedAt);
   }
 
   /**

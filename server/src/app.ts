@@ -37,7 +37,10 @@ import {
   exportTournamentJsonHandler,
   setStreamDelayHandler,
   getStreamDelayHandler,
-  flushLeaderboardHandler
+  flushLeaderboardHandler,
+  getSessionReplayHandler,
+  listSessionReplaysHandler,
+  exportPlayerAuditsCsvHandler
 } from './controllers/adminController.js';
 
 import {
@@ -182,6 +185,9 @@ export function createApp(): express.Application {
   app.get('/api/admin/stream-delay', requireAdminAuth, getStreamDelayHandler);
   app.post('/api/admin/stream-delay', requireAdminAuth, setStreamDelayHandler);
   app.post('/api/admin/flush-leaderboard', requireAdminAuth, flushLeaderboardHandler);
+  app.get('/api/admin/replays', requireAdminAuth, listSessionReplaysHandler);
+  app.get('/api/admin/replay/:sessionId', requireAdminAuth, getSessionReplayHandler);
+  app.get('/api/admin/export/player-audits-csv', requireAdminAuth, exportPlayerAuditsCsvHandler);
 
   return app;
 }
