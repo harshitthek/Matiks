@@ -1,6 +1,6 @@
 # MATIKS HACKATHON ENGINE — ZERO-LUCK MATHEMATICAL SPECIFICATION (MATH_ENGINE.md)
 
-> **Document Version:** 1.3.0  
+> **Document Version:** 2.0.0  
 > **Core Objective:** Provide randomized questions with mathematically identical cognitive difficulty and entropy so that competitive outcomes depend 100% on player reflexes and accuracy, with **ZERO luck bias** and **zero cross-game repetition**.
 
 ---
@@ -123,3 +123,40 @@ $$\text{Team Final Score} = \frac{1}{N} \sum_{i=1}^N \text{Score}_i$$
 
 * **Tie-Breaker:** The team with the lowest combined average completion time:
   $$\text{Team Average Time} = \frac{1}{N} \sum_{i=1}^N \text{TotalTime}_i$$
+
+---
+
+## 8. Subtraction Borrow Taxonomy & Normalized Generator ($A - B \ge 10$)
+
+To expand competition depth without disrupting muscle memory, subtraction is introduced under strict mathematical constraints:
+* Operands $A, B \in [10, 99]$ with $A > B$.
+* **Minimum Difference Invariant:** $A - B \ge 10$. This guarantees all answers are strictly 2 digits ($10 \le A - B \le 89$), preventing single-digit solutions ($52 - 49 = 3$) that would break the universal 2-digit auto-submit reflex.
+* **Anti-Chunking Rules:** $A \not\equiv 0 \pmod{10}$, $B \not\equiv 0 \pmod{10}$, and $\neg(A \equiv 5 \land B \equiv 5)$.
+
+### The 2-Bucket Borrow Taxonomy
+| Bucket | Name | Mathematical Constraint | Borrow Operations | Calibrated Baseline $T_{\text{target}}$ |
+| :--- | :--- | :--- | :--- | :--- |
+| **S1** | **Direct (No Borrow)** | $(A \bmod 10) \ge (B \bmod 10)$ and $A - B \ge 10$ | **0 borrows** | **$4.0\text{ seconds}$** |
+| **S2** | **Ones Borrow** | $(A \bmod 10) < (B \bmod 10)$ and $A - B \ge 10$ | **1 borrow** (units from tens) | **$6.5\text{ seconds}$** |
+
+### Subtraction Blueprint (15 Questions Total)
+$$\text{Subtraction Sprint Set} = 7 \times \mathbf{S1} + 8 \times \mathbf{S2}$$
+
+* Generated via contiguous slice bounds targeting gross difference sum in $[520, 580]$.
+* Mean difference: $\sim 36.67$ per problem across the 15-question sprint.
+
+---
+
+## 9. Mixed Arithmetic Mode ($\pm$)
+
+Mixed mode alternates between addition and subtraction across every team's paper:
+* **Composition:** Exactly 8 Addition questions (drawn across $B1..B4$) + 7 Subtraction questions (drawn across $S1..S2$).
+* **Structural Distribution:**
+  * 2 $\times$ B1 (Direct Addition)
+  * 2 $\times$ B2 (Ones Carry Addition)
+  * 2 $\times$ B3 (Century Carry Addition)
+  * 2 $\times$ B4 (Double Carry Addition)
+  * 3 $\times$ S1 (Direct Subtraction)
+  * 4 $\times$ S2 (Ones Borrow Subtraction)
+* **Target Sum/Diff Window:** $[1100, 1185]$ across the 15-question mixed paper.
+* **Fairness Guarantee:** All teams face the identical operator and difficulty progression with zero luck variance.

@@ -1,8 +1,8 @@
 # MATIKS HACKATHON ENGINE — IMPLEMENTATION ROADMAP (PHASES.md)
 
-> **Document Version:** 1.3.0  
+> **Document Version:** 2.0.0  
 > **Purpose:** Sequential, phase-by-phase engineering execution plan for developing, testing, and deploying the Matiks Hackathon Mini-Game.  
-> **Status:** All Phases Completed & Verified (72 Server Tests + 7 Client Tests Passing)
+> **Status:** All Phases Completed & Verified (94 Server Tests + 7 Client Tests = 101 Tests Passing)
 
 ---
 
@@ -125,22 +125,91 @@
 
 ---
 
+### Phase 8: Subtraction Borrow Taxonomy ($A - B \ge 10$) & Mixed Mode
+* **Objectives:** Implement 2-digit subtraction with borrow taxonomy and balanced mixed mode arithmetic.
+* **Deliverables:**
+  * `mathEngine.ts`: S1 (No Borrow) and S2 (Ones Borrow) taxonomy with $A - B \ge 10$ invariant.
+  * Mixed mode balanced generator: 8 Addition + 7 Subtraction questions with zero luck variance.
+  * Monte Carlo sum corridor tests: 1,000 subtraction sets in $[520, 580]$ and 1,000 mixed sets in $[1100, 1185]$.
+* **Exit Criteria:** 100% test assertions pass across 1,000 runs per operator mode.
+
+---
+
+### Phase 9: 100dvh Zero-Scroll Arena Lock & Drag-Strip Racer HUD
+* **Objectives:** Eliminate mobile scrolling distraction and enhance partner progress visualization.
+* **Deliverables:**
+  * Global header collapse during active sprints freeing $\sim 60\text{px}$ of vertical height.
+  * `100dvh max-h-[100dvh] overflow-hidden` container lock with responsive numpad padding.
+  * Automatic `requestFullscreen()` on user gesture with manual fallback toggle.
+  * Horizontal drag-strip racer HUD and post-sprint bucket-by-bucket cognitive reflex diagnostics.
+* **Exit Criteria:** 0px scroll offset across mobile and desktop viewports during sprints.
+
+---
+
+### Phase 10: Auditorium Ceremony Reveal & Delayed Stream Queue
+* **Objectives:** Build big-screen suspense and eliminate live auditorium screen-peeking.
+* **Deliverables:**
+  * Sliding FIFO delay queue (`LEADERBOARD_STREAM_DELAY_MS`, default 5s) on public leaderboard stream.
+  * 3-second score settling freeze with automated 3-2-1 podium reveal (3rd $\to$ 2nd $\to$ 1st).
+  * Web Audio fanfare synthesizer and canvas confetti barrage.
+* **Exit Criteria:** Public stream respects delay; instant queue flush triggers on window close.
+
+---
+
+### Phase 11: Disk-Backed Dispute Replay & Full Audit Telemetry
+* **Objectives:** Provide millisecond-by-millisecond anti-cheat inspection without memory leaks.
+* **Deliverables:**
+  * Session completion serializes full question telemetry to `server/data/audits/{sessionId}.json`.
+  * `GET /api/admin/replay/:sessionId` streams audit chronologies on-demand into an interactive modal.
+  * Enhanced RFC-4180 CSV export with per-member latency quantiles, anomaly counts, and cheat reason tags.
+* **Exit Criteria:** Disputed sessions replayable in Admin UI; CSV formulas safely neutralized.
+
+---
+
+### Phase 12: SSE Monotonic Replay Buffer & HTTP/2 Reverse Proxy
+* **Objectives:** Prevent socket loss during Wi-Fi packet drops and eliminate proxy buffering delays.
+* **Deliverables:**
+  * 64-bit monotonic sequence IDs on all SSE data events with 100-event circular ring buffer.
+  * `Last-Event-ID` automatic replay on reconnection with process epoch desynchronization detection.
+  * Turnkey production reverse-proxy deployment configurations for Caddy and Nginx with `X-Accel-Buffering: no`.
+* **Exit Criteria:** Disconnected clients recover missed events seamlessly; epoch mismatches trigger clean resync.
+
+---
+
+### Phase 13: Prometheus Metrics & Structured Request Logging
+* **Objectives:** Provide lightweight production observability without third-party monitoring agent bloat.
+* **Deliverables:**
+  * Zero-dependency Prometheus `/metrics` exposition renderer with timing-safe auth and low-cardinality route normalization.
+  * Exclusion of long-lived SSE connections from request duration histograms.
+  * High-throughput structured NDJSON logger with monotonic request ID tracking and URL token redaction.
+* **Exit Criteria:** Prometheus scraper validates format; all 94 server tests and 7 client tests passing.
+
+---
+
 ## 3. Phase Dependency Graph
 
 ```
 Phase 0 (Scaffolding)
    │
-   ├──► Phase 1 (Math & Scoring Engine)
+   ├──► Phase 1 (Addition Math Engine)
    │       │
-   │       └──► Phase 2 (SSE Hub & Team State Machine)
-   │               │
+   │       ├──► Phase 2 (SSE Hub & Team State Machine)
+   │       │       │
+   │       │       ├──► Phase 5 (Leaderboard & Admin Panel)
+   │       │       │       │
+   │       │       │       ├──► Phase 10 (Auditorium Ceremony & Anti-Peeking Queue)
+   │       │       │       └──► Phase 11 (Dispute Replay & Audit Telemetry)
+   │       │       │
+   │       │       ├──► Phase 12 (Monotonic Replay Buffer & HTTP/2 Configs)
+   │       │       └──► Phase 13 (Prometheus Metrics & Structured Logging)
+   │       │
+   │       └──► Phase 8 (Subtraction Borrow Taxonomy & Mixed Mode)
+   │
    ├──► Phase 3 (UFC UI Primitives & Team Lobby)
    │       │
    │       └──► Phase 4 (2-Minute Sprint Arena)
    │               │
-   └───────────────┴──► Phase 5 (Projector Leaderboard & Admin Panel)
-                           │
-                           └──► Phase 6 (Chaos & Wi-Fi Load Testing)
-                                   │
-                                   └──► Phase 7 (Club OIDC Drop-in)
+   │               └──► Phase 9 (100dvh Zero-Scroll Arena Lock & Drag-Strip HUD)
+   │
+   └──► Phase 6 (Chaos & Wi-Fi Load Testing) ──► Phase 7 (Club OIDC Drop-in)
 ```

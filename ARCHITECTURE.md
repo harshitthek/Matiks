@@ -1,6 +1,6 @@
 # MATIKS HACKATHON ENGINE — TECHNICAL ARCHITECTURE (ARCHITECTURE.md)
 
-> **Document Version:** 1.3.0  
+> **Document Version:** 2.0.0  
 > **System Purpose:** High-concurrency, zero-luck, team-synchronized speed mental math competition platform.  
 > **Target Environment:** College hackathons, campus Wi-Fi networks, 4K auditorium projectors, mobile & desktop browsers.
 
@@ -493,4 +493,35 @@ When the central club website (`fossclub.tech`) completes its OIDC endpoints:
    CLUB_OIDC_CLIENT_ID=matiks_hackathon
    CLUB_OIDC_CLIENT_SECRET=...
    ```
+
+---
+
+## 11. Matiks 2.0 Architectural Enhancements
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   MATIKS 2.0 ENHANCEMENT ARCHITECTURE                            │
+├────────────────────────────────┬────────────────────────────────┬────────────────────────────────┤
+│ 1. REALTIME & REPLAY BUFFER    │ 2. OBSERVABILITY ENGINE        │ 3. ARENA VIEWPORT ENGINE       │
+│ • Monotonic 64-bit Event IDs   │ • Pure TS Prometheus /metrics  │ • 100dvh Zero-Scroll Lock      │
+│ • 100-Event Circular Buffer    │ • Low-cardinality route tags   │ • User-Gesture Auto-Fullscreen │
+│ • Last-Event-ID Wi-Fi Replay   │ • Correlation ID Monotonic Req │ • Responsive Tactile Numpad    │
+│ • Delayed Queue Anti-Peeking   │ • Structured NDJSON Logging    │ • Teammate Drag-Strip HUD      │
+│ • Turnkey Caddy/Nginx HTTP/2   │ • Latency Percentile Histogram │ • Post-Sprint Reflex Breakdown │
+└────────────────────────────────┴────────────────────────────────┴────────────────────────────────┘
+```
+
+### 11.1 Resilient SSE Circular Buffer Replay
+* **Circular Ring Buffer:** The `SseHub` maintains an in-memory queue ($K = 100$ items) of previous events per channel.
+* **`Last-Event-ID` Handshake:** When reconnecting after campus Wi-Fi drops, browser `EventSource` passes `Last-Event-ID`. The hub replays missed events $[ \text{lastId} + 1, \text{current} ]$ without requesting a full team snapshot.
+* **Epoch-Aware Desync Guard:** Process boots with an epoch UUID. If the server restarts or the client's `lastEventId` falls outside the retained ring buffer, the server emits `stream_resync` instructing the client to fetch a fresh full state snapshot.
+
+### 11.2 Anti-Screen-Peeking Delayed Broadcast Queue
+* Public `/api/sse/leaderboard` streams through a sliding FIFO queue with a configurable delay (`LEADERBOARD_STREAM_DELAY_MS`, default 5000ms), preventing teams near the stage screen from monitoring competitor streaks.
+* The queue instantly flushes to zero delay when the tournament window closes, synchronizing with the 3-2-1 podium reveal ceremony.
+
+### 11.3 Low-Cardinality Observability & Structured NDJSON Logging
+* **Prometheus Exposition:** Pure TypeScript exposition at `/metrics` protected by timing-safe constant-time bearer token verification.
+* **Low-Cardinality Sanitation:** Routes normalized via `normalizeRoute(path)` (`:teamCode`, `:sessionId`, `:identifier` masks) and `normalizeMethod(verb)` preventing metric cardinality explosions.
+* **NDJSON Logging:** Monotonic request IDs (`req_${timestamp}_${counter}`) binding correlation tracking across requests with privacy-preserving IP masking and URL token redaction.
 

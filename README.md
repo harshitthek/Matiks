@@ -1,19 +1,19 @@
 # MATIKS HACKATHON MINI-GAME ⚡
-### High-Octane Speed Math Sprint for College Hackathons
+### High-Octane Speed Math Sprint for College Hackathons (v2.0)
 
 [![Design: USAR-FOSS UFC](https://img.shields.io/badge/Design-USAR--FOSS%20UFC%20Style-2ee58f?style=for-the-badge&logo=github)](https://github.com/USAR-FOSS/ufc_website.git)
 [![Protocol: Server-Sent Events](https://img.shields.io/badge/Realtime-Server--Sent%20Events%20(SSE)-ffe36e?style=for-the-badge)](SSE_PROTOCOL.md)
-[![Math: Zero-Luck Normalized](https://img.shields.io/badge/Math%20Engine-Zero--Luck%20Normalized-ff6b5e?style=for-the-badge)](MATH_ENGINE.md)
+[![Math: Zero-Luck Normalized](https://img.shields.io/badge/Math%20Engine-Addition%20%7C%20Subtraction%20%7C%20Mixed-ff6b5e?style=for-the-badge)](MATH_ENGINE.md)
 [![Team: Parallel Average Scoring](https://img.shields.io/badge/Team%20Model-Synchronized%20Average-9bd7ff?style=for-the-badge)](ARCHITECTURE.md)
-[![Time: 2 Min / 15 Qs](https://img.shields.io/badge/Sprint-120s%20%7C%2015%20Questions-c7b3ff?style=for-the-badge)](MEMORY.md)
+[![Tests: 101/101 Passing](https://img.shields.io/badge/Tests-101%2F101%20Passing-c7b3ff?style=for-the-badge)](MEMORY.md)
 
 ---
 
 ## 1. Project Overview
 
-**Matiks Hackathon Edition** is a real-time, team-synchronized mental math combat platform designed as a high-energy mini-game for college hackathons. Inspired by the speed arithmetic duel mechanics of the popular **Matiks** mobile app, this web platform adapts competitive arithmetic into an asynchronous team tournament.
+**Matiks Hackathon Edition (v2.0)** is a real-time, team-synchronized mental math combat platform designed as a high-energy mini-game for college hackathons. Inspired by the speed arithmetic duel mechanics of the popular **Matiks** mobile app, this web platform adapts competitive arithmetic into an asynchronous team tournament.
 
-Teams gather in an interactive lobby, sync up their roster, and toggle their **"READY"** state. The moment all teammates are locked in and the hackathon contest window is open, a synchronized $3 \to 2 \to 1$ countdown launches them into an intense **2-minute (120-second), 15-question speed addition sprint**.
+Teams gather in an interactive lobby, sync up their roster, select an operator mode (**Addition**, **Subtraction**, or **Mixed Arithmetic**), and toggle their **"READY"** state. The moment all teammates are locked in and the hackathon contest window is open, a synchronized $3 \to 2 \to 1$ countdown launches them into an intense **2-minute (120-second), 15-question speed arithmetic sprint** in a **zero-scroll, 100dvh auto-fullscreen reflex arena**.
 
 **The Team Dynamic:** All team members play the game **individually on their own devices at the exact same time**. At the end of the sprint, the official team score is the **mathematical average of all team members' scores**.
 
@@ -23,16 +23,18 @@ Teams gather in an interactive lobby, sync up their roster, and toggle their **"
 
 | Parameter | Specification | Detailed Rule |
 | :--- | :--- | :--- |
-| **Math Scope** | **2-Digit Addition** | Operands $A, B \in [10, 99]$. Sums can cross $100$ up to $198$ (e.g. $58 + 76 = 134$). |
+| **Math Scope** | **Addition, Subtraction & Mixed Mode** | Operands $A, B \in [10, 99]$. Addition sums can cross $100$ up to $198$. Subtraction strictly enforces $A - B \ge 10$ ($10 \le A - B \le 89$) so answers are always non-negative and 2 digits. Mixed mode balances 8 addition + 7 subtraction questions. |
 | **Question Count** | **15 Questions** | Standardized set per sprint; latency calibrated per problem complexity. |
 | **Total Duration** | **2 Minutes (120s)** | Strict server-side timestamp countdown. $+2.5\text{s}$ transit grace for valid submissions. |
-| **Difficulty Engine** | **Zero-Luck Normalized** | Every sprint contains **exactly 3 No-Carry, 4 Ones-Carry, 4 Century-Carry, and 4 Double-Carry questions**, sampled uniformly across wide $\pm 28$ sum corridors in $\mathcal{O}(1)$ time ($0.11\text{ms}$/paper) with randomized bucket positions, commutative deduplication, 0/double-5 exclusions, and cross-game + per-squad non-repetition. |
+| **Difficulty Engine** | **Zero-Luck Normalized** | Addition: **3 No-Carry (B1), 4 Ones-Carry (B2), 4 Century-Carry (B3), 4 Double-Carry (B4)** targeting $[1650, 1750]$. Subtraction: **7 No-Borrow (S1), 8 Ones-Borrow (S2)** targeting $[520, 580]$. Sampled in $\mathcal{O}(1)$ time ($0.11\text{ms}$/paper) with commutative deduplication, 0/double-5 exclusions, and cross-game non-repetition. |
 | **Multiplayer Team Model** | **Synchronized Parallel (Average Score)** | All members must be in **READY** state to start. All members solve individually at the exact same time. **Team Score = Average of all members' scores**. |
-| **Input Engine** | **Universal Explicit Submit** | `Spacebar` / `Enter` on desktop; oversized green `ENTER ↵` on mobile touch numpad. Auto-submit on 3 digits disabled to preserve rhythm across 2-digit & 3-digit sums. |
+| **Input Engine** | **100dvh Zero-Scroll Reflex Arena** | Locked viewport fitting $100\text{dvh}$ with zero vertical scroll, automatic user-gesture fullscreen, and responsive tactile numpad. Zetamac-style explicit submit (`Spacebar`/`Enter` on desktop; oversized green `ENTER ↵` on mobile). |
 | **Scoring Formula** | **Difficulty-Calibrated Speed Scoring** | Base $100\text{ pts}$ + Calibrated Speed Bonus ($T_{\text{target}}$: 3.5s to 8.0s) + Consecutive Streak Multipliers ($1.1\times$ to $1.5\times$). Incorrect: $-20\text{ pts}$. |
-| **Real-Time Tech** | **Server-Sent Events (SSE)** | `text/event-stream` pushes room states, `sprint_resume` hydration, timer sync, teammate progress, and live leaderboard updates. Bypasses campus Wi-Fi WebSocket drops. |
-| **Persistence & Exports** | **Crash-Safe Disk Snapshots & CSV/JSON** | Debounced atomic `.tmp` + rename disk snapshots (`server/data/tournament-state.json`) and one-click RFC-4180 formula-safe CSV & JSON tournament exports. |
-| **Design Language** | **USAR-FOSS UFC Style (Two-Mode)** | Showcase Mode for Lobby/Board (tactile stickers, washi tape, Ransom letters) vs. Reflex Mode for Arena (60fps locked, custom tactile numpad with Thumb-Enter). |
+| **Real-Time Tech** | **Resilient SSE with Circular Buffer Replay** | `text/event-stream` with monotonic 64-bit event IDs, in-memory 100-event circular buffer (`Last-Event-ID` automatic replay), epoch resync, and `:keepalive` pings. Turnkey HTTP/2 reverse-proxy configs for Caddy & Nginx. |
+| **Auditorium Ceremony** | **Stage Reveal & Anti-Screen-Peeking** | Automated 3-2-1 podium reveal (3rd $\to$ 2nd $\to$ 1st), canvas confetti cannons, and Web Audio fanfare. Configurable 5s delayed queue on public leaderboard stream prevents screen-peeking during live auditorium play. |
+| **Persistence & Auditing** | **Disk Snapshots, Dispute Replay & CSV** | Debounced atomic `.tmp` + rename disk snapshots (`tournament-state.json`), millisecond-by-millisecond disk-backed dispute replay inspector (`GET /api/admin/replay/:sessionId`), and RFC-4180 formula-safe CSV exports with latency quantiles. |
+| **Observability** | **Prometheus Metrics & Structured Logging** | Built-in `/metrics` endpoint with low-cardinality counters, gauges, and latency histograms. Structured monotonic request ID tracking and NDJSON request logging. |
+| **Design Language** | **USAR-FOSS UFC Style (Two-Mode)** | Showcase Mode for Lobby/Board (tactile stickers, washi tape, Ransom letters) vs. Reflex Mode for Arena (60fps locked, custom tactile numpad with Thumb-Enter, drag-strip teammate HUD). |
 
 ---
 
@@ -44,17 +46,21 @@ Teams gather in an interactive lobby, sync up their roster, and toggle their **"
  ├───────────────────────────────────┬────────────────────────────────────┤
  │ 1. ADMIN PANEL (`/admin`)         │ 2. TEAM & STUDENT LOBBY (`/team`)  │
  │ • Open/Close Hackathon Window     │ • Enter Team Code & Roll Number    │
+ │ • Operator Mode Selection         │ • Select Math Mode (+, -, ±)       │
  │ • Granular Team Pause/Resume      │ • Live Connected Member Roster     │
  │ • Emergency [EXCUSE MEMBER] Action│ • Atomic "READY" Toggle Gate       │
- │ • CSV & JSON Tournament Exports   │ • Synchronized 3-2-1 Countdown     │
- │ • Live Anomaly Watchdog (<200ms)  │ • Post-Sprint Rematch & Leave      │
+ │ • Dispute Replay Inspector        │ • Synchronized 3-2-1 Countdown     │
+ │ • CSV & JSON Tournament Exports   │ • Post-Sprint Rematch & Leave      │
+ │ • Live Anomaly Watchdog (<200ms)  │ • Zero-Scroll Auto-Fullscreen      │
  ├───────────────────────────────────┼────────────────────────────────────┤
  │ 3. SPRINT COMBAT ARENA (`/arena`) │ 4. PROJECTOR LEADERBOARD (`/live`) │
- │ • High-Performance Reflex Mode   │ • 4K Auditorium Projector View     │
- │ • High-Contrast Math Equations    │ • Live Team Average Scores via SSE │
- │ • Mobile Touch Numpad + Thumb-Enter│ • Real-time Rank Swaps via SSE    │
- │ • Universal Explicit Submit       │ • Zero Question Leak Guarantee     │
- │ • Non-Intrusive Teammate HUD      │ • Gold, Silver, Bronze Podiums     │
+ │ • 100dvh Zero-Scroll Reflex Arena │ • 4K Auditorium Projector View     │
+ │ • User-Gesture Auto-Fullscreen    │ • Live Team Average Scores via SSE │
+ │ • High-Contrast Math Equations    │ • Anti-Screen-Peeking Delay Queue  │
+ │ • Mobile Touch Numpad + Thumb-Enter│ • 3-2-1 Podium Reveal Ceremony    │
+ │ • Universal Explicit Submit       │ • Canvas Confetti & Audio Fanfare  │
+ │ • Drag-Strip Teammate Progress HUD│ • Zero Question Leak Guarantee     │
+ │ • Post-Sprint Reflex Diagnostics  │ • Real-time Rank Swaps via SSE     │
  └───────────────────────────────────┴────────────────────────────────────┘
 ```
 
@@ -130,11 +136,13 @@ npm --prefix server run dev
 npm --prefix client install
 npm --prefix client run dev
 
-# 3. Run Full Verification Suite (72 Server Tests + 7 Client Tests + Oxlint)
+# 3. Run Full Verification Suite (94 Server Tests + 7 Client Tests = 101 Tests)
 npm --prefix server test
 npm --prefix client test
 npm --prefix client run lint
-npx --prefix client oxlint server/src server/tests
+
+# 4. View Production Prometheus Metrics
+curl -H "Authorization: Bearer hackathon_admin_secret" http://localhost:3001/metrics
 ```
 
 ---

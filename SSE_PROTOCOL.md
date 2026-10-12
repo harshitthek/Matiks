@@ -1,9 +1,9 @@
 # MATIKS HACKATHON ENGINE — SERVER-SENT EVENTS (SSE) PROTOCOL SPECIFICATION
 
-> **Document Version:** 1.3.0  
+> **Document Version:** 2.0.0  
 > **Protocol:** Server-Sent Events (`text/event-stream`) over HTTP/1.1 or HTTP/2  
 > **Directionality:** Unidirectional Server $\rightarrow$ Client Streaming + REST Client $\rightarrow$ Server  
-> **Network Guarantee:** Built for enterprise campus Wi-Fi resiliency, zero WebSocket handshake drops, and multi-tab state recovery.
+> **Network Guarantee:** Built for enterprise campus Wi-Fi resiliency, circular buffer replay, and multi-tab state recovery.
 
 ---
 
@@ -339,3 +339,28 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 ```
+
+---
+
+## 7. `Last-Event-ID` Monotonic Circular Buffer Replay
+
+To survive Wi-Fi packet loss without triggering expensive full-state roundtrips, the SSE Hub implements monotonic 64-bit sequence tagging and circular buffer replay:
+
+1. **Monotonic IDs:** Every SSE data event is prefixed with a sequential ID (`id: <number>\n`).
+2. **In-Memory Ring Buffer:** Retains the last $K = 100$ events per channel.
+3. **Reconnection Header & Query Param:** When `EventSource` reconnects or reloads, it sends `Last-Event-ID: <id>` or `?lastEventId=<id>`.
+4. **Replay Dispatch:** If the requested ID is within the retained buffer, the server immediately pushes missed events $[ \text{lastEventId} + 1, \text{latest} ]$.
+5. **Epoch Desynchronization Protection:** Process boots with an epoch UUID. If the server restarts or the client's `lastEventId` falls outside the retained buffer, the server emits `event: stream_resync` instructing the client to fetch a fresh full snapshot.
+
+---
+
+## 8. Anti-Screen-Peeking Delay Queue & Observability
+
+### Public Leaderboard Delay Queue
+* **Purpose:** Prevents students near stage projectors from peeking at opponents' active streaks to gauge risk/pace.
+* **Mechanism:** Public `/api/sse/leaderboard` streams through a sliding FIFO queue with configurable delay (`LEADERBOARD_STREAM_DELAY_MS`, default 5000ms).
+* **Instant Flush:** The moment the contest window is closed or enters the 3-second settling freeze, the delayed queue is instantly flushed to display authoritative final standings for the podium reveal.
+
+### Production Observability Endpoints
+* `GET /metrics`: Prometheus text exposition endpoint protected by `METRICS_TOKEN` / `ADMIN_SECRET` constant-time authorization. Exposes active SSE connections, submission counters, latency histograms (SSE streams excluded to protect percentiles), and room states.
+* `GET /api/admin/replay/:sessionId`: Streams millisecond-by-millisecond question submission telemetry from disk audits into the admin dispute inspector modal.

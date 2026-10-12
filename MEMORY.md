@@ -1,9 +1,9 @@
 # MATIKS HACKATHON ENGINE — PROJECT MEMORY & DECISION LOG
 
-> **Document Version:** 1.3.0  
+> **Document Version:** 2.0.0  
 > **Target Event:** College Hackathon Mini-Game (Speed Math Sprint)  
-> **Last Updated:** 2026-10-12  
-> **Status:** Production-Ready — Full Stack Implemented, Verified (79/79 Tests), & Hardened
+> **Last Updated:** 2026-10-13  
+> **Status:** Production-Ready — Full Stack Implemented, Verified (101/101 Tests), & Hardened
 
 ---
 
@@ -119,6 +119,51 @@
   * `StatePersistenceService` (`server/src/services/statePersistence.ts`) performs debounced (200ms) atomic `.tmp` + rename writes to `server/data/tournament-state.json` and synchronous flushes on `SIGINT`/`SIGTERM`, restoring active rooms, sprint sessions, timers, leaderboard standings, and audit logs across restarts.
   * Organizers can export standings via `GET /api/admin/export/csv` (with RFC-4180 escaping and spreadsheet formula-injection neutralization) and `GET /api/admin/export/json`.
 
+### ADR-12: Subtraction Operator Expansion ($A - B \ge 10$) & Mixed Mode
+* **Context:** Adding subtraction without allowing single-digit answers ($52 - 49 = 3$), which would create cognitive asymmetry with 2-digit addition and break the 2-digit auto-submit reflex.
+* **Decision:**
+  * Strictly enforce $A - B \ge 10$ with operands $A, B \in [10, 99]$ and $A > B$, guaranteeing strictly positive, 2-digit answers ($10 \le A - B \le 89$).
+  * Enforce 2-bucket borrow taxonomy: S1 (No Borrow, $A \pmod{10} \ge B \pmod{10}$) and S2 (Ones Borrow, $A \pmod{10} < B \pmod{10}$).
+  * Anti-chunking filters: no 0-endings, no double-5 endings, no duplicates.
+  * Mixed mode balances 8 addition ($B_1..B_4$) and 7 subtraction ($S_1..S_2$) questions with uniform cross-team slot distributions.
+
+### ADR-13: 100dvh Zero-Scroll Reflex Arena & User-Gesture Fullscreen Activation
+* **Context:** In active sprints on mobile devices, viewport scrolling and address bars distract players and displace the tactile numpad below the fold.
+* **Decision:**
+  * Hide global header and marquee ticker during active sprints, reclaiming $\sim 60\text{px}$ of vertical height.
+  * Root container locked to `100dvh max-h-[100dvh] overflow-hidden overscroll-none` with responsive numpad button padding.
+  * Automatic `requestFullscreen()` triggered on user interaction (READY toggle / sprint launch) with prominent manual `[⛶ FULLSCREEN]` fallback in the arena telemetry header.
+
+### ADR-14: Auditorium Ceremony Reveal & Delayed Anti-Screen-Peeking Stream Queue
+* **Context:** In a live auditorium, teams near the projector screen could monitor opponents' real-time streaks. Closing the window abruptly left no climax for the audience.
+* **Decision:**
+  * Public `/api/sse/leaderboard` streams through a configurable sliding FIFO delay queue (`LEADERBOARD_STREAM_DELAY_MS`, default 5s).
+  * Admin and Team streams remain zero-latency ($0\text{ ms}$).
+  * When tournament window closes, the queue flushes instantly, entering a 3-second score settling freeze followed by an automated 3-2-1 podium reveal (3rd $\to$ 2nd $\to$ 1st), confetti cannon, and synthesized Web Audio fanfare.
+
+### ADR-15: Disk-Backed Dispute Replay Inspector & Memory-Efficient Audit Streaming
+* **Context:** High-concurrency tournaments generate deep telemetry per question that can exhaust server heap memory if held in RAM.
+* **Decision:**
+  * Detailed question telemetry is serialized directly to disk (`server/data/audits/{sessionId}.json`) upon session completion and freed from heap.
+  * Admin Dispute Replay Inspector (`GET /api/admin/replay/:sessionId`) streams audit chronologies on-demand into an interactive modal in `/admin`.
+  * CSV export includes full per-member latency quantiles, anomaly counts, and cheat reason tags.
+
+### ADR-16: SSE Monotonic 64-bit Circular Buffer Replay & Epoch Desynchronization Recovery
+* **Context:** Wi-Fi jitter causes brief socket disconnects, while server restarts invalidate client-side sequence counters.
+* **Decision:**
+  * Server tags all SSE events with monotonic sequential IDs (`id: 104\n`) and maintains a 100-event circular buffer per channel.
+  * Clients pass `Last-Event-ID` on reconnection to replay missed events without full state re-fetch.
+  * Process boots with a unique epoch UUID; if the client's epoch mismatches or the event ID falls outside the retained window, the server emits a clean `stream_resync` event to trigger snapshot synchronization.
+  * Turnkey Caddy and Nginx HTTP/2 configs provided in `server/deploy/` with `X-Accel-Buffering: no`.
+
+### ADR-17: Low-Cardinality Prometheus Metrics & Structured Monotonic Request Logging
+* **Context:** Production monitoring without third-party agent bloat or metric cardinality explosion.
+* **Decision:**
+  * Zero-dependency Prometheus exposition renderer at `/metrics` (timing-safe bearer token authentication).
+  * Strict route normalization (`:teamCode`, `:sessionId`, `:identifier` templates) and HTTP method normalization preventing label cardinality explosion.
+  * SSE streams excluded from request duration histogram to keep latency quantiles accurate.
+  * Monotonic request ID generator (`req_${timestamp}_${counter}`) binding correlation IDs with query-stripped URL paths.
+
 ---
 
 ## 4. Phase Execution Roadmap & Lifecycle State
@@ -131,6 +176,12 @@
 | **Phase 3** | Frontend UFC UI Primitives & Team Lobby | **Completed** | Tactile sticker UI, Ransom tiles, washi tape, custom `ConfirmModal`, browser history navigation. |
 | **Phase 4** | 2-Minute Sprint Arena (Reflex Mode) | **Completed** | 60fps locked, tactile numpad with Thumb-Enter, Zetamac keyboard listeners, Web Audio SFX, teammate HUD. |
 | **Phase 5** | Projector Leaderboard & Admin Command Center | **Completed** | 4K projector podium, room pause/resume/excuse, single-use admin SSE tickets, CSV & JSON exports. |
-| **Phase 6** | Chaos, QA Regression & Campus Wi-Fi Load Testing | **Completed** | 72 server tests + 7 client tests passing (100 SSE streams, 1,350 submissions, chaos jitter, QA regression, smoke). |
-| **Phase 7** | Pluggable Club OIDC Adapter | **Completed** | `LocalHackathonAuthProvider` & `ClubOidcAuthProvider` implemented and verified (`authOidc.test.ts`). |
+| **Phase 6** | Chaos, QA Regression & Campus Wi-Fi Load Testing | **Completed** | 100 SSE streams, 1,350 submissions, chaos jitter, QA regression, smoke testing. |
+| **Phase 7** | Pluggable Club OIDC Adapter | **Completed** | `LocalHackathonAuthProvider` & `ClubOidcAuthProvider` implemented and verified (`authProvider.test.ts`). |
+| **Phase 8** | Subtraction Borrow Taxonomy ($A - B \ge 10$) & Mixed Mode | **Completed** | S1 (No Borrow), S2 (Ones Borrow), deterministic sum variance, dynamic operand badges. |
+| **Phase 9** | 100dvh Zero-Scroll Arena Lock & Drag-Strip Racer HUD | **Completed** | Header collapsing, responsive numpad, teammate progress racers, post-sprint cognitive diagnostics. |
+| **Phase 10** | Auditorium Ceremony & Anti-Peeking Stream Queue | **Completed** | 3s settling freeze, automated 3-2-1 podium reveal, confetti barrage, delayed public SSE queue. |
+| **Phase 11** | Disk-Backed Dispute Replay & Full Audit Telemetry | **Completed** | Admin dispute replay modal, disk streaming, RFC-4180 CSV export with latency quantiles. |
+| **Phase 12** | SSE Monotonic Replay Buffer & HTTP/2 Reverse Proxy | **Completed** | `Last-Event-ID` circular replay, epoch desync recovery, turnkey Caddy & Nginx configs. |
+| **Phase 13** | Prometheus Metrics & Structured Request Logging | **Completed** | Low-cardinality `/metrics`, timing-safe auth, monotonic request IDs, NDJSON logging. 101/101 total tests passing. |
 
