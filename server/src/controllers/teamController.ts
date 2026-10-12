@@ -5,6 +5,7 @@
  */
 
 import type { Request, Response } from 'express';
+import type { OperatorMode } from '../types/math.js';
 import { roomManager } from '../services/roomManager.js';
 import { verifyAnySession } from '../services/auth/authProviderFactory.js';
 
@@ -59,13 +60,17 @@ export async function createTeamHandler(req: Request, res: Response): Promise<vo
       ? sessionUser.isClubMember
       : undefined;
 
+    const rawMode = req.body.operatorMode;
+    const operatorMode: OperatorMode = (rawMode === 'sub' || rawMode === 'mixed') ? rawMode : 'add';
+
     const size = typeof targetSize === 'number' ? targetSize : 3;
     const { room, teamCode, memberToken } = roomManager.createTeam(
       teamName,
       size,
       cleanCaptainRoll,
       captainName,
-      isClubMember
+      isClubMember,
+      operatorMode
     );
 
     res.status(201).json({

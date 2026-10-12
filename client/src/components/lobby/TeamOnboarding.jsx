@@ -55,6 +55,10 @@ function loadInitialState(initialTeamCode) {
   const initialSize = draft?.targetSize === 2 || draft?.targetSize === 3 ? draft.targetSize : 3;
   const initialRoll = (draft?.rollNumber || savedSession?.user?.rollNumber || '').toUpperCase();
   const initialName = draft?.name || savedSession?.user?.displayName || '';
+  const initialOperatorMode =
+    draft?.operatorMode === 'sub' || draft?.operatorMode === 'mixed'
+      ? draft.operatorMode
+      : 'add';
 
   return {
     savedSession,
@@ -64,6 +68,7 @@ function loadInitialState(initialTeamCode) {
     initialSize,
     initialRoll,
     initialName,
+    initialOperatorMode,
     initialOidcError,
     hasOidcCallback
   };
@@ -81,6 +86,7 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
   const [targetSize, setTargetSize] = useState(init.initialSize);
   const [rollNumber, setRollNumber] = useState(init.initialRoll);
   const [name, setName] = useState(init.initialName);
+  const [operatorMode, setOperatorMode] = useState(init.initialOperatorMode); // 'add' | 'sub' | 'mixed'
   const [loading, setLoading] = useState(false);
   const [oidcLoading, setOidcLoading] = useState(init.hasOidcCallback);
   const [error, setError] = useState(init.initialOidcError);
@@ -173,7 +179,7 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
     try {
       sessionStorage.setItem(
         OIDC_DRAFT_KEY,
-        JSON.stringify({ mode, teamName, teamCode, targetSize, rollNumber, name })
+        JSON.stringify({ mode, teamName, teamCode, targetSize, rollNumber, name, operatorMode })
       );
     } catch {
       // Ignore storage errors
@@ -230,7 +236,8 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
           targetSize,
           rollNumber.trim(),
           name.trim(),
-          activeSessionToken
+          activeSessionToken,
+          operatorMode
         );
         onJoinedTeam({
           teamCode: res.teamCode,
@@ -472,6 +479,33 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
                       }`}
                     >
                       {size} Members
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-mono text-xs uppercase tracking-wider text-[#e8ece3] mb-1.5">
+                  Arithmetic Mode
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'add', label: '+ ADD', title: 'Addition (15 questions)' },
+                    { id: 'sub', label: '- SUB', title: 'Subtraction (15 questions)' },
+                    { id: 'mixed', label: '± MIXED', title: 'Mixed (8 Add + 7 Sub)' }
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setOperatorMode(m.id)}
+                      className={`py-2 px-2 border-2 font-mono text-xs tracking-wider uppercase font-bold transition-all cursor-pointer ${
+                        operatorMode === m.id
+                          ? 'border-[#090c0a] bg-[#2ee58f] text-[#090c0a] shadow-[3px_3px_0_#090c0a]'
+                          : 'border-[#aab5ac]/30 bg-[#090c0a] text-[#aab5ac]'
+                      }`}
+                      title={m.title}
+                    >
+                      {m.label}
                     </button>
                   ))}
                 </div>

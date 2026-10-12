@@ -456,10 +456,17 @@ export function TeamLobby({
             </h1>
           </div>
 
-          {/* Squad Code Pill with Copy & Share Link */}
+          {/* Squad Code & Mode Pill with Copy & Share Link */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="font-mono text-sm md:text-base font-bold bg-[#090c0a] border-2 border-[#2ee58f] px-4 py-2 text-[#2ee58f] tracking-widest shadow-[3px_3px_0_#2ee58f]">
               #{teamCode}
+            </div>
+            <div className="font-mono text-xs md:text-sm font-bold bg-[#090c0a] border-2 border-[#ffe36e] px-3 py-2 text-[#ffe36e] tracking-wider shadow-[2px_2px_0_#ffe36e]">
+              {snapshot?.operatorMode === 'sub'
+                ? 'SUBTRACTION (-)'
+                : snapshot?.operatorMode === 'mixed'
+                ? 'MIXED (±)'
+                : 'ADDITION (+)'}
             </div>
             <button
               type="button"

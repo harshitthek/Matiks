@@ -5,7 +5,7 @@
  * anti-cheat audit logs, and Server-Sent Event payloads.
  */
 
-import type { Question, QuestionSanitized } from './math.js';
+import type { Question, QuestionSanitized, OperatorMode } from './math.js';
 
 export type RoomStatus =
   | 'LOBBY'
@@ -42,6 +42,7 @@ export interface TeamRoom {
   startedAt?: number;
   completedAt?: number;
   masterPaperId?: string;
+  operatorMode?: OperatorMode;
 }
 
 export interface SubmissionRecord {
@@ -68,6 +69,7 @@ export interface SprintSession {
   consecutiveStreak: number;
   completedQuestions: number;
   isFinished: boolean;
+  operatorMode?: OperatorMode;
 }
 
 export interface MemberLeaderboardSummary {
@@ -96,6 +98,7 @@ export interface ContestWindowConfig {
   closesAt: number;
   durationMinutes: number;
   announcementTicker?: string;
+  operatorMode?: OperatorMode;
 }
 
 export type AuditAction =
@@ -129,6 +132,7 @@ export interface TeamSnapshotEvent {
   status: RoomStatus;
   isPaused?: boolean;
   startedAt?: number;
+  operatorMode?: OperatorMode;
   members: {
     rollNumber: string;
     name: string;
@@ -164,6 +168,7 @@ export interface SprintStartEvent {
   startedAt: number;
   durationSeconds: number;
   totalQuestions: number;
+  operatorMode?: OperatorMode;
   sessions: Record<string, string>; // rollNumber -> sessionId
   questionsByRollNumber: Record<string, QuestionSanitized[]>;
 }

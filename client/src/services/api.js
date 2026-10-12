@@ -51,7 +51,7 @@ async function request(endpoint, options = {}) {
 /**
  * Creates a new squad room.
  */
-export async function createTeam(teamName, targetSize, captainRoll, captainName, sessionToken) {
+export async function createTeam(teamName, targetSize, captainRoll, captainName, sessionToken, operatorMode = 'add') {
   const headers = { 'Content-Type': 'application/json' };
   if (sessionToken) {
     headers['x-session-token'] = sessionToken;
@@ -59,7 +59,7 @@ export async function createTeam(teamName, targetSize, captainRoll, captainName,
   return request('/team/create', {
     method: 'POST',
     headers,
-    body: JSON.stringify({ teamName, targetSize, captainRoll, captainName, sessionToken })
+    body: JSON.stringify({ teamName, targetSize, captainRoll, captainName, sessionToken, operatorMode })
   });
 }
 

@@ -17,12 +17,14 @@ export function EquationCard({
 }) {
   if (!question) return null;
 
-  // Carry Taxonomy Badge color
+  // Carry & Borrow Taxonomy Badge color
   const bucketColors = {
     B1: { text: 'text-[#ffe36e]', bg: 'bg-[#ffe36e]/15', border: 'border-[#ffe36e]', label: 'B1 // NO CARRY' },
     B2: { text: 'text-[#2ee58f]', bg: 'bg-[#2ee58f]/15', border: 'border-[#2ee58f]', label: 'B2 // ONES CARRY' },
     B3: { text: 'text-[#f5a623]', bg: 'bg-[#f5a623]/15', border: 'border-[#f5a623]', label: 'B3 // CENTURY CARRY' },
-    B4: { text: 'text-[#ff6b5e]', bg: 'bg-[#ff6b5e]/15', border: 'border-[#ff6b5e]', label: 'B4 // DOUBLE CARRY' }
+    B4: { text: 'text-[#ff6b5e]', bg: 'bg-[#ff6b5e]/15', border: 'border-[#ff6b5e]', label: 'B4 // DOUBLE CARRY' },
+    S1: { text: 'text-[#2ee58f]', bg: 'bg-[#2ee58f]/15', border: 'border-[#2ee58f]', label: 'S1 // CLEAN SUB' },
+    S2: { text: 'text-[#ff6b5e]', bg: 'bg-[#ff6b5e]/15', border: 'border-[#ff6b5e]', label: 'S2 // REGROUP BORROW' }
   };
 
   const badge = bucketColors[question.bucket] || bucketColors.B1;

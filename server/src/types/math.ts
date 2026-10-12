@@ -4,18 +4,29 @@
  * question representations, sanitization, and speed scoring.
  */
 
-export type CarryBucket = 'B1' | 'B2' | 'B3' | 'B4';
+export type AdditionBucket = 'B1' | 'B2' | 'B3' | 'B4';
+export type SubtractionBucket = 'S1' | 'S2';
+export type MathBucket = AdditionBucket | SubtractionBucket;
+export type CarryBucket = MathBucket; // Backwards-compatible alias
 
-export type CarryType = 'NONE' | 'ONES' | 'CENTURY' | 'DOUBLE';
+export type CarryType =
+  | 'NONE'
+  | 'ONES'
+  | 'CENTURY'
+  | 'DOUBLE'
+  | 'BORROW_NONE'
+  | 'BORROW_ONES';
+
+export type OperatorMode = 'add' | 'sub' | 'mixed';
 
 export interface Question {
   id: string;
-  bucket: CarryBucket;
+  bucket: MathBucket;
   carryType: CarryType;
   tag: string;
   a: number;
   b: number;
-  operator?: string;
+  operator: '+' | '-';
   answer: number;
   targetLatencyMs: number;
 }
@@ -27,12 +38,12 @@ export interface Question {
 export interface QuestionSanitized {
   id: string;
   questionIndex: number;
-  bucket: CarryBucket;
+  bucket: MathBucket;
   carryType: CarryType;
   tag: string;
   a: number;
   b: number;
-  operator?: string;
+  operator: '+' | '-';
   targetLatencyMs: number;
 }
 
@@ -40,8 +51,9 @@ export interface SprintPaper {
   paperId: string;
   questions: Question[];
   totalSum: number;
-  bucketCounts: Record<CarryBucket, number>;
+  bucketCounts: Record<string, number>;
   generatedAt: number;
+  operatorMode?: OperatorMode;
 }
 
 export interface LatencyCalibration {

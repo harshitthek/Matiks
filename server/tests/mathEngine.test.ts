@@ -129,10 +129,71 @@ describe('Math Engine — 4-Bucket Carry Taxonomy & Zero-Luck Invariants', () =>
     assert.equal(squadUsedKeys.size, 120, 'All 120 questions across 8 consecutive games must be distinct pairs');
     assert.ok(firstQuestionBuckets.size > 1, 'First question bucket must be randomized across games');
   });
+
+  it('generates a subtraction sprint paper with exactly 15 questions adhering to borrow distribution', () => {
+    const paper = generateSprintPaper('sub_paper_1', undefined, 'sub');
+
+    assert.equal(paper.questions.length, 15, 'Paper must contain exactly 15 questions');
+    assert.equal(paper.bucketCounts.S1, 7, 'Must contain exactly 7 Clean Subtraction questions (S1)');
+    assert.equal(paper.bucketCounts.S2, 8, 'Must contain exactly 8 Regroup Borrow questions (S2)');
+    assert.equal(paper.operatorMode, 'sub');
+
+    for (const q of paper.questions) {
+      assert.ok(q.a >= 20 && q.a <= 99, `Operand a (${q.a}) must be in [20, 99]`);
+      assert.ok(q.b >= 10 && q.b <= 89, `Operand b (${q.b}) must be in [10, 89]`);
+      assert.equal(q.operator, '-', 'Operator must be -');
+      assert.equal(q.answer, q.a - q.b, 'Answer must equal a - b');
+
+      // Zero-Enter Auto-Submit Invariant: Answer must strictly be 2 digits
+      assert.ok(
+        q.answer >= 10 && q.answer <= 89,
+        `Difference ${q.answer} must be strictly 2 digits in [10, 89]`
+      );
+
+      assert.notEqual(q.a % 10, 0, `Operand a (${q.a}) cannot end in 0`);
+      assert.notEqual(q.b % 10, 0, `Operand b (${q.b}) cannot end in 0`);
+      assert.notEqual((q.a - q.b) % 10, 0, `Difference (${q.a - q.b}) cannot end in 0`);
+
+      if (q.bucket === 'S1') {
+        assert.ok((q.a % 10) > (q.b % 10), `S1 question ${q.a}-${q.b} must not borrow ones`);
+        assert.equal(q.targetLatencyMs, 3800);
+      } else if (q.bucket === 'S2') {
+        assert.ok((q.a % 10) < (q.b % 10), `S2 question ${q.a}-${q.b} must borrow ones`);
+        assert.equal(q.targetLatencyMs, 6500);
+      }
+    }
+  });
+
+  it('generates a mixed sprint paper with exactly 8 addition and 7 subtraction questions', () => {
+    const paper = generateSprintPaper('mixed_paper_1', undefined, 'mixed');
+
+    assert.equal(paper.questions.length, 15, 'Paper must contain exactly 15 questions');
+    assert.equal(paper.bucketCounts.B1, 2, 'Must contain exactly 2 B1');
+    assert.equal(paper.bucketCounts.B2, 2, 'Must contain exactly 2 B2');
+    assert.equal(paper.bucketCounts.B3, 2, 'Must contain exactly 2 B3');
+    assert.equal(paper.bucketCounts.B4, 2, 'Must contain exactly 2 B4');
+    assert.equal(paper.bucketCounts.S1, 3, 'Must contain exactly 3 S1');
+    assert.equal(paper.bucketCounts.S2, 4, 'Must contain exactly 4 S2');
+    assert.equal(paper.operatorMode, 'mixed');
+
+    const addQuestions = paper.questions.filter(q => q.operator === '+');
+    const subQuestions = paper.questions.filter(q => q.operator === '-');
+
+    assert.equal(addQuestions.length, 8, 'Must have exactly 8 addition questions');
+    assert.equal(subQuestions.length, 7, 'Must have exactly 7 subtraction questions');
+
+    for (const q of addQuestions) {
+      assert.equal(q.answer, q.a + q.b);
+    }
+    for (const q of subQuestions) {
+      assert.equal(q.answer, q.a - q.b);
+      assert.ok(q.answer >= 10 && q.answer <= 89, 'Subtraction answers must be 2 digits');
+    }
+  });
 });
 
-describe('Math Engine — High-Concurrency O(1) Monte Carlo Validation (1,000 Sprints)', () => {
-  it('generates 1,000 consecutive sprint sets strictly within sum window [1650, 1750]', () => {
+describe('Math Engine — High-Concurrency O(1) Monte Carlo Validation (1,000 Sprints / Mode)', () => {
+  it('generates 1,000 consecutive addition sprint sets strictly within sum window [1650, 1750]', () => {
     const iterations = 1000;
     const startTime = performance.now();
 
@@ -140,7 +201,7 @@ describe('Math Engine — High-Concurrency O(1) Monte Carlo Validation (1,000 Sp
     let maxObservedSum = -Infinity;
 
     for (let i = 0; i < iterations; i++) {
-      const paper = generateSprintPaper();
+      const paper = generateSprintPaper(undefined, undefined, 'add');
 
       assert.equal(paper.questions.length, 15);
       assert.equal(paper.bucketCounts.B1, 3);
@@ -160,10 +221,78 @@ describe('Math Engine — High-Concurrency O(1) Monte Carlo Validation (1,000 Sp
     const elapsedMs = performance.now() - startTime;
     const perGenerationMs = elapsedMs / iterations;
 
-    console.log(`\n  ⚡ 1,000 Sprint Generations Benchmark:`);
+    console.log(`\n  ⚡ 1,000 Addition Sprint Benchmark:`);
     console.log(`     Total Duration: ${elapsedMs.toFixed(1)} ms`);
-    console.log(`     Average Generation Latency: ${perGenerationMs.toFixed(3)} ms / set`);
-    console.log(`     Observed Gross Sum Range: [${minObservedSum}, ${maxObservedSum}] (Target: [1650, 1750])\n`);
+    console.log(`     Average Latency: ${perGenerationMs.toFixed(3)} ms / set`);
+    console.log(`     Observed Sum Range: [${minObservedSum}, ${maxObservedSum}] (Target: [1650, 1750])\n`);
+  });
+
+  it('generates 1,000 consecutive subtraction sprint sets strictly within diff window [520, 580]', () => {
+    const iterations = 1000;
+    const startTime = performance.now();
+
+    let minObservedSum = Infinity;
+    let maxObservedSum = -Infinity;
+
+    for (let i = 0; i < iterations; i++) {
+      const paper = generateSprintPaper(undefined, undefined, 'sub');
+
+      assert.equal(paper.questions.length, 15);
+      assert.equal(paper.bucketCounts.S1, 7);
+      assert.equal(paper.bucketCounts.S2, 8);
+
+      if (paper.totalSum < minObservedSum) minObservedSum = paper.totalSum;
+      if (paper.totalSum > maxObservedSum) maxObservedSum = paper.totalSum;
+
+      assert.ok(
+        paper.totalSum >= 520 && paper.totalSum <= 580,
+        `Iteration ${i}: Total diff sum ${paper.totalSum} outside normalized window [520, 580]`
+      );
+    }
+
+    const elapsedMs = performance.now() - startTime;
+    const perGenerationMs = elapsedMs / iterations;
+
+    console.log(`\n  ⚡ 1,000 Subtraction Sprint Benchmark:`);
+    console.log(`     Total Duration: ${elapsedMs.toFixed(1)} ms`);
+    console.log(`     Average Latency: ${perGenerationMs.toFixed(3)} ms / set`);
+    console.log(`     Observed Sum Range: [${minObservedSum}, ${maxObservedSum}] (Target: [520, 580])\n`);
+  });
+
+  it('generates 1,000 consecutive mixed sprint sets strictly within sum window [1100, 1185]', () => {
+    const iterations = 1000;
+    const startTime = performance.now();
+
+    let minObservedSum = Infinity;
+    let maxObservedSum = -Infinity;
+
+    for (let i = 0; i < iterations; i++) {
+      const paper = generateSprintPaper(undefined, undefined, 'mixed');
+
+      assert.equal(paper.questions.length, 15);
+      assert.equal(paper.bucketCounts.B1, 2);
+      assert.equal(paper.bucketCounts.B2, 2);
+      assert.equal(paper.bucketCounts.B3, 2);
+      assert.equal(paper.bucketCounts.B4, 2);
+      assert.equal(paper.bucketCounts.S1, 3);
+      assert.equal(paper.bucketCounts.S2, 4);
+
+      if (paper.totalSum < minObservedSum) minObservedSum = paper.totalSum;
+      if (paper.totalSum > maxObservedSum) maxObservedSum = paper.totalSum;
+
+      assert.ok(
+        paper.totalSum >= 1100 && paper.totalSum <= 1185,
+        `Iteration ${i}: Total sum ${paper.totalSum} outside normalized window [1100, 1185]`
+      );
+    }
+
+    const elapsedMs = performance.now() - startTime;
+    const perGenerationMs = elapsedMs / iterations;
+
+    console.log(`\n  ⚡ 1,000 Mixed Sprint Benchmark:`);
+    console.log(`     Total Duration: ${elapsedMs.toFixed(1)} ms`);
+    console.log(`     Average Latency: ${perGenerationMs.toFixed(3)} ms / set`);
+    console.log(`     Observed Sum Range: [${minObservedSum}, ${maxObservedSum}] (Target: [1100, 1185])\n`);
   });
 });
 
@@ -205,6 +334,7 @@ describe('Scoring Engine — Difficulty-Calibrated Speed & Streak Evaluation', (
       tag: 'DOUBLE TROUBLE',
       a: 58,
       b: 76,
+      operator: '+' as const,
       answer: 134,
       targetLatencyMs: 8000
     };
@@ -229,6 +359,7 @@ describe('Scoring Engine — Difficulty-Calibrated Speed & Streak Evaluation', (
       tag: 'ONES OVERLOAD',
       a: 37,
       b: 28,
+      operator: '+' as const,
       answer: 65,
       targetLatencyMs: 5500
     };
@@ -251,6 +382,7 @@ describe('Scoring Engine — Difficulty-Calibrated Speed & Streak Evaluation', (
       tag: 'DIRECT HIT',
       a: 23,
       b: 34,
+      operator: '+' as const,
       answer: 57,
       targetLatencyMs: 3500
     };

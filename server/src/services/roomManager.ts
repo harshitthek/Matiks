@@ -23,7 +23,7 @@ import type {
   AnomalyFlagEvent,
   AuditRecord
 } from '../types/sse.js';
-import type { QuestionSanitized } from '../types/math.js';
+import type { QuestionSanitized, OperatorMode } from '../types/math.js';
 import { mathEngine } from './mathEngine.js';
 import { scoringEngine } from './scoringEngine.js';
 import { sseHub } from './sseHub.js';
@@ -97,7 +97,8 @@ export class RoomManager {
     targetSize: number,
     captainRoll: string,
     captainName: string,
-    isClubMember?: boolean
+    isClubMember?: boolean,
+    operatorMode: OperatorMode = 'add'
   ): { room: TeamRoom; teamCode: string; memberToken: string } {
     if (!Number.isInteger(targetSize) || targetSize < 2 || targetSize > 4) {
       throw new Error('Target team size must be an integer between 2 and 4 members.');
@@ -134,7 +135,8 @@ export class RoomManager {
       members,
       status: 'LOBBY',
       isPaused: false,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      operatorMode: operatorMode || 'add'
     };
 
     this.rooms.set(teamCode, room);
@@ -501,13 +503,13 @@ export class RoomManager {
       roomUsedKeys.clear();
     }
 
-    // 1. Generate master 15-question paper with zero-luck 4-bucket taxonomy,
+    // 1. Generate master 15-question paper with zero-luck taxonomy,
     // excluding all pairs previously played by this squad
-    const masterPaper = mathEngine.generateSprintPaper(undefined, roomUsedKeys);
+    const masterPaper = mathEngine.generateSprintPaper(undefined, roomUsedKeys, room.operatorMode || 'add');
     const masterQuestions = masterPaper.questions;
     room.masterPaperId = masterPaper.paperId;
     for (const q of masterQuestions) {
-      roomUsedKeys.add(mathEngine.getCanonicalKey(q.a, q.b));
+      roomUsedKeys.add(mathEngine.getCanonicalKey(q.a, q.b, q.operator));
     }
 
     const sessionIds: Record<string, string> = {};
@@ -538,7 +540,8 @@ export class RoomManager {
         currentScore: 0,
         consecutiveStreak: 0,
         completedQuestions: 0,
-        isFinished: false
+        isFinished: false,
+        operatorMode: room.operatorMode || 'add'
       };
 
       this.sessions.set(sessionId, session);
@@ -550,6 +553,7 @@ export class RoomManager {
       startedAt,
       durationSeconds: 120,
       totalQuestions: 15,
+      operatorMode: room.operatorMode || 'add',
       sessions: sessionIds,
       questionsByRollNumber
     };
@@ -1099,6 +1103,7 @@ export class RoomManager {
       status: room.status,
       isPaused: room.isPaused,
       startedAt: room.startedAt,
+      operatorMode: room.operatorMode || 'add',
       members: membersList,
       allReady,
       contestWindow: {
