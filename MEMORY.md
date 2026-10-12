@@ -1,9 +1,9 @@
 # MATIKS HACKATHON ENGINE — PROJECT MEMORY & DECISION LOG
 
-> **Document Version:** 1.2.0  
+> **Document Version:** 1.3.0  
 > **Target Event:** College Hackathon Mini-Game (Speed Math Sprint)  
-> **Last Updated:** 2026-10-11  
-> **Status:** Upgraded Architecture & Requirements Freeze (Pre-Implementation)
+> **Last Updated:** 2026-10-12  
+> **Status:** Production-Ready — Full Stack Implemented, Verified (79/79 Tests), & Hardened
 
 ---
 
@@ -12,9 +12,9 @@
 * **Project Name:** Matiks Hackathon Edition (Speed Math Sprint)
 * **Goal:** A high-octane 2-minute competitive mental math mini-game designed for a college hackathon.
 * **Core Philosophy:** 
-  1. **Zero Luck Factor:** Strict 4-bucket carry taxonomy, 0/double-5 chunking exclusions, and gross sum normalization so every team faces mathematically equivalent cognitive loads.
+  1. **Zero Luck Factor:** Strict 4-bucket carry taxonomy, 0/double-5 chunking exclusions, wide-corridor uniform sampling, cross-game non-repetition, and gross sum normalization so every team faces mathematically equivalent cognitive loads.
   2. **Synchronized Team Hive Play (Average Scoring):** All team members must join and signal "READY" before the 2-minute timer triggers. Once started, **all members play individually at the exact same time on their own devices**, and the final team score is the **AVERAGE of all team members' scores**.
-  3. **Low-Latency Campus-Resilient Realtime:** Powered by Server-Sent Events (SSE) + REST, bypassing campus Wi-Fi WebSocket throttling/drops with visibility-change resync watchdogs.
+  3. **Low-Latency Campus-Resilient Realtime:** Powered by Server-Sent Events (SSE) + REST, bypassing campus Wi-Fi WebSocket throttling/drops with visibility-change resync watchdogs and `sprint_resume` state recovery.
   4. **UFC Cyber-Editorial Aesthetic with Two-Mode Rendering:** Directly modeled after the USAR-FOSS UFC design system (`ufc_website`) — rich tactile showcase in Lobby and Leaderboard, transitioning to an ultra-clean 60fps reflex mode in the 2-Minute Arena.
 
 ---
@@ -24,12 +24,12 @@
 | ID | Requirement | Formal Specification | Implementation Decision |
 | :--- | :--- | :--- | :--- |
 | **REQ-01** | **Math Scope** | 2-digit addition where operands $A, B \in [10, 99]$. Sums can cross 100 up to 198. | Strict 4-Bucket Carry Taxonomy + 0/double-5 exclusions + Gross sum constraint $\sum \in [1650, 1750]$. |
-| **REQ-02** | **Difficulty Normalization** | Random questions with zero luck variance. | Structured Blueprint: exactly 3 No-Carry, 4 Ones-Carry, 4 Tens-Carry, 4 Double-Carry questions per set. |
+| **REQ-02** | **Difficulty Normalization** | Random questions with zero luck variance and zero cross-game repetition. | Structured Blueprint: 3 No-Carry, 4 Ones-Carry, 4 Tens-Carry, 4 Double-Carry questions sampled across wide $\pm 28$ sum corridors with per-squad & global history deduplication. |
 | **REQ-03** | **Format & Duration** | Exactly 15 questions per sprint; total time limit of 120.0 seconds (2 minutes). | Global server-enforced countdown; per-question latency calibrated to carry complexity. |
 | **REQ-04** | **Multiplayer Team Model** | Synchronized start; parallel individual play; Team Score = Average of members. | Team members must all toggle "READY" to trigger the 3-2-1 countdown. All members play simultaneously; Team Score = $\frac{1}{N} \sum \text{Score}_i$. |
 | **REQ-05** | **Scoring Engine** | Points awarded according to fastest response time with difficulty calibration. | Base $100\text{ pts}$ + Difficulty-Calibrated Speed Bonus ($T_{\text{target}}$: 3.5s to 8.0s) + Streak Multipliers. Incorrect: $-20\text{ pts}$. |
 | **REQ-06** | **Real-Time Tech** | **Server-Sent Events (SSE)** strictly instead of WebSockets. | Unidirectional HTTP streaming (`text/event-stream`) for leaderboard, room readiness, timer sync, and live announcements. REST POST for user actions. |
-| **REQ-07** | **Panel Architecture** | Three dedicated panels: Admin Panel, Student/Team Panel, and Live Projector Leaderboard. | Role-based authentication/passcodes with clean separate dashboards and granular team pause/recovery. |
+| **REQ-07** | **Panel Architecture** | Three dedicated panels: Admin Panel, Student/Team Panel, and Live Projector Leaderboard. | Role-based authentication/passcodes with clean separate dashboards, granular team pause/recovery, and CSV/JSON exports. |
 | **REQ-08** | **Design Language** | USAR-FOSS Club Website (`USAR-FOSS/ufc_website`). | Neo-brutalist tactile stickers, `--ink` (`#090c0a`), `--signal` (`#2ee58f`), `--amber`, `--ember`, `--butter`, Bricolage Grotesque + Space Mono. |
 
 ---
@@ -53,7 +53,7 @@
   4. Live teammate status is displayed in a non-intrusive header HUD (`Rohan 🟢 Q7 | Priya 🟢 Q9 | Aarav 🟡 Q6`).
   5. The final official team score on the leaderboard is the **mathematical average of all team members' scores**:
      $$\text{Team Score} = \frac{\sum_{i=1}^N \text{Score}_i}{N}$$
-  6. Tie-breaker: Combined average completion time in milliseconds.
+  6. Tie-breaker: Combined average completion time in seconds, followed by alphabetical team name.
 
 ### ADR-03: Difficulty-Calibrated Speed Scoring ($T_{\text{target}}$) & Streak Multipliers
 * **Context:** A flat $8.0\text{ s}$ baseline penalizes players for solving inherently harder double-carry questions.
@@ -77,50 +77,47 @@
   * **Desktop/Laptops:** Global `keydown` listeners capture physical numerical keys and `Enter` / `Spacebar`.
   * **Universal Explicit Submit:** In line with esports math competition standards (Zetamac), every answer requires an explicit submit action (`Spacebar`/`Enter` on desktop, oversized green `ENTER ↵` on mobile). Auto-submit on 3 digits is strictly disallowed.
 
-### ADR-05: SSE Resiliency & Background Tab Recovery
-* **Context:** College Wi-Fi disconnects and background mobile browser tab suspension.
+### ADR-05: SSE Resiliency, Multi-Tab Presence & Background Tab Recovery
+* **Context:** College Wi-Fi disconnects, multi-tab usage, and background mobile browser tab suspension.
 * **Decision:**
-  * Tokens passed via query parameter: `/api/sse/team/:teamCode?token=xxx`.
-  * Client monitors `:keepalive` heartbeat comments. If missing for $>20\text{ s}$, it closes and reconnects.
+  * Team SSE tokens passed via query parameter (`/api/sse/team/:teamCode?token=xxx`); admin SSE streams use short-lived (60s), single-use tickets (`POST /api/admin/stream-ticket`).
+  * Member SSE connections are reference-counted (`memberConnections`) so closing a duplicate tab never marks an active student disconnected.
+  * Reconnecting during an active sprint emits `sprint_resume` with full `submissions`, `maxStreak`, `currentScore`, `questionIndex`, and `remainingMs`.
   * `document.visibilityState` listener automatically fetches authoritative clock sync upon tab return.
 
 ### ADR-06: Two-Mode Rendering Engine
 * **Context:** Running heavy 2D physics during a 120-second speed math sprint can drop frames on budget devices.
 * **Decision:**
-  * **Showcase Mode (Lobby, Leaderboard, Admin):** Full UFC aesthetic — washi tape, Matter.js falling stickers, Ransom lettering, and film grain.
+  * **Showcase Mode (Lobby, Leaderboard, Admin):** Full UFC aesthetic — washi tape, tactile stickers, Ransom lettering, and film grain.
   * **Reflex Mode (Arena):** 60fps locked, zero physics libraries, GPU-accelerated transforms, high-contrast equation cards, instant green perimeter flash.
 
 ### ADR-07: Pluggable Club OIDC Adapter Strategy
-* **Context:** The USAR FOSS Club website (`fossclub.tech`) is developing an OpenID Connect (OIDC / OAuth) provider. In the final stage, Matiks must authenticate against the club's OIDC endpoints to verify if the player is an official club member or registered hackathon team participant, and grant permissions accordingly. However, the club OIDC server is currently incomplete.
+* **Context:** The USAR FOSS Club website (`fossclub.tech`) is developing an OpenID Connect (OIDC / OAuth) provider.
 * **Decision:**
-  * Build an abstract `IAuthProvider` interface with pluggable implementations:
-    1. **Phase 1 (Current Standalone Adapter):** Fast, frictionless local hackathon auth (Roll Number + Name + Team Code + Admin Secret), providing mockable membership flags and instant onboarding.
-    2. **Phase 2 (Club OIDC Adapter):** Ready for drop-in activation when the club team finalizes the OIDC service. Communicates with `https://www.fossclub.tech/api/auth/*` to exchange tokens, fetch profile claims (`isClubMember`, `teamRoster`, `githubId`), and enforce role permissions without changing the core game logic.
+  * Implemented `IAuthProvider` (`server/src/services/authProvider.ts`) with both `LocalHackathonAuthProvider` (`AUTH_MODE=local`) and `ClubOidcAuthProvider` (`AUTH_MODE=club_oidc`) ready for environment-variable switching without core game engine changes.
 
 ### ADR-08: Macro-Telemetry Projector & Zero Question Leak Guarantee
-* **Context:** 4K stage projectors and spectators continuously consume the `/api/sse/leaderboard` stream. If problem operands or answer keys were transmitted in public SSE channels, students in the auditorium could pre-solve questions or screen-peek.
+* **Context:** 4K stage projectors and spectators continuously consume the `/api/sse/leaderboard` stream.
 * **Decision:**
-  * The `/api/sse/leaderboard` stream transmits macro-telemetry only: Team Name, Rank, Average Score, Question Progress ($Q/15$), and Streak Flame.
-  * Operands ($A, B$) and answers are strictly isolated to the authenticated individual sprint session and are never broadcast over public or team-wide channels.
+  * The `/api/sse/leaderboard` stream transmits macro-telemetry only: Team Name, Rank, Average Score, Question Progress ($Q/15$), and Member Breakdown. Operands ($A, B$) and answers are never broadcast over public channels.
 
-### ADR-09: $\mathcal{O}(1)$ Residual-Targeted Question Blueprint Generation
-* **Context:** Blind rejection sampling for gross sum normalization ($\sum_{i=1}^{15} S_i \in [1650, 1750]$) can cause random CPU spikes and high loop counts under concurrent multi-team load.
+### ADR-09: Pre-Sorted $\mathcal{O}(1)$ Wide-Corridor Sampling & Cross-Game Non-Repetition
+* **Context:** Narrow target-sum binning caused severe pool funneling (e.g., sum `148` in `B4` has only 2 unique pairs: $59+89$ and $69+79$) and repeated questions across rematches.
 * **Decision:**
-  * Deterministic $\mathcal{O}(1)$ residual-targeted algorithm:
-    1. Generate 12 questions analytically across the 4 buckets (3 in B1, 3 in B2, 3 in B3, 3 in B4).
-    2. Calculate sum of first 12: $S_{12} = \sum_{i=1}^{12} (A_i + B_i)$.
-    3. Compute residual required: $R = 1700 - S_{12}$.
-    4. Select the final 3 questions (1 in B2, 1 in B3, 1 in B4) targeting partition of $R$ within $\pm 50$ in $\mathcal{O}(1)$ time ($<1\text{ ms}$).
-  * Commutative uniqueness check: pairs $(A, B)$ and $(B, A)$ are deduplicated via canonical unordered tuple keys `[min(A,B), max(A,B)]`.
+  * Pre-sort each bucket pool by `sum` at startup with `Int32Array` contiguous slice bounds (`startIdxBySum` / `endIdxBySum`).
+  * Randomize the 15 bucket slot positions (`orderedBuckets`) and sample uniformly across wide $\pm 28$ sum corridors centered on calibrated bucket means (`B1: 72, B2: 75, B3: 140, B4: 156`, summing to $1,700$) in $0.11\text{ ms}$/paper.
+  * Track per-squad canonical pair history (`roomUsedPairKeys`) and rolling global history (`recentGlobalSet`) so consecutive games never repeat questions.
 
 ### ADR-10: Wi-Fi Latency Compensation & Hardware Failure Recovery (`[EXCUSE MEMBER]`)
-* **Context:** 
-  1. Campus Wi-Fi packet transit jitter can unfairly penalize last-second submissions.
-  2. A teammate's device crash or dead battery would artificially depress the team average score if divided by full roster count.
 * **Decision:**
-  * **Timing Verification Window:** Client submits measured `clientDeltaMs` and `clientTimestamp`. Server tolerates $\pm 350\text{ ms}$ packet jitter against server clock and provides a $+2.5\text{ s}$ transit grace cutoff for submissions made before the $120.0\text{ s}$ deadline.
+  * **Timing Verification Window:** Server tolerates $\pm 350\text{ ms}$ packet jitter against server clock and provides a $+2.5\text{ s}$ transit grace cutoff (`expiresAt + 2500ms`).
   * **Sub-200ms Anomaly Detection:** Submissions under $200\text{ ms}$ trigger an automated anti-cheat flag in the admin feed.
-  * **Admin Excuse Control:** Admin dashboard features an `[EXCUSE MEMBER]` control (`POST /api/admin/teams/:teamCode/excuse-member`). Excusing a member removes them from the average divisor (e.g. dividing by 2 instead of 3) while logging an immutable audit record with justification.
+  * **Admin Excuse Control:** `POST /api/admin/teams/:teamCode/excuse-member` dynamically adjusts the score divisor and auto-launches the countdown if all remaining unexcused members in a full `AWAITING_READY` room are already ready.
+
+### ADR-11: Crash-Safe Disk Persistence & Formula-Safe Tournament Exports
+* **Decision:**
+  * `StatePersistenceService` (`server/src/services/statePersistence.ts`) performs debounced (200ms) atomic `.tmp` + rename writes to `server/data/tournament-state.json` and synchronous flushes on `SIGINT`/`SIGTERM`, restoring active rooms, sprint sessions, timers, leaderboard standings, and audit logs across restarts.
+  * Organizers can export standings via `GET /api/admin/export/csv` (with RFC-4180 escaping and spreadsheet formula-injection neutralization) and `GET /api/admin/export/json`.
 
 ---
 
@@ -128,11 +125,12 @@
 
 | Phase | Description | Status | Notes |
 | :--- | :--- | :--- | :--- |
-| **Phase 1** | Math Generation & Difficulty Normalization | **Completed** | Deterministic 4-bucket carry taxonomy, O(1) sum convergence, anti-chunking filters, 23/23 tests. |
-| **Phase 2** | Real-time SSE Hub & State Machine | **Completed** | Room lifecycle machine, atomic ready gate, parallel player dispatch, anti-cheat latency watchdog. |
-| **Phase 3** | Frontend UFC UI Primitives & Team Lobby | **Baseline (Incomplete)** | Tactile sticker UI, ransom tiles, washi tape, roster presence, and atomic ready gate functional; marked incomplete to revisit for deep tactile polish after full pipeline setup. |
-| **Phase 4** | 2-Minute Sprint Arena (Reflex Mode) | **Completed** | 60fps locked, custom tactile numpad with Thumb-Enter, physical Zetamac listeners, perimeter flash, teammate HUD. |
-| **Phase 5** | Projector Leaderboard & Admin Command Center | **Baseline (Incomplete)** | Macro-telemetry stream, 4K projector podium, room excuse/pause controls, anti-cheat audit feed; marked incomplete to revisit after pipeline setup. |
-| **Phase 6** | Chaos & Campus Wi-Fi Load Testing | **Completed** | 100 concurrent SSE streams, 30 teams/90 students, 1,350 submissions, 24.7ms avg latency (<50ms SLA), 33/33 tests pass. |
-| **Phase 7** | Club OIDC Drop-in Strategy | **Upcoming** | Pluggable IAuthProvider, FOSS club website OAuth token exchange, membership verification. |
+| **Phase 0** | Scaffolding, Monorepo Setup & UFC Design Tokens | **Completed** | Express + TypeScript backend, React 19 + Vite + Tailwind v4 frontend, GitHub Actions CI. |
+| **Phase 1** | Math Generation & Difficulty Normalization | **Completed** | Pre-sorted `Int32Array` wide-corridor $\mathcal{O}(1)$ generator ($0.11\text{ms}$/paper), cross-game non-repetition, 13/13 tests. |
+| **Phase 2** | Real-time SSE Hub & State Machine | **Completed** | Room lifecycle, atomic ready gate, rematch reset, captain succession on leave, `sprint_resume` recovery. |
+| **Phase 3** | Frontend UFC UI Primitives & Team Lobby | **Completed** | Tactile sticker UI, Ransom tiles, washi tape, custom `ConfirmModal`, browser history navigation. |
+| **Phase 4** | 2-Minute Sprint Arena (Reflex Mode) | **Completed** | 60fps locked, tactile numpad with Thumb-Enter, Zetamac keyboard listeners, Web Audio SFX, teammate HUD. |
+| **Phase 5** | Projector Leaderboard & Admin Command Center | **Completed** | 4K projector podium, room pause/resume/excuse, single-use admin SSE tickets, CSV & JSON exports. |
+| **Phase 6** | Chaos, QA Regression & Campus Wi-Fi Load Testing | **Completed** | 72 server tests + 7 client tests passing (100 SSE streams, 1,350 submissions, chaos jitter, QA regression, smoke). |
+| **Phase 7** | Pluggable Club OIDC Adapter | **Completed** | `LocalHackathonAuthProvider` & `ClubOidcAuthProvider` implemented and verified (`authOidc.test.ts`). |
 

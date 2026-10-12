@@ -1,7 +1,7 @@
 # MATIKS HACKATHON ENGINE — ZERO-LUCK MATHEMATICAL SPECIFICATION (MATH_ENGINE.md)
 
-> **Document Version:** 1.2.0  
-> **Core Objective:** Provide randomized questions with mathematically identical cognitive difficulty and entropy so that competitive outcomes depend 100% on player reflexes and accuracy, with **ZERO luck bias**.
+> **Document Version:** 1.3.0  
+> **Core Objective:** Provide randomized questions with mathematically identical cognitive difficulty and entropy so that competitive outcomes depend 100% on player reflexes and accuracy, with **ZERO luck bias** and **zero cross-game repetition**.
 
 ---
 
@@ -14,7 +14,7 @@ Cognitive neuroscience and mental calculation research show three major sources 
 2. **Subitization & Chunking Bias:** Numbers ending in `0` or `5` (e.g. $45 + 35 = 80$, $50 + 68 = 118$) are solved through automatic memory retrieval rather than mental calculation, cutting solve latency by $> 60\%$.
 3. **Magnitude Bias:** High-magnitude additions ($89 + 98 = 187$) impose significantly heavier working-memory loads than low-magnitude additions ($59 + 68 = 127$).
 
-To guarantee complete fairness across all teams, the Matiks engine implements a **4-Bucket Carry Taxonomy with Entropy Balancing, $\mathcal{O}(1)$ Residual Targeting, and Gross Sum Normalization**.
+To guarantee complete fairness across all teams, the Matiks engine implements a **4-Bucket Carry Taxonomy with Entropy Balancing, Wide-Corridor $\mathcal{O}(1)$ Contiguous-Slice Sampling, Cross-Game Non-Repetition, and Gross Sum Normalization**.
 
 ---
 
@@ -22,12 +22,12 @@ To guarantee complete fairness across all teams, the Matiks engine implements a 
 
 Every two-digit addition problem is classified into one of four mutually exclusive, mathematically rigorous buckets:
 
-| Bucket | Category Name | Mathematical Constraint | Carry Operations | Baseline Latency $T_{\text{target}}$ |
-| :--- | :--- | :--- | :--- | :--- |
-| **B1** | **Direct (No Carry)** | $(A \bmod 10) + (B \bmod 10) < 10$ and $A + B < 100$ | **0 carries** | **$3.5\text{ seconds}$** |
-| **B2** | **Ones Carry Only** | $(A \bmod 10) + (B \bmod 10) \ge 10$ and $A + B < 100$ | **1 carry** (units) | **$5.5\text{ seconds}$** |
-| **B3** | **Century Carry Only** | $(A \bmod 10) + (B \bmod 10) < 10$ and $A + B \ge 100$ | **1 carry** (tens/century) | **$6.0\text{ seconds}$** |
-| **B4** | **Double Carry** | $(A \bmod 10) + (B \bmod 10) \ge 10$ and $A + B \ge 100$ | **2 carries** (units + tens) | **$8.0\text{ seconds}$** |
+| Bucket | Category Name | Mathematical Constraint | Carry Operations | Calibrated Center Sum | Baseline Latency $T_{\text{target}}$ |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **B1** | **Direct (No Carry)** | $(A \bmod 10) + (B \bmod 10) < 10$ and $A + B < 100$ | **0 carries** | **$72$** | **$3.5\text{ seconds}$** |
+| **B2** | **Ones Carry Only** | $(A \bmod 10) + (B \bmod 10) \ge 10$ and $A + B < 100$ | **1 carry** (units) | **$75$** | **$5.5\text{ seconds}$** |
+| **B3** | **Century Carry Only** | $(A \bmod 10) + (B \bmod 10) < 10$ and $A + B \ge 100$ | **1 carry** (tens/century) | **$140$** | **$6.0\text{ seconds}$** |
+| **B4** | **Double Carry** | $(A \bmod 10) + (B \bmod 10) \ge 10$ and $A + B \ge 100$ | **2 carries** (units + tens) | **$156$** | **$8.0\text{ seconds}$** |
 
 ---
 
@@ -44,8 +44,10 @@ During question generation, every candidate pair $(A, B)$ must satisfy the follo
 3. **No Exact Twins:**
    $$A \ne B$$
    *(Prevents doubling shortcuts like $47 + 47$).*
-4. **Strict Commutative Deduplication:**
-   Every generated pair is registered as an unordered set $\{\min(A, B), \max(A, B)\}$. If $37 + 58$ is present, $58 + 37$ is strictly forbidden within the same paper.
+4. **Intra-Paper & Cross-Game Commutative Deduplication:**
+   Every generated pair is registered as a canonical unordered key $\min(A, B)\text{-}\max(A, B)$.
+   * **Within a paper:** If $37 + 58$ is selected, $58 + 37$ is strictly forbidden.
+   * **Across consecutive games:** `generateSprintPaper(seed, excludeKeys)` accepts per-squad history (`roomUsedPairKeys`) and maintains a rolling global history (`recentGlobalSet`) so consecutive rematches never repeat question pairs.
 
 ---
 
@@ -69,20 +71,19 @@ $$\text{Sprint Set} = 3 \times \mathbf{B1} + 4 \times \mathbf{B2} + 4 \times \ma
 
 ---
 
-## 5. $\mathcal{O}(1)$ Residual Targeted Generation (Zero Rejection Loops)
+## 5. $\mathcal{O}(1)$ Contiguous-Slice Wide-Corridor Generation ($0.11\text{ ms}$ / paper)
 
-To prevent CPU throttling from blind rejection sampling under high concurrency (e.g. 50 teams starting at once), the engine uses **$\mathcal{O}(1)$ Residual Targeting**:
+Narrow single-sum targeting causes severe pool funneling (for example, in `B4`, no sum can end in `9` because $9+9=18$, and sum `148` contains only 2 unique pairs: $59+89$ and $69+79$). To combine maximum question variety with $\mathcal{O}(1)$ sub-millisecond performance, the engine uses **Pre-Sorted Contiguous-Slice Wide-Corridor Sampling**:
 
-1. **Phase A (Initial 12 Questions):**
-   * Generate $3 \times \mathbf{B1}$, $3 \times \mathbf{B2}$, $3 \times \mathbf{B3}$, and $3 \times \mathbf{B4}$ applying filters 1–4.
-   * Compute intermediate sum $S_{12} = \sum_{i=1}^{12} (A_i + B_i)$.
-2. **Phase B (Targeted Residual on Final 3 Questions):**
-   * The ideal gross sum target is $S_{\text{target}} = 1,700$.
-   * Residual sum needed: $R = 1,700 - S_{12}$.
-   * Distribute $R$ across the remaining 1 question in B2, 1 in B3, and 1 in B4 by clamping their operand generation ranges.
-   * **Result:** The final gross sum is mathematically guaranteed to fall in $[1,650, 1,750]$ on the **very first pass in $< 1\text{ millisecond}$** with zero while-loop retries!
-3. **Phase C (Fisher-Yates Shuffle):**
-   * Shuffle the final 15 questions uniquely per player to prevent screen-peeking.
+1. **Startup Pool Indexing:**
+   * All valid pairs in each bucket ($1,224$ in `B1`, $864$ in `B2`, $1,152$ in `B3`, $1,476$ in `B4`) are sorted ascending by `sum` once at server startup.
+   * Precomputed `Int32Array` lookup tables (`startIdxBySum` and `endIdxBySum`) map any feasible sum interval $[\text{corridorMin}, \text{corridorMax}]$ to a contiguous index slice $[\text{lo}, \text{hi})$ in $\mathcal{O}(1)$ time with zero array allocations.
+2. **Randomized Bucket Slot Ordering & Dynamic Residual Corridors:**
+   * The 15 bucket slots (`3 B1 + 4 B2 + 4 B3 + 4 B4`) are shuffled first via a CSPRNG-seeded PRNG (`randomInt(1, 0x7fffffff)`), so the residual-constrained final slots are distributed across different buckets every game.
+   * At each step $i \in [0, 14]$, the engine computes the feasible sum bounds $[\text{feasibleMin}, \text{feasibleMax}]$ that guarantee the remaining buckets can reach $[1650, 1750]$, and intersects that window with a wide $\pm 28$ corridor around the bucket's calibrated center sum ($3 \times 72 + 4 \times 75 + 4 \times 140 + 4 \times 156 = 1,700$).
+   * A candidate pair is sampled uniformly at random from the contiguous slice $[\text{lo}, \text{hi})$, rejecting any pair present in `usedKeys`, `excludeKeys`, or `recentGlobalSet`.
+3. **Player-Specific Permutations:**
+   * Once the master 15-question paper is generated and shuffled, each teammate receives an independent deterministic permutation (`shuffleQuestionsForPlayer`) seeded with `teamCode:rollNumber:paperId:startedAt` to prevent screen-peeking while preserving identical cognitive load.
 
 ---
 

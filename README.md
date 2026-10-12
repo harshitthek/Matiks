@@ -26,12 +26,13 @@ Teams gather in an interactive lobby, sync up their roster, and toggle their **"
 | **Math Scope** | **2-Digit Addition** | Operands $A, B \in [10, 99]$. Sums can cross $100$ up to $198$ (e.g. $58 + 76 = 134$). |
 | **Question Count** | **15 Questions** | Standardized set per sprint; latency calibrated per problem complexity. |
 | **Total Duration** | **2 Minutes (120s)** | Strict server-side timestamp countdown. $+2.5\text{s}$ transit grace for valid submissions. |
-| **Difficulty Engine** | **Zero-Luck Normalized** | Every sprint contains **exactly 3 No-Carry, 4 Ones-Carry, 4 Century-Carry, and 4 Double-Carry questions**, generated in $\mathcal{O}(1)$ time with residual targeting, commutative deduplication, and 0/double-5 exclusions. |
+| **Difficulty Engine** | **Zero-Luck Normalized** | Every sprint contains **exactly 3 No-Carry, 4 Ones-Carry, 4 Century-Carry, and 4 Double-Carry questions**, sampled uniformly across wide $\pm 28$ sum corridors in $\mathcal{O}(1)$ time ($0.11\text{ms}$/paper) with randomized bucket positions, commutative deduplication, 0/double-5 exclusions, and cross-game + per-squad non-repetition. |
 | **Multiplayer Team Model** | **Synchronized Parallel (Average Score)** | All members must be in **READY** state to start. All members solve individually at the exact same time. **Team Score = Average of all members' scores**. |
 | **Input Engine** | **Universal Explicit Submit** | `Spacebar` / `Enter` on desktop; oversized green `ENTER ↵` on mobile touch numpad. Auto-submit on 3 digits disabled to preserve rhythm across 2-digit & 3-digit sums. |
 | **Scoring Formula** | **Difficulty-Calibrated Speed Scoring** | Base $100\text{ pts}$ + Calibrated Speed Bonus ($T_{\text{target}}$: 3.5s to 8.0s) + Consecutive Streak Multipliers ($1.1\times$ to $1.5\times$). Incorrect: $-20\text{ pts}$. |
-| **Real-Time Tech** | **Server-Sent Events (SSE)** | `text/event-stream` pushes room states, timer sync, teammate progress, and live leaderboard updates. Bypasses campus Wi-Fi WebSocket drops. |
-| **Design Language** | **USAR-FOSS UFC Style (Two-Mode)** | Showcase Mode for Lobby/Board (Matter.js stickers, washi tape, Ransom letters) vs. Reflex Mode for Arena (60fps locked, custom tactile numpad with Thumb-Enter). |
+| **Real-Time Tech** | **Server-Sent Events (SSE)** | `text/event-stream` pushes room states, `sprint_resume` hydration, timer sync, teammate progress, and live leaderboard updates. Bypasses campus Wi-Fi WebSocket drops. |
+| **Persistence & Exports** | **Crash-Safe Disk Snapshots & CSV/JSON** | Debounced atomic `.tmp` + rename disk snapshots (`server/data/tournament-state.json`) and one-click RFC-4180 formula-safe CSV & JSON tournament exports. |
+| **Design Language** | **USAR-FOSS UFC Style (Two-Mode)** | Showcase Mode for Lobby/Board (tactile stickers, washi tape, Ransom letters) vs. Reflex Mode for Arena (60fps locked, custom tactile numpad with Thumb-Enter). |
 
 ---
 
@@ -45,8 +46,8 @@ Teams gather in an interactive lobby, sync up their roster, and toggle their **"
  │ • Open/Close Hackathon Window     │ • Enter Team Code & Roll Number    │
  │ • Granular Team Pause/Resume      │ • Live Connected Member Roster     │
  │ • Emergency [EXCUSE MEMBER] Action│ • Atomic "READY" Toggle Gate       │
- │ • Audit-Logged Re-attempt System  │ • Synchronized 3-2-1 Countdown     │
- │ • Live Anomaly Watchdog (<200ms)  │ • Teammate Status Ping Dots        │
+ │ • CSV & JSON Tournament Exports   │ • Synchronized 3-2-1 Countdown     │
+ │ • Live Anomaly Watchdog (<200ms)  │ • Post-Sprint Rematch & Leave      │
  ├───────────────────────────────────┼────────────────────────────────────┤
  │ 3. SPRINT COMBAT ARENA (`/arena`) │ 4. PROJECTOR LEADERBOARD (`/live`) │
  │ • High-Performance Reflex Mode   │ • 4K Auditorium Projector View     │
@@ -85,48 +86,65 @@ To guarantee complete fairness across teams, the math engine groups all addition
 3. **Bucket 3 (Century Carry Only):** 4 Questions (e.g. $62 + 74 = 136$). $T_{\text{target}} = 6.0\text{s}$.
 4. **Bucket 4 (Double Carry):** 4 Questions (e.g. $58 + 76 = 134$). $T_{\text{target}} = 8.0\text{s}$.
 
-Every team's 15 questions contain the exact same count from each bucket. Numbers ending in `0` and double-`5` endings are eliminated to remove chunking bias, unordered pairs are deduplicated, and sets are generated in $\mathcal{O}(1)$ time targeting a gross sum in $[1650, 1750]$ via analytical residual partitioning. *(Full mathematical proof and algorithms in [MATH_ENGINE.md](MATH_ENGINE.md)).*
+Every team's 15 questions contain the exact same count from each bucket in randomized slot order. Numbers ending in `0` and double-`5` endings are eliminated to remove chunking bias, unordered pairs are deduplicated within each paper and across consecutive games (`roomUsedPairKeys` + rolling global history), and sets are generated in $\mathcal{O}(1)$ time ($0.11\text{ms}$/paper) via pre-sorted `Int32Array` sum slice bounds targeting a gross sum in $[1650, 1750]$. *(Full mathematical proof and algorithms in [MATH_ENGINE.md](MATH_ENGINE.md)).*
 
 ---
 
 ## 6. Server-Sent Events (SSE) Protocol
 
-Instead of fragile WebSockets, this platform uses unidirectional SSE + REST POST:
+Instead of fragile WebSockets, this platform uses unidirectional SSE + REST:
 
 * **Inbound REST Calls:**
-  * `POST /api/team/join` — Register roll number in a team room.
+  * `POST /api/team/create` & `POST /api/team/join` — Create a squad or join an existing team room.
   * `POST /api/team/ready` — Toggle member ready state.
+  * `POST /api/team/leave` & `POST /api/team/reset` — Leave a squad (with automatic captain succession) or reset a finished room for a rematch.
   * `POST /api/sprint/submit` — Submit answer with `clientDeltaMs` and timestamp.
   * `POST /api/admin/teams/:teamCode/excuse-member` — Organizer recovery for hardware failure.
+  * `POST /api/admin/stream-ticket` — Exchange admin credentials for a single-use 60s SSE stream ticket.
+  * `GET /api/admin/export/csv` & `GET /api/admin/export/json` — Download formula-safe CSV standings and full JSON tournament reports.
 * **Outbound Realtime Streams:**
-  * `GET /api/sse/team/:teamCode?token=x` — Broadcasts roster joins, ready toggles, countdown, start triggers, and teammate progress.
+  * `GET /api/sse/team/:teamCode?token=x` — Broadcasts roster joins, ready toggles, countdown, `sprint_start`, `sprint_resume` state recovery, `room_paused`/`room_resumed`, and teammate progress.
   * `GET /api/sse/leaderboard` — Broadcasts live **Team Average Scores** and podium updates to the auditorium projector (**Zero Question Leak Guarantee**).
-  * `GET /api/sse/admin` — Broadcasts telemetry, active rooms, and anti-cheat alerts to organizers.
+  * `GET /api/sse/admin?ticket=x` — Broadcasts telemetry, active rooms, and anti-cheat alerts to organizers.
 
 *(Full event schemas, headers, and payload structures in [SSE_PROTOCOL.md](SSE_PROTOCOL.md)).*
 
 ---
 
-## 7. Pluggable Auth & Future Club OIDC Integration
+## 7. Pluggable Auth & Club OIDC Integration
 
-The system uses an abstract `IAuthProvider` pattern:
-* **Phase 1 (Active Now):** Frictionless local hackathon authentication via College Roll Number + Display Name + Team Code, with `ADMIN_SECRET` protecting the admin dashboard and mockable membership flags.
-* **Phase 2 (Drop-in Ready):** When the USAR FOSS Club website (`fossclub.tech`) finishes its central OpenID Connect (OIDC) endpoints, Matiks will connect to `/api/auth/*` and `/api/dashboard/members`, validating verified club membership and team rosters before granting arena access. Switching between Phase 1 and Phase 2 requires changing a single `AUTH_MODE=club_oidc` environment flag without touching the core game engine.
+The system implements the `IAuthProvider` adapter pattern (`server/src/services/authProvider.ts`):
+* **Local Hackathon Mode (`AUTH_MODE=local`, default):** Frictionless local hackathon authentication via College Roll Number + Display Name + Team Code, with `ADMIN_SECRET` protecting the admin dashboard and optional `CLUB_MEMBER_ROLLS` allowlist.
+* **Club OIDC Mode (`AUTH_MODE=club_oidc`):** Connects to the USAR FOSS Club OIDC/member endpoints (`CLUB_OIDC_ISSUER_URL`), validating club membership and session tokens without changing core game logic.
 
 ---
 
-## 8. Project Documentation Index
+## 8. Quick Start & Verification Commands
+
+```bash
+# 1. Start Backend Server (http://localhost:3001)
+npm --prefix server install
+npm --prefix server run dev
+
+# 2. Start Frontend Vite Server (http://localhost:5173)
+npm --prefix client install
+npm --prefix client run dev
+
+# 3. Run Full Verification Suite (72 Server Tests + 7 Client Tests + Oxlint)
+npm --prefix server test
+npm --prefix client test
+npm --prefix client run lint
+npx --prefix client oxlint server/src server/tests
+```
+
+---
+
+## 9. Project Documentation Index
 
 * **[PHASES.md](PHASES.md)** — Step-by-step engineering roadmap, phase deliverables, exit criteria, and dependency graph.
 * **[ARCHITECTURE.md](ARCHITECTURE.md)** — Complete system topology, modular component structure, Mermaid sequence flows, state machines, and TypeScript data models.
 * **[MEMORY.md](MEMORY.md)** — Architectural decision log, immutable rules, and technical context.
 * **[DESIGN.md](DESIGN.md)** — Complete UFC design system specifications, color tokens, CSS primitives, two-mode rendering, and wireframes.
 * **[AGENTS.md](AGENTS.md)** — Multi-agent roles, task division, and operational protocols.
-* **[MATH_ENGINE.md](MATH_ENGINE.md)** — Mathematical taxonomy, carry-operation proofs, entropy filters, and test vectors.
-* **[SSE_PROTOCOL.md](SSE_PROTOCOL.md)** — Server-Sent Events architecture, event names, and transport headers.
-
----
-
-## 9. Current Status & Next Steps
-
-All architectural upgrades, mathematical engines, design systems, protocol schemas, and requirement documents have been updated and frozen. **Code implementation has not yet been started**, awaiting user sign-off.
+* **[MATH_ENGINE.md](MATH_ENGINE.md)** — Mathematical taxonomy, carry-operation proofs, wide-corridor $\mathcal{O}(1)$ sampling, and test vectors.
+* **[SSE_PROTOCOL.md](SSE_PROTOCOL.md)** — Server-Sent Events architecture, event names, single-use admin tickets, and transport headers.

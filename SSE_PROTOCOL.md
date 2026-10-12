@@ -1,32 +1,36 @@
 # MATIKS HACKATHON ENGINE — SERVER-SENT EVENTS (SSE) PROTOCOL SPECIFICATION
 
-> **Document Version:** 1.2.0  
+> **Document Version:** 1.3.0  
 > **Protocol:** Server-Sent Events (`text/event-stream`) over HTTP/1.1 or HTTP/2  
-> **Directionality:** Unidirectional Server $\rightarrow$ Client Streaming + REST POST Client $\rightarrow$ Server  
-> **Network Guarantee:** Built for enterprise campus Wi-Fi resiliency, zero WebSocket handshake drops.
+> **Directionality:** Unidirectional Server $\rightarrow$ Client Streaming + REST Client $\rightarrow$ Server  
+> **Network Guarantee:** Built for enterprise campus Wi-Fi resiliency, zero WebSocket handshake drops, and multi-tab state recovery.
 
 ---
 
 ## 1. Network Architecture Overview
 
 Instead of duplex WebSockets, this platform separates concerns into two clean transport channels:
-1. **Inbound Commands (Client $\rightarrow$ Server REST POST):**
-   * `POST /api/team/join` — Register roll number & name in team lobby.
+1. **Inbound Commands (Client $\rightarrow$ Server REST):**
+   * `POST /api/team/create` & `POST /api/team/join` — Create a team room or register roll number & name in an existing squad.
    * `POST /api/team/ready` — Toggle atomic member ready status.
+   * `POST /api/team/leave` & `POST /api/team/reset` — Leave a squad (with automatic captain succession) or reset a completed sprint for a rematch.
    * `POST /api/sprint/submit` — Submit question answer with client timestamp & measured latency delta.
+   * `POST /api/admin/stream-ticket` — Exchange `ADMIN_SECRET` for a 60-second single-use SSE stream ticket.
    * `POST /api/admin/teams/:teamCode/excuse-member` — Organizer recovery endpoint to excuse a member who suffered hardware failure.
-2. **Outbound Push (Server $\rightarrow$ Client SSE):** High-throughput, low-latency Server-Sent Events (`EventSource`) streaming structured JSON messages with query-parameter authentication (`?token=...`).
+   * `GET /api/admin/export/csv` & `GET /api/admin/export/json` — Download RFC-4180 formula-safe CSV standings and full JSON tournament reports.
+2. **Outbound Push (Server $\rightarrow$ Client SSE):** High-throughput, low-latency Server-Sent Events (`EventSource`) streaming structured JSON messages with token/ticket query-parameter authentication and reference-counted multi-tab presence tracking.
 
 ```
        CLIENT (Browser / Projector)              SERVER (Node.js Express SSE Hub)
             │                                                 │
             │─── 1. GET /api/sse/team/:teamCode?token=x ─────>│ (Establishes EventStream)
+            │<── :connected + event: team_snapshot ───────────│ (Immediate Snapshot + sprint_resume)
             │<── :keepalive (every 15s) ──────────────────────│
             │                                                 │
             │─── 2. POST /api/team/ready (REST) ─────────────>│ (Processes Ready State)
             │<── 200 OK { success: true } ────────────────────│
             │                                                 │
-            │<── event: member_ready ─────────────────────────│ (Broadcasts to all members)
+            │<── event: member_ready_changed ─────────────────│ (Broadcasts to all members)
             │<── event: countdown_tick (3, 2, 1) ─────────────│ (Synchronized Countdown)
             │<── event: sprint_start (Parallel Sessions) ─────│ (Launches Individual Sprints)
             │                                                 │
@@ -56,7 +60,7 @@ Access-Control-Allow-Origin: *
 ### Keepalive Heartbeat
 To prevent reverse proxies (Nginx, Cloudflare) and campus Wi-Fi stateful NAT routers from killing idle connections, the server emits a comment ping every 15 seconds:
 ```
-:keepalive [timestamp=1733918400000]
+:keepalive 1733918400000
 
 ```
 
@@ -66,9 +70,9 @@ To prevent reverse proxies (Nginx, Cloudflare) and campus Wi-Fi stateful NAT rou
 
 | Channel Path | Audience | Content / Scope |
 | :--- | :--- | :--- |
-| **`/api/sse/team/:teamCode?token=xxx`** | Connected members of a team | Room membership, ready status toggles, team member roster, synchronized countdown, individual sprint sessions, teammate progress HUD. |
+| **`/api/sse/team/:teamCode?token=xxx`** | Connected members of a team | Room membership, ready status toggles, team member roster, synchronized countdown, `sprint_start`, `sprint_resume` state recovery, `room_paused`/`room_resumed`, and teammate progress HUD. |
 | **`/api/sse/leaderboard`** | All active participants & Auditorium Projector | Real-time global rankings based on **Team Average Score**, podium shifts, contest window status. |
-| **`/api/sse/admin?token=admin_secret`** | Hackathon Organizers / Admin Panel | Room health, active sprint sessions, anomaly detection logs, individual team pause/resume. |
+| **`/api/sse/admin?ticket=xxx`** | Hackathon Organizers / Admin Panel | Authenticated via single-use 60s ticket from `POST /api/admin/stream-ticket`. Streams room health, active sprint sessions, anomaly detection logs, and individual team pause/resume. |
 
 ---
 
@@ -77,7 +81,7 @@ To prevent reverse proxies (Nginx, Cloudflare) and campus Wi-Fi stateful NAT rou
 ### Channel A: `/api/sse/team/:teamCode`
 
 #### 1. `event: team_snapshot`
-Sent immediately when a member connects or reconnects to the team lobby.
+Sent immediately when a member connects or reconnects to the team lobby, and whenever roster/room state changes. Multi-tab connections are reference-counted per member so closing one browser tab does not mark a still-connected student offline.
 ```json
 event: team_snapshot
 data: {
@@ -91,6 +95,7 @@ data: {
   ],
   "allReady": false,
   "status": "AWAITING_READY",
+  "isPaused": false,
   "contestWindow": { "isOpen": true, "closesAt": 1733922000000 }
 }
 ```
@@ -119,7 +124,7 @@ data: {
 ```
 
 #### 4. `event: sprint_start`
-Triggered at `T=0` of countdown. Launches parallel individual sessions for all members simultaneously.
+Triggered at `T=0` of countdown. Launches parallel individual sessions for all members simultaneously with sanitized per-player question permutations.
 ```json
 event: sprint_start
 data: {
@@ -130,11 +135,36 @@ data: {
     "CS21045": "sess_rohan_91a",
     "EC21088": "sess_priya_88b",
     "IT21019": "sess_aarav_33c"
+  },
+  "questionsByRollNumber": {
+    "CS21045": [{ "id": 1, "a": 48, "b": 76, "carries": 2, "targetLatencySeconds": 8 }]
   }
 }
 ```
 
-#### 5. `event: teammate_progress`
+#### 5. `event: sprint_resume`
+Sent directly to a reconnecting member when their room is in `IN_SPRINT` status with an active unfinished session. Restores full progress, accuracy history (`submissions`), peak streak (`maxStreak`), and authoritative `remainingMs` across page refreshes or view navigation.
+```json
+event: sprint_resume
+data: {
+  "sessionId": "sess_priya_88b",
+  "rollNumber": "EC21088",
+  "startedAt": 1733918450120,
+  "expiresAt": 1733918570120,
+  "remainingMs": 84210,
+  "isPaused": false,
+  "questionIndex": 5,
+  "currentScore": 840,
+  "streak": 3,
+  "maxStreak": 4,
+  "submissions": [
+    { "questionIndex": 0, "submittedAnswer": 124, "isCorrect": true, "latencyMs": 1120, "pointsAwarded": 186 }
+  ],
+  "questions": [{ "id": 1, "a": 48, "b": 76, "carries": 2, "targetLatencySeconds": 8 }]
+}
+```
+
+#### 6. `event: teammate_progress`
 Broadcast to team members whenever any teammate submits an answer, feeding the live Teammate HUD pills.
 ```json
 event: teammate_progress
@@ -147,12 +177,15 @@ data: {
 }
 ```
 
+#### 7. `event: room_paused` & `event: room_resumed`
+Broadcast when an organizer pauses or resumes an active sprint room, freezing the client timer and extending session `expiresAt` by the exact paused duration upon resume.
+
 ---
 
 ### Channel B: `/api/sse/leaderboard`
 
 #### 1. `event: leaderboard_update`
-Dispatched whenever any team's average score shifts.
+Dispatched whenever any team's average score shifts (coalesced within a 50ms broadcast window under high concurrency).
 ```json
 event: leaderboard_update
 data: [
@@ -162,27 +195,14 @@ data: [
     "teamName": "AlgoRhythms",
     "teamAverageScore": 2540.33,
     "membersCount": 3,
+    "activeMembersCount": 3,
     "averageTimeSeconds": 54.2,
     "memberBreakdown": [
-      { "name": "Deepak", "score": 2680 },
-      { "name": "Kavya", "score": 2510 },
-      { "name": "Sahil", "score": 2431 }
+      { "name": "Deepak", "score": 2680, "completedQuestions": 15, "isExcused": false },
+      { "name": "Kavya", "score": 2510, "completedQuestions": 15, "isExcused": false },
+      { "name": "Sahil", "score": 2431, "completedQuestions": 15, "isExcused": false }
     ],
     "status": "FINISHED"
-  },
-  {
-    "rank": 2,
-    "teamCode": "ZG-99",
-    "teamName": "Zero Gravity",
-    "teamAverageScore": 2210.67,
-    "membersCount": 3,
-    "averageTimeSeconds": 62.4,
-    "memberBreakdown": [
-      { "name": "Rohan", "score": 2420 },
-      { "name": "Priya", "score": 2380 },
-      { "name": "Aarav", "score": 1832 }
-    ],
-    "status": "IN_SPRINT"
   }
 ]
 ```
@@ -203,10 +223,12 @@ data: {
 
 ---
 
-### Channel C: `/api/sse/admin?token=admin_secret`
+### Channel C: `/api/sse/admin?ticket=xxx`
+
+To prevent exposing `ADMIN_SECRET` in URLs or proxy logs, the Admin Command Center first requests a short-lived (60s), single-use ticket via `POST /api/admin/stream-ticket` (passing `x-admin-token` in HTTP headers) and connects with `?ticket=...`.
 
 #### 1. `event: admin_telemetry`
-High-frequency session overview for organizers.
+Coalesced session overview for organizers.
 ```json
 event: admin_telemetry
 data: {
@@ -214,7 +236,7 @@ data: {
   "activeSprinters": 42,
   "completedSprinters": 128,
   "windowOpen": true,
-  "serverCpuPercent": 4.2,
+  "serverCpuPercent": 0,
   "rssMemoryMb": 68.4
 }
 ```
@@ -254,9 +276,13 @@ Used by students to submit their answer during the 2-minute sprint.
 * **Validation Rules:**
   1. `clientDeltaMs >= 200`: If $< 200\text{ ms}$, flags `SUB_200MS_SPEED_ANOMALY`.
   2. Latency Jitter Tolerance: $| \text{serverDeltaMs} - \text{clientDeltaMs} | \le 350\text{ ms}$.
-  3. Network Transit Grace: Submissions up to $+2.5\text{ s}$ past 120s are accepted if `clientTimestamp <= sprintStartedAt + 120,000`.
+  3. Network Transit Grace: Submissions up to $+2.5\text{ s}$ past 120s are accepted (`now <= session.expiresAt + 2500`).
 
-### 2. `POST /api/admin/teams/:teamCode/excuse-member`
+### 2. `POST /api/team/reset` & `POST /api/team/leave`
+* `POST /api/team/reset`: Resets a completed squad room back to `AWAITING_READY` (or `LOBBY`) for a rematch while retaining the squad's `roomUsedPairKeys` so subsequent games never repeat questions.
+* `POST /api/team/leave`: Removes a member from a squad, automatically promoting the next active member to Captain if the Captain leaves, or dissolving the room if empty.
+
+### 3. `POST /api/admin/teams/:teamCode/excuse-member`
 Used by hackathon organizers to recover a team from a member's hardware failure (dead battery, browser crash).
 * **Payload:**
   ```json
@@ -276,6 +302,9 @@ Used by hackathon organizers to recover a team from a member's hardware failure 
     "auditRecordId": "aud_excuse_9921"
   }
   ```
+
+### 4. `GET /api/admin/export/csv` & `GET /api/admin/export/json`
+Authenticated organizer endpoints returning downloadable tournament standings (`Content-Disposition: attachment`). CSV cells are sanitized against spreadsheet formula injection (`=`, `+`, `-`, `@`, `\t`, `\r`) while preserving negative numeric values.
 
 ---
 

@@ -1,6 +1,6 @@
 # MATIKS HACKATHON ENGINE — TECHNICAL ARCHITECTURE (ARCHITECTURE.md)
 
-> **Document Version:** 1.2.0  
+> **Document Version:** 1.3.0  
 > **System Purpose:** High-concurrency, zero-luck, team-synchronized speed mental math competition platform.  
 > **Target Environment:** College hackathons, campus Wi-Fi networks, 4K auditorium projectors, mobile & desktop browsers.
 
@@ -8,7 +8,7 @@
 
 ## 1. System Topology Overview
 
-The Matiks Hackathon Engine is an event-driven, decoupled client-server architecture. It replaces duplex WebSockets with **Unidirectional Server-Sent Events (SSE) + RESTful HTTP POST**, guaranteeing 100% firewall pass-through and connection survival across congested college Wi-Fi access points.
+The Matiks Hackathon Engine is an event-driven, decoupled client-server architecture. It replaces duplex WebSockets with **Unidirectional Server-Sent Events (SSE) + RESTful HTTP**, guaranteeing 100% firewall pass-through and connection survival across congested college Wi-Fi access points.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -16,11 +16,11 @@ The Matiks Hackathon Engine is an event-driven, decoupled client-server architec
 │                                                                                                        │
 │   ┌────────────────────────┐  ┌────────────────────────┐  ┌─────────────────┐  ┌───────────────────┐   │
 │   │   Team & Member Lobby  │  │   2-Min Combat Arena   │  │   Admin Panel   │  │ 4K Stage Projector│   │
-│   │   (`/team/:teamCode`)  │  │  (`/arena/:sessionId`) │  │   (`/admin`)    │  │  (`/leaderboard`) │   │
+│   │   (`/?team=:teamCode`) │  │  (`/?team=:code&arena`)│  │   (`/admin`)    │  │  (`/leaderboard`) │   │
 │   └───────────┬────────────┘  └───────────┬────────────┘  └────────┬────────┘  └─────────▲─────────┘   │
 └───────────────┼───────────────────────────┼────────────────────────┼─────────────────────┼─────────────┘
-                │ 1. POST /api/team/*       │ 2. POST /api/sprint/*  │ 3. POST /api/admin/*│ 4. SSE Stream
-                │    (Join, Ready)          │    (Submit Answer)     │    (Open/Close/Msg) │    (text/event-stream)
+                │ 1. POST /api/team/*       │ 2. POST /api/sprint/*  │ 3. /api/admin/*     │ 4. SSE Stream
+                │    (Join, Ready, Reset)   │    (Submit Answer)     │    (Window, Export) │    (text/event-stream)
                 ▼                           ▼                        ▼                     │
 ┌──────────────────────────────────────────────────────────────────────────────────────────┴─────────────┐
 │                                         NETWORKING & ROUTING TIER                                      │
@@ -33,7 +33,7 @@ The Matiks Hackathon Engine is an event-driven, decoupled client-server architec
 │                                                                                                        │
 │  ┌────────────────────────┐  ┌────────────────────────┐  ┌──────────────────┐  ┌───────────────────┐   │
 │  │  Room & Team Sync Hub  │  │ 4-Bucket Math Engine   │  │ Scoring & Latency│  │ Contest Window    │   │
-│  │  (Atomic Ready State)  │  │ (Zero-Luck Taxonomy)   │  │ Validation Engine│  │ Lifecycle Manager │   │
+│  │  (Atomic Ready State)  │  │ (Wide-Corridor O(1))   │  │ Validation Engine│  │ Lifecycle Manager │   │
 │  └───────────┬────────────┘  └───────────┬────────────┘  └─────────┬────────┘  └─────────┬─────────┘   │
 │              │                           │                         │                     │             │
 │              └───────────────────────────┼─────────────────────────┴─────────────────────┘             │
@@ -41,9 +41,9 @@ The Matiks Hackathon Engine is an event-driven, decoupled client-server architec
 │  ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐  │
 │  │                                 SSE EVENT DISPATCHER & PUB/SUB BUS                               │  │
 │  │                                                                                                  │  │
-│  │   • Channel: `/api/sse/team/:teamCode?token=x` (Member Joins, Ready States, 3-2-1 Countdown)     │  │
+│  │   • Channel: `/api/sse/team/:teamCode?token=x` (Roster, Ready, Countdown, sprint_resume, HUD)    │  │
 │  │   • Channel: `/api/sse/leaderboard`           (Realtime Score Swaps, Podium Changes, Ticker)     │  │
-│  │   • Channel: `/api/sse/admin`                 (Telemetry Logs, Anti-Cheat Anomalies, Sessions)   │  │
+│  │   • Channel: `/api/sse/admin?ticket=x`        (Telemetry Logs, Anti-Cheat Anomalies, Sessions)   │  │
 │  └───────────────────────────────────────┬──────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────┼─────────────────────────────────────────────────────────────┘
                                            │
@@ -51,10 +51,10 @@ The Matiks Hackathon Engine is an event-driven, decoupled client-server architec
 │                                          DATA & STATE STORE                                            │
 │                                                                                                        │
 │   ┌──────────────────────────────────────────────────┐ ┌────────────────────────────────────────────┐  │
-│   │             In-Memory High-Speed Cache           │ │         Persistence Layer (JSON/SQLite)    │  │
-│   │  • Active Rooms & Member Connections             │ │  • Registered Teams & Roll Numbers         │  │
-│   │  • Active Parallel Sprints & Member Scores       │ │  • Completed Results & Audit Trails        │  │
-│   │  • Sorted Leaderboard Priority Queue (Team Avg)  │ │  • Anti-Cheat Anomaly Incident Logs        │  │
+│   │             In-Memory High-Speed Cache           │ │   Crash-Safe Persistence (`statePersistence`)│ │
+│   │  • Active Rooms, Member Tokens & Ref-Counts      │ │  • Debounced Atomic `.tmp` + Rename Writes │  │
+│   │  • Active Parallel Sprints & Per-Squad History   │ │  • Restores Rooms, Sprints & Leaderboard   │  │
+│   │  • Sorted Leaderboard Priority Queue (Team Avg)  │ │  • RFC-4180 CSV & JSON Tournament Exports  │  │
 │   └──────────────────────────────────────────────────┘ └────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -65,73 +65,84 @@ The Matiks Hackathon Engine is an event-driven, decoupled client-server architec
 
 ```
 Matiks/
-├── client/                               # React (Vite / Next.js) Frontend
-│   ├── public/                           # Sound effects, SVG textures, favicon
+├── .github/workflows/
+│   └── ci.yml                            # GitHub Actions CI (Server Tests, Client Tests, Oxlint, Vite Build)
+├── client/                               # React 19 + Vite + Tailwind CSS v4 Frontend
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── admin/                    # Admin Panel views & controls
-│   │   │   │   ├── AnomalyFeed.tsx       # Live anti-cheat sub-200ms anomaly watcher
-│   │   │   │   ├── TeamsTable.tsx        # Realtime table with individual Pause/Resume
-│   │   │   │   └── WindowControls.tsx    # Open/Close contest window & broadcast
-│   │   │   ├── arena/                    # 2-Minute Math Combat Arena (Reflex Mode)
-│   │   │   │   ├── CountdownOverlay.tsx  # Scissor-cut Ransom note 3-2-1 drop-in
-│   │   │   │   ├── HitFeedback.tsx       # Green flash / Red shake animations
-│   │   │   │   ├── Numpad.tsx            # Tactile mobile on-screen numpad with Thumb-Enter
-│   │   │   │   ├── QuestionCard.tsx      # High-contrast Bricolage Grotesque math display
-│   │   │   │   ├── SprintTimer.tsx       # Millisecond Space Mono clock
-│   │   │   │   └── TeammateHUD.tsx       # Live partner progress pills (Q7, Q9, Q6)
-│   │   │   ├── leaderboard/              # Projector & Auditorium views (Showcase Mode)
-│   │   │   │   ├── PodiumTop3.tsx        # Gold, Silver, Bronze podium cards
-│   │   │   │   ├── RankRow.tsx           # Framer motion animated rank swap row
-│   │   │   │   └── RibbonTicker.tsx      # Angled crossing marquee ribbons
-│   │   │   ├── lobby/                    # Team & Student Lobby (Showcase Mode)
-│   │   │   │   ├── MemberCard.tsx        # Connected player chip with live ping dot
-│   │   │   │   ├── ReadyButton.tsx       # Chunky .btn tactile ready toggle
-│   │   │   │   └── TeamRoster.tsx        # Complete team status overview
-│   │   │   └── ui/                       # UFC Design System Primitives
-│   │   │       ├── Button.tsx            # Neo-brutalist tactile sticker button (.btn)
-│   │   │       ├── FilmGrain.tsx         # SVG fractal noise procedural overlay
-│   │   │       ├── PingDot.tsx           # Neon green pulsing radar dot
-│   │   │       ├── Ransom.tsx            # Multi-typeface paper scrap lettering
-│   │   │       └── Tape.tsx              # Slanted washi tape decorative strips
-│   │   ├── hooks/
-│   │   │   ├── useAudio.ts               # Web Audio API sound triggers (chime, click)
-│   │   │   ├── useNumpad.ts              # Physical keyboard & touch numpad listener
-│   │   │   ├── useSSE.ts                 # Native EventSource connection manager with resync
-│   │   │   └── useTimer.ts               # High-precision requestAnimationFrame timer
-│   │   ├── styles/
-│   │   │   ├── design-tokens.css         # --ink, --signal, --amber, --butter, fonts
-│   │   │   └── globals.css               # Tailwind CSS directives
-│   │   └── types/                        # Frontend TypeScript definitions
+│   │   │   ├── admin/
+│   │   │   │   └── AdminView.jsx         # Organizer Command Center, Window Controls, Anomaly Feed, CSV/JSON Export
+│   │   │   ├── arena/
+│   │   │   │   ├── ArenaView.jsx         # 2-Minute Math Combat Arena (60fps Reflex Mode) & Summary
+│   │   │   │   ├── Numpad.jsx            # Tactile mobile on-screen numpad with oversized Thumb-Enter
+│   │   │   │   └── TeammateHud.jsx       # Live partner progress pills
+│   │   │   ├── common/
+│   │   │   │   ├── ConfirmModal.jsx      # Custom UFC neo-brutalist confirmation modal
+│   │   │   │   ├── FilmGrain.jsx         # SVG fractal noise procedural overlay
+│   │   │   │   ├── Navbar.jsx            # Top navigation bar with sound toggle & active squad badge
+│   │   │   │   ├── RadarDot.jsx          # Pulsing neon status indicator
+│   │   │   │   ├── RansomTile.jsx        # Multi-typeface paper scrap lettering
+│   │   │   │   ├── StatusBanner.jsx      # Contest window & ticker banner
+│   │   │   │   ├── TactileButton.jsx     # Neo-brutalist tactile sticker button (.btn)
+│   │   │   │   └── WashiTape.jsx         # Slanted decorative tape strips
+│   │   │   ├── leaderboard/
+│   │   │   │   └── LeaderboardView.jsx   # 4K Auditorium Projector View & Top-3 Podium
+│   │   │   └── lobby/
+│   │   │       ├── CountdownOverlay.jsx  # Synchronized 3-2-1 Ransom note countdown
+│   │   │       ├── TeamLobby.jsx         # Live member roster, ready gate, rematch & leave controls
+│   │   │       └── TeamOnboarding.jsx    # Create or join squad onboarding panel
+│   │   ├── services/
+│   │   │   ├── api.js                    # REST client with auth header injection & error normalization
+│   │   │   ├── soundFx.js                # Web Audio API procedural sound synthesizer
+│   │   │   └── sse.js                    # Resilient EventSource manager with watchdog & visibility resync
+│   │   ├── App.jsx                       # Root state coordinator, history routing & session storage sync
+│   │   └── index.css                     # UFC design tokens (--ink, --signal, --butter, --ember) & utility classes
+│   ├── tests/
+│   │   └── clientSuite.test.mjs          # Frontend unit tests (api.js, sse.js, soundFx.js, fault tolerance)
 │   └── package.json
 │
-├── server/                               # Node.js Express Backend
+├── server/                               # Node.js + Express + TypeScript Backend
 │   ├── src/
 │   │   ├── controllers/
-│   │   │   ├── adminController.ts        # Window status, manual pause, broadcast
-│   │   │   ├── sprintController.ts       # Parallel session creation, answer submission
-│   │   │   └── teamController.ts         # Team registration, join, ready toggle
-│   │   ├── middleware/
-│   │   │   ├── antiCheat.ts              # Latency sanity check, sub-200ms flagger
-│   │   │   └── auth.ts                   # Admin token validator
+│   │   │   ├── adminController.ts        # Window controls, pause/resume, excuse, tickets, CSV/JSON exports
+│   │   │   ├── authController.ts         # Pluggable player/admin login & club membership validation
+│   │   │   ├── sprintController.ts       # Answer submission & authoritative clock sync
+│   │   │   ├── sseController.ts          # Team, Leaderboard, and Admin SSE stream handlers
+│   │   │   └── teamController.ts         # Team creation, join, ready toggle, leave, and rematch reset
 │   │   ├── services/
-│   │   │   ├── mathEngine.ts             # 4-Bucket generator with entropy balancing
-│   │   │   ├── roomManager.ts            # Team lifecycle & atomic ready lock
-│   │   │   ├── scoringEngine.ts          # Calibrated latency decay & streak multipliers
-│   │   │   ├── sseHub.ts                 # Realtime SSE connection manager & pub/sub
-│   │   │   └── windowManager.ts          # Hackathon contest window timer
-│   │   ├── store/
-│   │   │   ├── inMemoryDb.ts             # Fast in-memory rooms & leaderboard queue
-│   │   │   └── persistence.ts            # Disk sync for audit logs & final ranks
-│   │   └── types/                        # Backend data models & SSE contracts
+│   │   │   ├── authProvider.ts           # LocalHackathonAuthProvider & ClubOidcAuthProvider
+│   │   │   ├── leaderboardManager.ts     # Sorted priority queue with 50ms broadcast coalescing
+│   │   │   ├── mathEngine.ts             # Pre-sorted Int32Array wide-corridor O(1) non-repeating generator
+│   │   │   ├── roomManager.ts            # Room state machine, atomic ready gate, per-squad history, recovery
+│   │   │   ├── scoringEngine.ts          # Difficulty-calibrated speed bonus & streak multipliers
+│   │   │   ├── sseHub.ts                 # SSE connection registry, 15s keepalive, anti-buffering headers
+│   │   │   ├── statePersistence.ts       # Debounced atomic disk snapshot persistence & crash recovery
+│   │   │   └── windowManager.ts          # Hackathon contest window lifecycle manager
+│   │   ├── types/
+│   │   │   ├── auth.ts                   # Auth contracts & session claims
+│   │   │   ├── game.ts                   # Question, TeamRoom, SprintSession, AuditRecord models
+│   │   │   └── sse.ts                    # SSE event payload schemas
+│   │   ├── app.ts                        # Express app factory, CORS, rate limiters, route mounting
+│   │   └── index.ts                      # HTTP server bootstrap, state restoration & graceful shutdown
+│   ├── tests/
+│   │   ├── authOidc.test.ts              # Local & Club OIDC authentication tests
+│   │   ├── chaosNetworkTest.ts           # Jitter, deadline grace, disconnect & visibility resync tests
+│   │   ├── loadTest.ts                   # 30 teams / 90 students / 100 SSE streams / 1,350 submissions benchmark
+│   │   ├── mathEngine.test.ts            # 4-bucket taxonomy, 1,000-sprint Monte Carlo & non-repetition tests
+│   │   ├── phase2Integration.test.ts     # Full room state machine & realtime SSE integration tests
+│   │   ├── qaRegression.test.ts          # Edge-case regression suite (leave, rematch, sprint_resume, fuzzing)
+│   │   ├── servicesUnit.test.ts          # Unit tests for Leaderboard, Window, SseHub, Persistence, CSV escaping
+│   │   └── smoke.test.ts                 # End-to-end HTTP + SSE smoke test suite
 │   ├── tsconfig.json
 │   └── package.json
 │
+├── AGENTS.md                             # Multi-agent engineering specification
 ├── ARCHITECTURE.md                       # This document
 ├── DESIGN.md                             # UFC visual identity & movement spec
 ├── MATH_ENGINE.md                        # Zero-luck 4-bucket taxonomy & proofs
 ├── MEMORY.md                             # Architectural decisions & requirements log
-├── README.md                             # Master project overview & guide
+├── PHASES.md                             # Implementation roadmap & phase exit criteria
+├── README.md                             # Master project overview & quick-start guide
 └── SSE_PROTOCOL.md                       # SSE event schemas & transport contracts
 ```
 
