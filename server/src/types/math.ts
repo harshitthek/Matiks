@@ -15,6 +15,7 @@ export interface Question {
   tag: string;
   a: number;
   b: number;
+  operator?: string;
   answer: number;
   targetLatencyMs: number;
 }
@@ -31,6 +32,7 @@ export interface QuestionSanitized {
   tag: string;
   a: number;
   b: number;
+  operator?: string;
   targetLatencyMs: number;
 }
 

@@ -271,3 +271,35 @@ export async function verifyMembershipHandler(req: Request, res: Response): Prom
     res.status(500).json({ error: 'VERIFICATION_ERROR', message });
   }
 }
+
+function resolveClientBaseUrl(): string {
+  const explicitOrigin = process.env.CLIENT_ORIGIN?.trim();
+  if (explicitOrigin) {
+    return explicitOrigin.replace(/\/+$/, '');
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('CLIENT_ORIGIN environment variable is required in production.');
+  }
+  const firstCorsOrigin = (process.env.CORS_ORIGINS || 'http://localhost:5173')
+    .split(',')[0]
+    ?.trim();
+  return (firstCorsOrigin || 'http://localhost:5173').replace(/\/+$/, '');
+}
+
+export function redirectOidcCallbackHandler(req: Request, res: Response): void {
+  try {
+    const clientBaseUrl = resolveClientBaseUrl();
+    const params = new URLSearchParams();
+    for (const key of ['code', 'state', 'error', 'error_description']) {
+      const val = req.query[key];
+      if (typeof val === 'string' && val.trim()) {
+        params.set(key, val.trim());
+      }
+    }
+    const queryString = params.toString();
+    res.redirect(302, queryString ? `${clientBaseUrl}/?${queryString}` : `${clientBaseUrl}/`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Invalid client origin configuration';
+    res.status(500).json({ error: 'SERVER_CONFIG_ERROR', message });
+  }
+}

@@ -252,15 +252,43 @@ export function TeamLobby({
     };
   }, [teamCode, memberToken, currentRoll, onStartSprint]);
 
+  const copyTextWithFallback = useCallback(async (text) => {
+    if (navigator?.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {
+        // Fall through to textarea execCommand fallback
+      }
+    }
+    if (typeof document !== 'undefined') {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      try {
+        textarea.select();
+        const copied = document.execCommand('copy');
+        if (copied) return true;
+      } catch {
+        // Ignore execCommand errors
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    }
+    return false;
+  }, []);
+
   // Copy team code to clipboard
   const handleCopyCode = useCallback(() => {
-    if (!navigator?.clipboard?.writeText) {
-      setError(`Clipboard unavailable. Share squad code manually: ${teamCode}`);
-      return;
-    }
-    navigator.clipboard
-      .writeText(teamCode)
-      .then(() => {
+    copyTextWithFallback(teamCode)
+      .then((ok) => {
+        if (!ok) {
+          setError(`Clipboard unavailable. Share squad code manually: ${teamCode}`);
+          return;
+        }
         setCopiedCode(true);
         if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
         copyTimerRef.current = setTimeout(() => setCopiedCode(false), 2000);
@@ -268,18 +296,17 @@ export function TeamLobby({
       .catch(() => {
         setError(`Failed to copy code. Share squad code manually: ${teamCode}`);
       });
-  }, [teamCode]);
+  }, [teamCode, copyTextWithFallback]);
 
   // Copy invite URL to clipboard
   const handleCopyInviteLink = useCallback(() => {
     const inviteUrl = `${window.location.origin}/?team=${encodeURIComponent(teamCode)}`;
-    if (!navigator?.clipboard?.writeText) {
-      setError(`Share invite link manually: ${inviteUrl}`);
-      return;
-    }
-    navigator.clipboard
-      .writeText(inviteUrl)
-      .then(() => {
+    copyTextWithFallback(inviteUrl)
+      .then((ok) => {
+        if (!ok) {
+          setError(`Share invite link manually: ${inviteUrl}`);
+          return;
+        }
         setCopiedLink(true);
         if (linkTimerRef.current) clearTimeout(linkTimerRef.current);
         linkTimerRef.current = setTimeout(() => setCopiedLink(false), 2000);
@@ -287,7 +314,7 @@ export function TeamLobby({
       .catch(() => {
         setError(`Share invite link manually: ${inviteUrl}`);
       });
-  }, [teamCode]);
+  }, [teamCode, copyTextWithFallback]);
 
   // Toggle ready status
   const currentMember = snapshot?.members?.find((m) => m.rollNumber === currentRoll);
@@ -597,8 +624,11 @@ export function TeamLobby({
                 ATOMIC SYNCHRONIZED START GATE
               </h3>
               <p className="font-body text-xs text-[#e8ece3] leading-relaxed">
-                Every squad member must be logged in and in the <strong>"READY"</strong> state before the sprint can launch ({readyCount} of {activeMembers.length} ready).
-                All teammates solve individually at the exact same time. The team score is the <strong>AVERAGE</strong> of all members' scores!
+                Every squad member must be logged in and in the <strong>"READY"</strong> state before the sprint can launch (
+                {isRosterFull
+                  ? `${readyCount} of ${activeMembers.length} ready`
+                  : `${members.length} of ${snapshot?.targetSize || 3} joined • ${readyCount} ready`}
+                ). All teammates solve individually at the exact same time. The team score is the <strong>AVERAGE</strong> of all members' scores!
               </p>
             </div>
           </div>

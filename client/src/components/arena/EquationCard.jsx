@@ -12,7 +12,8 @@ export function EquationCard({
   currentInput = '',
   flashState = null, // 'correct' | 'incorrect' | null
   lastResult = null,
-  isSubmitting = false
+  isSubmitting = false,
+  hasAutoSubmit = true
 }) {
   if (!question) return null;
 
@@ -71,7 +72,9 @@ export function EquationCard({
       <div className="my-2.5 sm:my-6 md:my-8">
         <div className="flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 md:gap-5 font-display font-extrabold text-4xl sm:text-6xl md:text-7xl text-[#e8ece3] tracking-tight">
           <span>{question.a}</span>
-          <span className="text-[#2ee58f] font-mono font-normal text-3xl sm:text-5xl md:text-6xl">+</span>
+          <span className="text-[#2ee58f] font-mono font-normal text-3xl sm:text-5xl md:text-6xl">
+            {question.operation || question.operator || '+'}
+          </span>
           <span>{question.b}</span>
           <span className="text-[#aab5ac] font-mono font-normal text-3xl sm:text-5xl md:text-6xl">=</span>
 
@@ -87,13 +90,16 @@ export function EquationCard({
       </div>
 
       {/* Helper Prompt */}
-      <div className="font-mono text-xs text-[#aab5ac] tracking-wider mt-1 sm:mt-4">
+      <div className="font-mono text-[10px] sm:text-xs text-[#aab5ac] tracking-wider mt-1 sm:mt-4">
         {isSubmitting ? (
           <span className="text-[#ffe36e] animate-pulse">VALIDATING LATENCY...</span>
+        ) : hasAutoSubmit ? (
+          <span className="text-[#2ee58f]/80">
+            ⚡ AUTO-SUBMITS ON FINAL DIGIT <span className="hidden sm:inline text-[#aab5ac]">• <kbd className="px-1 py-0.5 bg-[#090c0a] border border-[#2ee58f]/40 text-[#2ee58f]">⌫</kbd> DEL • <kbd className="px-1 py-0.5 bg-[#090c0a] border border-[#2ee58f]/40 text-[#2ee58f]">ESC</kbd> CLR</span>
+          </span>
         ) : (
-          <span className="hidden sm:inline">
-            PRESS <kbd className="px-1.5 py-0.5 bg-[#090c0a] border border-[#2ee58f]/40 text-[#2ee58f]">ENTER ↵</kbd> OR{' '}
-            <kbd className="px-1.5 py-0.5 bg-[#090c0a] border border-[#2ee58f]/40 text-[#2ee58f]">SPACE</kbd> TO SUBMIT
+          <span className="text-[#ffe36e]/90">
+            ↵ PRESS ENTER / SUBMIT <span className="hidden sm:inline text-[#aab5ac]">• <kbd className="px-1 py-0.5 bg-[#090c0a] border border-[#2ee58f]/40 text-[#2ee58f]">⌫</kbd> DEL • <kbd className="px-1 py-0.5 bg-[#090c0a] border border-[#2ee58f]/40 text-[#2ee58f]">ESC</kbd> CLR</span>
           </span>
         )}
       </div>

@@ -311,6 +311,7 @@ function toQuestion(pair: RawPair, bucket: CarryBucket, index: number): Question
     tag: meta.tag,
     a: pair.a,
     b: pair.b,
+    operator: '+',
     answer: pair.sum,
     targetLatencyMs: meta.targetLatencyMs
   };
@@ -432,6 +433,7 @@ export function sanitizeQuestions(questions: Question[]): QuestionSanitized[] {
     tag: q.tag || BUCKET_METADATA[q.bucket]?.tag || '',
     a: q.a,
     b: q.b,
+    operator: q.operator || '+',
     targetLatencyMs: q.targetLatencyMs
   }));
 }

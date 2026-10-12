@@ -2,13 +2,15 @@ import React from 'react';
 import { soundFx } from '../../services/soundFx.js';
 
 /**
- * Custom UFC On-Screen Tactile Numpad (Universal Explicit Submit).
- * Suppresses native mobile OS keyboards and provides an oversized Thumb-Enter.
+ * Custom UFC On-Screen Tactile Numpad (Zero-Enter Automatic Submit Mode).
+ * Suppresses native mobile OS keyboards and provides CLR + single-digit Backspace (⌫).
  */
 export function TactileNumpad({
   onDigit,
+  onBackspace,
   onClear,
   onSubmit,
+  showSubmit = false,
   disabled = false,
   className = ''
 }) {
@@ -33,14 +35,18 @@ export function TactileNumpad({
     if (disabled) return;
     triggerHaptic(10);
     soundFx.playKeyClick();
-    onClear();
+    onClear?.();
   };
 
-  const handleSubmitPress = () => {
+  const handleBackspacePress = () => {
     if (disabled) return;
-    triggerHaptic(12);
+    triggerHaptic(10);
     soundFx.playKeyClick();
-    onSubmit();
+    if (onBackspace) {
+      onBackspace();
+    } else {
+      onClear?.();
+    }
   };
 
   const digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -61,14 +67,14 @@ export function TactileNumpad({
           </button>
         ))}
 
-        {/* Row 4: CLEAR, 0, ENTER */}
+        {/* Row 4: CLR, 0, BACKSPACE (⌫) */}
         <button
           type="button"
           disabled={disabled}
           onClick={handleClearPress}
           className="numpad-btn py-2.5 sm:py-4 bg-[#090c0a] hover:bg-[#ff6b5e]/15 active:translate-y-0.5 border-2 border-[#ff6b5e]/60 text-[#ff6b5e] font-mono font-bold text-xs sm:text-base tracking-wider uppercase shadow-[3px_3px_0_#090c0a] transition-all cursor-pointer"
         >
-          ⌫ CLEAR
+          CLR
         </button>
 
         <button
@@ -80,16 +86,33 @@ export function TactileNumpad({
           0
         </button>
 
-        {/* Oversized Green Thumb-Enter */}
         <button
           type="button"
           disabled={disabled}
-          onClick={handleSubmitPress}
-          className="numpad-btn py-2.5 sm:py-4 bg-[#2ee58f] hover:bg-[#34f098] active:translate-y-1 border-2 border-[#090c0a] text-[#090c0a] font-mono font-extrabold text-xs sm:text-base tracking-wider uppercase shadow-[4px_4px_0_#090c0a] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+          onClick={handleBackspacePress}
+          aria-label="Backspace"
+          className="numpad-btn py-2.5 sm:py-4 bg-[#090c0a] hover:bg-[#ffe36e]/15 active:translate-y-0.5 border-2 border-[#ffe36e]/60 text-[#ffe36e] font-mono font-extrabold text-xs sm:text-base tracking-wider uppercase shadow-[3px_3px_0_#090c0a] transition-all cursor-pointer flex items-center justify-center gap-1"
         >
-          ENTER ↵
+          ⌫ DEL
         </button>
       </div>
+
+      {/* Manual Submit Fallback Button (rendered when target digits cannot be precomputed) */}
+      {showSubmit && (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            if (disabled) return;
+            triggerHaptic(12);
+            soundFx.playKeyClick();
+            onSubmit?.();
+          }}
+          className="w-full mt-2 sm:mt-3 py-2.5 sm:py-3.5 bg-[#2ee58f] hover:bg-[#25c479] active:translate-y-0.5 border-2 border-[#090c0a] text-[#090c0a] font-mono font-black text-xs sm:text-sm tracking-wider uppercase shadow-[3px_3px_0_#090c0a] transition-all cursor-pointer"
+        >
+          SUBMIT ANSWER ↵
+        </button>
+      )}
     </div>
   );
 }

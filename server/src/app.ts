@@ -49,10 +49,14 @@ import {
   loginAdminHandler,
   getMeHandler,
   exchangeOidcCodeHandler,
-  verifyMembershipHandler
+  verifyMembershipHandler,
+  redirectOidcCallbackHandler
 } from './controllers/authController.js';
 
 import { requireAdminAuth } from './middleware/auth.js';
+
+const PRIVATE_LAN_ORIGIN_REGEX =
+  /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/;
 
 function createRateLimiter(windowMs: number, maxRequests: number): express.RequestHandler {
   const ipRequests = new Map<string, { count: number; resetAt: number }>();
@@ -101,7 +105,7 @@ export function createApp(): express.Application {
   // Trust reverse proxy (Nginx, Cloudflare, ALB) for accurate client IP and protocol detection
   app.set('trust proxy', 1);
 
-  // CORS configuration with explicit trusted origins allowlist
+  // CORS configuration with explicit trusted origins allowlist + nearby LAN support in dev
   const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,https://matiks.fossclub.tech,https://fossclub.tech,https://www.fossclub.tech')
     .split(',')
     .map(s => s.trim());
@@ -109,7 +113,15 @@ export function createApp(): express.Application {
   app.use(
     cors({
       origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV === 'test') {
+        const allowLan =
+          process.env.NODE_ENV !== 'production' &&
+          (process.env.NODE_ENV === 'development' || process.env.ALLOW_LAN_ORIGINS === 'true');
+        if (
+          !origin ||
+          allowedOrigins.includes(origin) ||
+          process.env.NODE_ENV === 'test' ||
+          (allowLan && PRIVATE_LAN_ORIGIN_REGEX.test(origin))
+        ) {
           callback(null, true);
         } else {
           callback(null, false);
@@ -131,6 +143,7 @@ export function createApp(): express.Application {
   app.post('/api/auth/admin-login', adminLoginLimiter, loginAdminHandler);
   app.get('/api/auth/me', getMeHandler);
   app.post('/api/auth/oidc/exchange', oidcExchangeLimiter, exchangeOidcCodeHandler);
+  app.get('/api/auth/callback/fossclub', configLimiter, redirectOidcCallbackHandler);
   app.get('/api/auth/verify-membership/:identifier', membershipLimiter, verifyMembershipHandler);
 
   // Server-Sent Event Streams

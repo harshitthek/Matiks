@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TactileButton } from '../common/TactileButton.jsx';
 import { WashiTape } from '../common/WashiTape.jsx';
 import { RansomNote } from '../common/RansomNote.jsx';
@@ -73,7 +73,7 @@ function loadInitialState(initialTeamCode) {
  * Onboarding panel for creating a new squad or joining an existing one,
  * with integrated USAR FOSS Club OIDC (oidc.fossclub.tech) PKCE Single Sign-On.
  */
-export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam }) {
+export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallbackComplete }) {
   const [init] = useState(() => loadInitialState(initialTeamCode));
   const [mode, setMode] = useState(init.initialMode); // 'join' | 'create'
   const [teamName, setTeamName] = useState(init.initialTeamName);
@@ -86,6 +86,11 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam }) {
   const [error, setError] = useState(init.initialOidcError);
   const [existingTeamMatch, setExistingTeamMatch] = useState(null);
   const [oidcSession, setOidcSession] = useState(init.savedSession);
+  const onOidcCallbackCompleteRef = useRef(onOidcCallbackComplete);
+
+  useEffect(() => {
+    onOidcCallbackCompleteRef.current = onOidcCallbackComplete;
+  }, [onOidcCallbackComplete]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -97,6 +102,7 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam }) {
     if (oidcError) {
       const cleanUrl = window.location.pathname === '/auth/callback' ? '/' : window.location.pathname;
       window.history.replaceState({}, '', cleanUrl);
+      onOidcCallbackCompleteRef.current?.(null);
       return;
     }
 
@@ -104,9 +110,11 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam }) {
       const cleanUrl = window.location.pathname === '/auth/callback' ? '/' : window.location.pathname;
       window.history.replaceState({}, '', cleanUrl);
 
+      let authenticatedUser = null;
       exchangeOidcCode(code, state)
         .then((res) => {
           if (res?.user && res?.token) {
+            authenticatedUser = res.user;
             const sessionObj = { user: res.user, token: res.token };
             setOidcSession(sessionObj);
             try {
@@ -127,6 +135,7 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam }) {
         })
         .finally(() => {
           setOidcLoading(false);
+          onOidcCallbackCompleteRef.current?.(authenticatedUser);
         });
       return;
     }

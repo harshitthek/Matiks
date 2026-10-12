@@ -33,9 +33,16 @@ function getUrlInviteTeamCode() {
   return '';
 }
 
+function hasOidcCallbackInUrl() {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  return Boolean((params.get('code') && params.get('state')) || params.get('error'));
+}
+
 export function App() {
   const [currentView, setCurrentView] = useState(getInitialView);
   const [inviteTeamCode, setInviteTeamCode] = useState(getUrlInviteTeamCode);
+  const [oidcCallbackPending, setOidcCallbackPending] = useState(hasOidcCallbackInUrl);
 
   const [teamSession, setTeamSession] = useState(() => {
     try {
@@ -118,8 +125,9 @@ export function App() {
     return sprint ? `/?team=${code}&arena=1` : `/?team=${code}`;
   }, []);
 
-  // Ensure initial URL reflects restored team session
+  // Ensure initial URL reflects restored team session (unless handling an OIDC callback)
   useEffect(() => {
+    if (oidcCallbackPending || hasOidcCallbackInUrl()) return;
     if (currentView === 'squad' && teamSession?.teamCode) {
       const targetUrl = buildSquadUrl(teamSession, sprintSession);
       if (window.location.pathname + window.location.search !== targetUrl) {
@@ -130,7 +138,7 @@ export function App() {
         );
       }
     }
-  }, [currentView, teamSession, sprintSession, buildSquadUrl]);
+  }, [currentView, teamSession, sprintSession, buildSquadUrl, oidcCallbackPending]);
 
   const handleReturnToLobbyFromSprint = useCallback(() => {
     const activeSprint = sprintSessionRef.current;
@@ -493,7 +501,7 @@ export function App() {
               onPlayAgain={handlePlayAgainFromSummary}
               onViewLeaderboard={() => navigateTo('leaderboard')}
             />
-          ) : teamSession ? (
+          ) : teamSession && !oidcCallbackPending ? (
             /* Active Squad Lobby */
             <TeamLobby
               teamCode={teamSession.teamCode}
@@ -515,6 +523,16 @@ export function App() {
               key={inviteTeamCode}
               initialTeamCode={inviteTeamCode}
               onJoinedTeam={handleJoinedTeam}
+              onOidcCallbackComplete={(oidcUser) => {
+                setOidcCallbackPending(false);
+                if (
+                  oidcUser?.rollNumber &&
+                  teamSessionRef.current?.rollNumber &&
+                  oidcUser.rollNumber.toUpperCase() !== teamSessionRef.current.rollNumber.toUpperCase()
+                ) {
+                  void handleLeaveTeam({ forceLocal: true });
+                }
+              }}
             />
           )}
         </div>

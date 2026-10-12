@@ -9,6 +9,42 @@ import { connectTeamStream } from '../../services/sse.js';
 import { soundFx } from '../../services/soundFx.js';
 
 /**
+ * Safely derives expected numerical answer based on question operands and operation.
+ * Returns null if operands are invalid or operation cannot be determined.
+ */
+function deriveExpectedAnswer(question) {
+  if (!question || !Number.isFinite(question.a) || !Number.isFinite(question.b)) {
+    return null;
+  }
+  const op = question.operator || question.operation;
+  if (!op) {
+    return null;
+  }
+  let result = null;
+  switch (op) {
+    case '+':
+      result = question.a + question.b;
+      break;
+    case '-':
+      result = question.a - question.b;
+      break;
+    case '*':
+    case '×':
+      result = question.a * question.b;
+      break;
+    case '/':
+    case '÷':
+      if (question.b !== 0 && question.a % question.b === 0) {
+        result = question.a / question.b;
+      }
+      break;
+    default:
+      return null;
+  }
+  return typeof result === 'number' && Number.isInteger(result) && result >= 0 ? result : null;
+}
+
+/**
  * 2-Minute Sprint Arena Controller (Reflex Mode — 60fps).
  * Handles parallel question solving, Zetamac physical keyboard inputs,
  * tactile touch numpad with Thumb-Enter, anti-cheat latency calculation,
@@ -66,6 +102,12 @@ export function ArenaView({
   const pauseStartRef = useRef(null);
   const isSubmittingRef = useRef(false);
   const isFinishedRef = useRef(Boolean(initialIsFinished));
+  const currentInputRef = useRef('');
+  const currentIndexRef = useRef(initialQuestionIndex || 0);
+  const streakRef = useRef(initialStreak || 0);
+  const pendingInputBufferRef = useRef([]);
+  const handleDigitRef = useRef(null);
+  const submissionTokenRef = useRef(0);
 
   // Initialize question start time on mount
   useEffect(() => {
@@ -183,152 +225,228 @@ export function ArenaView({
   }, []);
 
   const currentQuestion = questions[currentIndex];
+  const hasAutoSubmit = deriveExpectedAnswer(currentQuestion) !== null;
 
-  // Submit current answer
-  const handleSubmitAnswer = useCallback(async () => {
-    if (isSubmittingRef.current || isFinished || isPaused) return;
-    if (!currentInput || currentInput.trim().length === 0) return;
+  // Submit answer value (invoked automatically upon reaching target digit length)
+  const submitAnswerValue = useCallback(
+    async (rawVal) => {
+      if (isSubmittingRef.current || isFinishedRef.current || isFinished || isPaused) return;
+      const inputStr = typeof rawVal === 'string' ? rawVal.trim() : currentInputRef.current.trim();
+      if (!inputStr) return;
 
-    const parsedAnswer = parseInt(currentInput.trim(), 10);
-    if (!Number.isFinite(parsedAnswer)) return;
+      const parsedAnswer = parseInt(inputStr, 10);
+      if (!Number.isFinite(parsedAnswer)) return;
 
-    isSubmittingRef.current = true;
-    const nowPerf = performance.now();
-    const clientDeltaMs = Math.max(50, Math.round(nowPerf - questionStartTimeRef.current));
-    const clientTimestamp = Date.now();
+      const activeIndex = currentIndexRef.current;
+      const activeQuestion = questions[activeIndex];
 
-    setIsSubmitting(true);
+      const currentToken = ++submissionTokenRef.current;
+      let lockReleased = false;
 
-    try {
-      setSubmissionError(null);
-      const res = await submitAnswer(
-        sessionId,
-        currentIndex,
-        parsedAnswer,
-        clientDeltaMs,
-        clientTimestamp,
-        memberToken
-      );
+      isSubmittingRef.current = true;
+      const nowPerf = performance.now();
+      const clientDeltaMs = Math.max(50, Math.round(nowPerf - questionStartTimeRef.current));
+      const clientTimestamp = Date.now();
 
-      const isCorrect = Boolean(res.isCorrect);
-      const points = Number(res.pointsAwarded) || 0;
-      const newScore = typeof res.currentScore === 'number' ? res.currentScore : score + points;
-      const newStreak =
-        typeof res.consecutiveStreak === 'number'
-          ? res.consecutiveStreak
-          : isCorrect
-          ? streak + 1
-          : 0;
+      setIsSubmitting(true);
 
-      // Play audio feedback
-      if (isCorrect) {
-        soundFx.playCorrect();
-      } else {
-        soundFx.playIncorrect();
-      }
+      try {
+        setSubmissionError(null);
+        const res = await submitAnswer(
+          sessionId,
+          activeIndex,
+          parsedAnswer,
+          clientDeltaMs,
+          clientTimestamp,
+          memberToken
+        );
 
-      // Visual perimeter flash
-      setFlashState(isCorrect ? 'correct' : 'incorrect');
-      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-      flashTimerRef.current = setTimeout(() => {
-        setFlashState(null);
-      }, 350);
+        const isCorrect = Boolean(res.isCorrect);
+        const points = Number(res.pointsAwarded) || 0;
 
-      // Hit feedback badge
-      setLastResult({
-        isCorrect,
-        pointsAwarded: points,
-        consecutiveStreak: newStreak
-      });
-      if (lastResultTimerRef.current) clearTimeout(lastResultTimerRef.current);
-      lastResultTimerRef.current = setTimeout(() => {
-        setLastResult(null);
-      }, 700);
+        // Play audio feedback
+        if (isCorrect) {
+          soundFx.playCorrect();
+        } else {
+          soundFx.playIncorrect();
+        }
 
-      // Record submission record
-      setSubmissions((prev) => [
-        ...prev,
-        {
-          questionIndex: currentIndex,
-          a: currentQuestion?.a,
-          b: currentQuestion?.b,
-          answer: parsedAnswer,
+        // Visual perimeter flash
+        setFlashState(isCorrect ? 'correct' : 'incorrect');
+        if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+        flashTimerRef.current = setTimeout(() => {
+          setFlashState(null);
+        }, 350);
+
+        // Update score via functional updater
+        setScore((prev) => (typeof res.currentScore === 'number' ? res.currentScore : prev + points));
+
+        // Derive effective streak directly via ref and update state, maxStreak, and feedback badge
+        const effectiveStreak =
+          typeof res.consecutiveStreak === 'number'
+            ? res.consecutiveStreak
+            : isCorrect
+            ? streakRef.current + 1
+            : 0;
+
+        streakRef.current = effectiveStreak;
+        setStreak(effectiveStreak);
+        setMaxStreak((prevMax) => Math.max(prevMax, effectiveStreak));
+
+        // Hit feedback badge
+        setLastResult({
           isCorrect,
           pointsAwarded: points,
-          latencyMs: clientDeltaMs
-        }
-      ]);
+          consecutiveStreak: effectiveStreak
+        });
+        if (lastResultTimerRef.current) clearTimeout(lastResultTimerRef.current);
+        lastResultTimerRef.current = setTimeout(() => {
+          setLastResult(null);
+        }, 700);
 
-      setScore(newScore);
-      setStreak(newStreak);
-      setMaxStreak((prevMax) => Math.max(prevMax, newStreak));
+        // Record submission record
+        setSubmissions((prev) => [
+          ...prev,
+          {
+            questionIndex: activeIndex,
+            a: activeQuestion?.a,
+            b: activeQuestion?.b,
+            answer: parsedAnswer,
+            isCorrect,
+            pointsAwarded: points,
+            latencyMs: clientDeltaMs
+          }
+        ]);
 
-      // Advance to next question or complete sprint
-      if (res.isFinished || currentIndex + 1 >= questions.length) {
-        if (!isFinishedRef.current) {
-          isFinishedRef.current = true;
-          setIsFinished(true);
-          soundFx.playFinish();
+        // Advance to next question or complete sprint
+        if (res.isFinished || activeIndex + 1 >= questions.length) {
+          pendingInputBufferRef.current = [];
+          if (!isFinishedRef.current) {
+            isFinishedRef.current = true;
+            setIsFinished(true);
+            soundFx.playFinish();
+          }
+        } else {
+          if (isFinishedRef.current) return;
+          currentInputRef.current = '';
+          setCurrentInput('');
+          const nextIndex = activeIndex + 1;
+          currentIndexRef.current = nextIndex;
+          setCurrentIndex(nextIndex);
+          questionStartTimeRef.current = performance.now();
+
+          // Release submission lock before replaying buffered digits for the new question
+          lockReleased = true;
+          isSubmittingRef.current = false;
+          setIsSubmitting(false);
+
+          if (pendingInputBufferRef.current.length > 0) {
+            const buffered = [...pendingInputBufferRef.current];
+            pendingInputBufferRef.current = [];
+            for (const d of buffered) {
+              handleDigitRef.current?.(d);
+            }
+          }
         }
-      } else {
-        if (isFinishedRef.current) return;
-        setCurrentIndex((prev) => prev + 1);
-        setCurrentInput('');
-        questionStartTimeRef.current = performance.now();
+      } catch (err) {
+        pendingInputBufferRef.current = [];
+        console.warn('[Arena] Answer submission failed:', err);
+        const isSprintDone = Boolean(
+          err?.data?.isFinished ||
+            err?.data?.errorCode === 'SPRINT_FINISHED' ||
+            /already finished|deadline expired|already completed/i.test(err?.message || '')
+        );
+        if (isSprintDone) {
+          if (!isFinishedRef.current) {
+            isFinishedRef.current = true;
+            setIsFinished(true);
+            soundFx.playFinish();
+          }
+        } else {
+          currentInputRef.current = '';
+          setCurrentInput('');
+          if (!isFinishedRef.current) {
+            setSubmissionError(err?.message || 'Submission failed');
+          }
+        }
+      } finally {
+        if (!lockReleased && submissionTokenRef.current === currentToken) {
+          isSubmittingRef.current = false;
+          setIsSubmitting(false);
+        }
       }
-    } catch (err) {
-      console.warn('[Arena] Answer submission failed:', err);
-      const isSprintDone = Boolean(
-        err?.data?.isFinished ||
-          err?.data?.errorCode === 'SPRINT_FINISHED' ||
-          /already finished|deadline expired|already completed/i.test(err?.message || '')
-      );
-      if (isSprintDone) {
-        if (!isFinishedRef.current) {
-          isFinishedRef.current = true;
-          setIsFinished(true);
-          soundFx.playFinish();
-        }
-      } else {
-        if (!isFinishedRef.current) {
-          setSubmissionError(err?.message || 'Submission failed');
-        }
-      }
-    } finally {
-      isSubmittingRef.current = false;
-      setIsSubmitting(false);
-    }
-  }, [
-    isFinished,
-    isPaused,
-    currentInput,
-    sessionId,
-    currentIndex,
-    memberToken,
-    score,
-    streak,
-    currentQuestion,
-    questions.length
-  ]);
-
-  // Digits input logic
-  const handleDigit = useCallback(
-    (digit) => {
-      if (isFinished || isPaused) return;
-      setCurrentInput((prev) => {
-        if (prev.length >= 3) return prev; // Sums range up to 198 (3 digits max)
-        return prev + digit;
-      });
     },
-    [isFinished, isPaused]
+    [
+      isFinished,
+      isPaused,
+      sessionId,
+      memberToken,
+      questions
+    ]
   );
 
+  // Digits input logic with zero-Enter automatic submission and in-flight digit buffering
+  const handleDigit = useCallback(
+    (digit) => {
+      if (isFinishedRef.current || isFinished || isPaused) return;
+
+      // If a submission is currently in flight, buffer the typed digit for the next question
+      if (isSubmittingRef.current) {
+        if (pendingInputBufferRef.current.length < 6) {
+          pendingInputBufferRef.current.push(digit);
+        }
+        return;
+      }
+
+      const activeQuestion = questions[currentIndexRef.current];
+      const expectedAnswer = deriveExpectedAnswer(activeQuestion);
+      const targetDigits =
+        expectedAnswer !== null ? String(expectedAnswer).length : null;
+
+      const prev = currentInputRef.current;
+      const maxAllowedLength = targetDigits !== null ? targetDigits : 6;
+      if (prev.length >= maxAllowedLength) return;
+
+      const next = prev + digit;
+      currentInputRef.current = next;
+      setCurrentInput(next);
+
+      if (targetDigits !== null && next.length >= targetDigits) {
+        void submitAnswerValue(next);
+      }
+    },
+    [isFinished, isPaused, questions, submitAnswerValue]
+  );
+
+  // Sync handleDigit ref to avoid circular useCallback dependencies during buffered replay
+  useEffect(() => {
+    handleDigitRef.current = handleDigit;
+  }, [handleDigit]);
+
+  const handleBackspace = useCallback(() => {
+    if (isFinishedRef.current || isFinished || isPaused) return;
+    if (isSubmittingRef.current) {
+      if (pendingInputBufferRef.current.length > 0) {
+        pendingInputBufferRef.current.pop();
+      }
+      return;
+    }
+    const next = currentInputRef.current.slice(0, -1);
+    currentInputRef.current = next;
+    setCurrentInput(next);
+  }, [isFinished, isPaused]);
+
   const handleClear = useCallback(() => {
-    if (isFinished || isPaused) return;
+    if (isFinishedRef.current || isFinished || isPaused) return;
+    if (isSubmittingRef.current) {
+      pendingInputBufferRef.current = [];
+      return;
+    }
+    currentInputRef.current = '';
     setCurrentInput('');
   }, [isFinished, isPaused]);
 
-  // Zetamac Physical Keyboard listeners (Universal Explicit Submit)
+  // Zetamac Physical Keyboard listeners (Zero-Enter Automatic Submit with Manual Fallback)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (!isActiveView || isFinished || isPaused) return;
@@ -345,21 +463,20 @@ export function ArenaView({
         handleDigit(e.key);
       } else if (e.key === 'Backspace') {
         soundFx.playKeyClick();
-        setCurrentInput((prev) => prev.slice(0, -1));
+        handleBackspace();
       } else if (e.key === 'Escape') {
         soundFx.playKeyClick();
         handleClear();
       } else if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault(); // Prevent Spacebar from scrolling
-        if (e.repeat) return;
+        if (e.key === ' ') e.preventDefault(); // Prevent Spacebar from scrolling
         soundFx.playKeyClick();
-        handleSubmitAnswer();
+        void submitAnswerValue();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleDigit, handleClear, handleSubmitAnswer, isActiveView, isFinished, isPaused]);
+  }, [handleDigit, handleBackspace, handleClear, submitAnswerValue, isActiveView, isFinished, isPaused]);
 
   // Handle 120s sprint timeout
   const handleTimerExpire = useCallback(async () => {
@@ -518,6 +635,7 @@ export function ArenaView({
           flashState={flashState}
           lastResult={lastResult}
           isSubmitting={isSubmitting}
+          hasAutoSubmit={hasAutoSubmit}
         />
       </div>
 
@@ -525,8 +643,10 @@ export function ArenaView({
       <div className="mt-2 sm:mt-4">
         <TactileNumpad
           onDigit={handleDigit}
+          onBackspace={handleBackspace}
           onClear={handleClear}
-          onSubmit={handleSubmitAnswer}
+          onSubmit={() => void submitAnswerValue()}
+          showSubmit={!hasAutoSubmit}
           disabled={isSubmitting || isFinished || isPaused}
         />
       </div>
