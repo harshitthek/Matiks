@@ -1,4 +1,4 @@
-import React from 'react';
+import { soundFx } from '../../services/soundFx.js';
 
 /**
  * Chunky tactile sticker button (.btn) with 2.5px solid border,
@@ -17,6 +17,16 @@ export function TactileButton({
 }) {
   const variantClass = variant === 'signal'
     ? 'btn-signal'
+    : variant === 'butter'
+    ? 'btn-butter'
+    : variant === 'pink'
+    ? 'btn-pink'
+    : variant === 'lilac'
+    ? 'btn-lilac'
+    : variant === 'ink'
+    ? 'btn-ink'
+    : variant === 'paper'
+    ? 'btn-paper'
     : variant === 'amber'
     ? 'btn-amber'
     : variant === 'ember'
@@ -25,10 +35,20 @@ export function TactileButton({
     ? 'btn-ghost'
     : '';
 
+  const handleClick = (e) => {
+    if (disabled) return;
+    try {
+      soundFx.playKeyClick();
+    } catch {
+      // Ignore audio context error
+    }
+    onClick?.(e);
+  };
+
   return (
     <button
       type={type}
-      onClick={onClick}
+      onClick={handleClick}
       disabled={disabled}
       aria-label={ariaLabel}
       className={`btn ${variantClass} ${className}`}

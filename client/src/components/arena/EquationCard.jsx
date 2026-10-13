@@ -72,18 +72,26 @@ export function EquationCard({
 
       {/* Equation Display */}
       <div className="my-1 sm:my-3 md:my-5">
-        <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-3 md:gap-5 font-display font-extrabold text-3xl sm:text-5xl md:text-6xl text-[#e8ece3] tracking-tight">
+        <div className="flex flex-wrap sm:flex-nowrap items-center justify-center gap-1.5 xs:gap-2 sm:gap-3 md:gap-5 font-display font-extrabold text-2xl xs:text-3xl sm:text-5xl md:text-6xl text-[#e8ece3] tracking-tight max-w-full">
           <span>{question.a}</span>
-          <span className="text-[#2ee58f] font-mono font-normal text-2xl sm:text-4xl md:text-5xl">
+          <span className="text-[#2ee58f] font-mono font-normal text-xl xs:text-2xl sm:text-4xl md:text-5xl">
             {question.operation || question.operator || '+'}
           </span>
           <span>{question.b}</span>
-          <span className="text-[#aab5ac] font-mono font-normal text-2xl sm:text-4xl md:text-5xl">=</span>
+          <span className="text-[#aab5ac] font-mono font-normal text-xl xs:text-2xl sm:text-4xl md:text-5xl">=</span>
 
           {/* User Input Answer Box */}
-          <div className="min-w-[80px] sm:min-w-[110px] md:min-w-[140px] h-[46px] sm:h-[60px] md:h-[74px] bg-[#090c0a] border-3 border-[#2ee58f] flex items-center justify-center px-2.5 sm:px-3 shadow-[3px_3px_0_#2ee58f] text-[#2ee58f] font-mono text-2xl sm:text-4xl md:text-5xl">
+          <div
+            className={`w-[78px] xs:w-[92px] sm:w-[115px] md:w-[145px] h-[44px] xs:h-[48px] sm:h-[60px] md:h-[74px] shrink-0 bg-[#090c0a] border-3 border-[#2ee58f] flex items-center justify-center px-1 sm:px-2 shadow-[2px_2px_0_#2ee58f] sm:shadow-[3px_3px_0_#2ee58f] text-[#2ee58f] font-mono tracking-tight ${
+              currentInput.length >= 5
+                ? 'text-xs xs:text-sm sm:text-lg md:text-xl'
+                : currentInput.length === 4
+                ? 'text-sm xs:text-base sm:text-2xl md:text-3xl'
+                : 'text-xl xs:text-2xl sm:text-4xl md:text-5xl'
+            }`}
+          >
             {currentInput ? (
-              <span>{currentInput}</span>
+              <span className="truncate">{currentInput}</span>
             ) : (
               <span className="text-[#2ee58f]/40 animate-pulse">_</span>
             )}

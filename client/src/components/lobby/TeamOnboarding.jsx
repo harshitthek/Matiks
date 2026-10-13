@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { TactileButton } from '../common/TactileButton.jsx';
 import { WashiTape } from '../common/WashiTape.jsx';
 import { RansomNote } from '../common/RansomNote.jsx';
+import { FlowerSticker } from '../common/FlowerSticker.jsx';
+import { FossForgeBadge } from '../common/FossForgeBadge.jsx';
 import {
   createTeam,
   joinTeam,
@@ -333,17 +335,39 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
 
   return (
     <div className="w-full max-w-xl mx-auto px-4 py-8">
-      {/* Hero Header */}
+      {/* Hero Header with UFC & FOSS Forge Elements */}
       <div className="text-center mb-8 relative">
-        <div className="inline-block relative">
+        {/* Playful Botanical Stickers */}
+        <FlowerSticker
+          id={4}
+          size={52}
+          rotation={-14}
+          withTape
+          tapeColor="butter"
+          className="hidden sm:inline-block absolute -left-10 top-0 z-10"
+        />
+        <FlowerSticker
+          id={11}
+          size={48}
+          rotation={12}
+          withTape
+          tapeColor="pink"
+          className="hidden sm:inline-block absolute -right-10 top-4 z-10"
+        />
+
+        <div className="mb-3">
+          <FossForgeBadge variant="hero" />
+        </div>
+
+        <div className="inline-block relative mt-2">
           <WashiTape color="pink" rotation="-4deg" className="-top-3 -right-6" />
           <RansomNote text="MATIKS" size="xl" />
         </div>
-        <p className="font-mono text-sm tracking-widest text-[#2ee58f] mt-3 uppercase">
-          § 01 // COMPETITIVE MENTAL MATH HACKATHON
+        <p className="font-mono text-xs sm:text-sm tracking-widest text-[#2ee58f] mt-3 uppercase font-bold">
+          § SPEED MATH SPRINT // 120s REFLEX CHALLENGE
         </p>
-        <p className="font-body text-sm text-[#aab5ac] mt-1">
-          Synchronized 2-minute sprint. 15 questions. Team score is the average.
+        <p className="font-body text-xs sm:text-sm text-[#aab5ac] mt-1 max-w-md mx-auto">
+          Synchronized 2-minute sprint. 15 calibrated arithmetic questions. Team score is the average.
         </p>
       </div>
 
@@ -429,9 +453,15 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
                 type="button"
                 onClick={handleStartOidcLogin}
                 disabled={oidcLoading || loading}
-                className="w-full py-2.5 px-4 bg-[#0f1411] hover:bg-[#2ee58f]/15 text-[#2ee58f] border-2 border-[#2ee58f] shadow-[3px_3px_0_#090c0a] font-mono font-bold text-xs tracking-wider uppercase flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5 disabled:opacity-50"
+                className="w-full py-2.5 px-4 bg-[#0f1411] hover:bg-[#2ee58f]/15 text-[#2ee58f] border-2 border-[#2ee58f] shadow-[3px_3px_0_#090c0a] font-mono font-bold text-xs tracking-wider uppercase flex items-center justify-center gap-2.5 transition-all hover:-translate-y-0.5 disabled:opacity-50"
               >
-                <span>⚡</span>
+                <div className="w-5 h-5 rounded-xs bg-[#E6F8ED] border border-[#090c0a] p-0.5 flex items-center justify-center shrink-0">
+                  <img
+                    src="/brand/ufc-logo.svg"
+                    alt="UFC"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
                 <span>
                   {oidcLoading
                     ? 'VERIFYING WITH OIDC.FOSSCLUB.TECH...'
@@ -618,16 +648,33 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
         </form>
       </div>
 
-      {/* Rules Notice */}
-      <div className="mt-6 border-2 border-[#2ee58f]/20 bg-[#0f1411]/60 p-4">
-        <p className="font-mono text-xs text-[#2ee58f] font-bold uppercase tracking-wider mb-1">
-          RULESET // HIVE PLAY
-        </p>
-        <p className="font-body text-xs text-[#aab5ac] leading-relaxed">
-          • All teammates must toggle "READY" before the 3-2-1 countdown unlocks.<br />
-          • Each member solves 15 questions independently on their own screen.<br />
-          • Official standing is determined by the team's mathematical average score.
-        </p>
+      {/* Rules Notice Post-It */}
+      <div className="mt-8 relative">
+        <WashiTape color="signal" rotation="-1.5deg" className="-top-3 left-6 z-10" />
+        <div className="postit p-5 border-2 border-[#090c0a]">
+          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+            <span className="font-mono text-xs font-black text-[#090c0a] uppercase tracking-wider">
+              § HACKATHON COMBAT RULES
+            </span>
+            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 bg-[#090c0a] text-[#ffe36e] uppercase">
+              ZERO LUCK GUARANTEE
+            </span>
+          </div>
+          <p className="font-body text-xs text-[#1a1a14] leading-relaxed">
+            • <strong>Squad Synchronization:</strong> All teammates must toggle "READY" before the 3-2-1 countdown unlocks.<br />
+            • <strong>Individual Execution:</strong> Each member solves 15 questions independently on their own screen within 120 seconds.<br />
+            • <strong>Team Scoring:</strong> Final squad leaderboard ranking is computed from the mathematical mean of all member scores.<br />
+            {mode === 'join' ? (
+              <>• <strong>Calibrated Taxonomy:</strong> 15 calibrated arithmetic problems matched to your squad's chosen round mode.<br /></>
+            ) : (lockedRoundMode || operatorMode) === 'sub' ? (
+              <>• <strong>Borrow Taxonomy:</strong> 15 calibrated subtraction problems across Clean Subtraction and Regroup Borrowing.<br /></>
+            ) : (lockedRoundMode || operatorMode) === 'mixed' ? (
+              <>• <strong>Mixed Taxonomy:</strong> 15 calibrated problems (8 Addition with Carry Taxonomy + 7 Subtraction with Regrouping).<br /></>
+            ) : (
+              <>• <strong>Carry Taxonomy:</strong> Exactly 3 No Carry, 4 Ones Carry, 4 Century Carry, and 4 Double Carry problems.<br /></>
+            )}
+          </p>
+        </div>
       </div>
     </div>
   );

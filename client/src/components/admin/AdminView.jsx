@@ -3,6 +3,7 @@ import { RansomNote } from '../common/RansomNote.jsx';
 import { WashiTape } from '../common/WashiTape.jsx';
 import { RadarDot } from '../common/RadarDot.jsx';
 import { TactileButton } from '../common/TactileButton.jsx';
+import { FlowerSticker } from '../common/FlowerSticker.jsx';
 import { AdminAuthGate } from './AdminAuthGate.jsx';
 import { TelemetryCards } from './TelemetryCards.jsx';
 import { ContestWindowWidget } from './ContestWindowWidget.jsx';
@@ -774,6 +775,14 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <div className="w-5 h-5 rounded-xs bg-[#E6F8ED] border border-[#090c0a] p-0.5 flex items-center justify-center shrink-0">
+                <img src="/brand/ufc-logo.svg" alt="UFC" className="w-full h-full object-contain" />
+              </div>
+              <span className="font-mono text-xs font-black tracking-widest text-[#2ee58f] uppercase">
+                USAR FOSS CLUB (UFC) // FOSS FORGE 2.0
+              </span>
+            </div>
             <div className="mb-2">
               <RansomNote text="COMMAND CENTER" size="lg" />
             </div>

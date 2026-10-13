@@ -7,6 +7,8 @@ import { ArenaView } from './components/arena/ArenaView.jsx';
 import { LeaderboardView } from './components/leaderboard/LeaderboardView.jsx';
 import { AdminView } from './components/admin/AdminView.jsx';
 import { leaveTeam, resetTeamSprint } from './services/api.js';
+import { soundFx } from './services/soundFx.js';
+import { FlowerSticker } from './components/common/FlowerSticker.jsx';
 
 const SESSION_STORAGE_KEY = 'matiks_squad_session';
 const SPRINT_STORAGE_KEY = 'matiks_sprint_session';
@@ -43,6 +45,12 @@ export function App() {
   const [currentView, setCurrentView] = useState(getInitialView);
   const [inviteTeamCode, setInviteTeamCode] = useState(getUrlInviteTeamCode);
   const [oidcCallbackPending, setOidcCallbackPending] = useState(hasOidcCallbackInUrl);
+  const [isAudioMuted, setIsAudioMuted] = useState(() => soundFx.isMuted());
+
+  const handleToggleAudio = useCallback(() => {
+    const nextMuted = soundFx.toggleMute();
+    setIsAudioMuted(nextMuted);
+  }, []);
 
   const [teamSession, setTeamSession] = useState(() => {
     try {
@@ -381,7 +389,7 @@ export function App() {
     <div
       className={
         isInActiveArena
-          ? 'h-[100dvh] max-h-[100dvh] overflow-hidden overscroll-none bg-[#090c0a] text-[#e8ece3] flex flex-col relative selection:bg-[#2ee58f] selection:text-[#090c0a]'
+          ? 'h-[100dvh] max-h-[100dvh] overflow-hidden overscroll-none touch-manipulation bg-[#090c0a] text-[#e8ece3] flex flex-col relative selection:bg-[#2ee58f] selection:text-[#090c0a]'
           : 'min-h-screen min-h-[100dvh] bg-[#090c0a] text-[#e8ece3] flex flex-col relative selection:bg-[#2ee58f] selection:text-[#090c0a]'
       }
     >
@@ -393,27 +401,68 @@ export function App() {
 
       {/* Main Top Header (hidden during active sprint to eliminate distraction and free vertical real estate) */}
       {!isInActiveArena && (
-        <header className="border-b-2 border-[#2ee58f]/20 bg-[#0f1411] px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between flex-wrap gap-2 sm:gap-3">
-          <button
-            type="button"
-            onClick={() => navigateTo('squad')}
-            className="flex items-center gap-2 sm:gap-3 text-left group cursor-pointer"
-          >
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded bg-[#2ee58f] text-[#090c0a] font-display font-extrabold flex items-center justify-center text-base sm:text-lg border-2 border-[#090c0a] shadow-[2px_2px_0_#2ee58f] group-hover:-translate-y-0.5 transition-transform">
-              M
-            </div>
-            <div>
-              <span className="font-display font-extrabold text-base sm:text-lg tracking-tight text-[#e8ece3] group-hover:text-[#2ee58f] transition-colors">
-                MATIKS
-              </span>
-              <span className="font-mono text-[9px] sm:text-[10px] tracking-widest text-[#2ee58f] block -mt-1 uppercase">
-                SPEED SPRINT HACKATHON
-              </span>
-            </div>
-          </button>
+        <header className="border-b-2 border-[#2ee58f]/20 bg-[#0f1411] px-3 sm:px-4 py-2 sm:py-2.5 flex items-center justify-between flex-wrap gap-2 sm:gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigateTo('squad')}
+              className="flex items-center gap-2.5 text-left group cursor-pointer"
+            >
+              <div className="relative">
+                <div className="w-8 h-8 rounded bg-[#2ee58f] text-[#090c0a] font-display font-extrabold flex items-center justify-center text-lg border-2 border-[#090c0a] shadow-[2px_2px_0_#2ee58f] group-hover:-translate-y-0.5 transition-transform">
+                  M
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-display font-extrabold text-base sm:text-lg tracking-tight text-[#e8ece3] group-hover:text-[#2ee58f] transition-colors">
+                    MATIKS
+                  </span>
+                  <span className="hidden md:inline-block font-mono text-[9px] font-bold bg-[#2ee58f]/15 text-[#2ee58f] border border-[#2ee58f]/40 px-1 py-0.5 uppercase">
+                    v2.0
+                  </span>
+                </div>
+                <span className="font-mono text-[9px] sm:text-[10px] tracking-widest text-[#2ee58f] block -mt-1 uppercase">
+                  SPEED MATH COMBAT
+                </span>
+              </div>
+            </button>
 
-          {/* Global Navigation Tabs */}
-          <div className="flex items-center gap-1 sm:gap-2">
+            {/* UFC Club & FOSS Forge Badge */}
+            <div className="hidden sm:flex items-center gap-2 pl-3 border-l-2 border-white/10">
+              <a
+                href="https://www.fossclub.tech"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="USAR FOSS Club (fossclub.tech)"
+                className="flex items-center gap-1.5 px-2 py-0.5 bg-[#090c0a] hover:bg-[#2ee58f]/10 border border-[#2ee58f]/30 hover:border-[#2ee58f] transition-all group"
+              >
+                <div className="w-4 h-4 rounded-xs bg-[#E6F8ED] border border-[#090c0a] p-0.5 flex items-center justify-center shrink-0">
+                  <img
+                    src="/brand/ufc-logo.svg"
+                    alt="UFC"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <span className="font-mono text-[10px] font-bold text-[#e8ece3] group-hover:text-[#2ee58f] uppercase">
+                  UFC
+                </span>
+              </a>
+
+              <a
+                href="https://unstop.com/hackathons/foss-forge-20-university-school-of-automation-robotics-usar-guru-gobind-singh-indraprastha-university-ggsipu--1767553"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="FOSS Forge 2.0 on Unstop"
+                className="hidden lg:inline-flex items-center gap-1 px-2 py-0.5 bg-[#ffe36e]/15 border border-[#ffe36e]/40 hover:border-[#ffe36e] font-mono text-[10px] font-bold text-[#ffe36e] uppercase tracking-wider transition-colors"
+              >
+                <span>★ FOSS FORGE 2.0</span>
+              </a>
+            </div>
+          </div>
+
+          {/* Global Navigation Tabs & Actions */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={() => navigateTo('squad')}
@@ -451,10 +500,21 @@ export function App() {
             </button>
 
             {teamSession && currentView === 'squad' && (
-              <span className="hidden xs:inline-block sm:inline-block font-mono text-xs font-bold bg-[#ffe36e] text-[#090c0a] px-2 py-0.5 border border-[#090c0a] shadow-[2px_2px_0_#090c0a] ml-1">
+              <span className="hidden xs:inline-block sm:inline-block font-mono text-xs font-bold bg-[#ffe36e] text-[#090c0a] px-2 py-0.5 border border-[#090c0a] shadow-[2px_2px_0_#090c0a]">
                 #{teamSession.teamCode}
               </span>
             )}
+
+            {/* Sound FX Audio Toggle */}
+            <button
+              type="button"
+              onClick={handleToggleAudio}
+              title={isAudioMuted ? 'Sound FX: Muted (Click to enable audio feedback)' : 'Sound FX: Active (Click to mute)'}
+              aria-label={isAudioMuted ? 'Unmute sound effects' : 'Mute sound effects'}
+              className="p-1 sm:px-2 sm:py-1 border border-white/10 hover:border-[#2ee58f] text-[#aab5ac] hover:text-[#2ee58f] bg-[#090c0a] font-mono text-xs transition-colors cursor-pointer"
+            >
+              {isAudioMuted ? '🔇' : '🔊'}
+            </button>
           </div>
         </header>
       )}
@@ -494,6 +554,8 @@ export function App() {
               currentRoll={teamSession?.rollNumber}
               currentName={teamSession?.name}
               exitPromptRequested={arenaExitPrompt}
+              isAudioMuted={isAudioMuted}
+              onToggleAudioMute={handleToggleAudio}
               onDismissExitPrompt={() => {
                 arenaExitPromptRef.current = false;
                 setArenaExitPrompt(false);
@@ -544,19 +606,72 @@ export function App() {
         </div>
       </main>
 
-      {/* Footer (hidden during active sprint to give 100% vertical space to arena) */}
+      {/* Neo-brutalist FOSS Forge & UFC Community Footer (hidden during active sprint) */}
       {!isInActiveArena && (
-        <footer className="border-t border-[#2ee58f]/10 bg-[#090c0a] py-4 px-4 text-center font-mono text-xs text-[#aab5ac]">
-          <span>MATIKS HACKATHON ENGINE • BUILT FOR USAR FOSS CLUB</span>
-          <span className="mx-2">•</span>
-          <a
-            href="https://www.fossclub.tech"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[#2ee58f] hover:underline"
-          >
-            FOSSCLUB.TECH
-          </a>
+        <footer className="border-t-2 border-[#2ee58f]/20 bg-[#0f1411] py-6 px-4 relative overflow-hidden">
+          <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3 text-left">
+              <a
+                href="https://www.fossclub.tech"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-9 h-9 rounded bg-[#E6F8ED] border-2 border-[#090c0a] p-1 flex items-center justify-center shrink-0 shadow-[2px_2px_0_#2ee58f] hover:scale-105 transition-transform"
+                title="USAR FOSS Club"
+              >
+                <img
+                  src="/brand/ufc-logo.svg"
+                  alt="USAR FOSS Club Logo"
+                  className="w-full h-full object-contain"
+                />
+              </a>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-display font-extrabold text-sm text-[#e8ece3] tracking-tight">
+                    MATIKS
+                  </span>
+                  <span className="font-mono text-[10px] text-[#2ee58f] uppercase font-bold tracking-wider">
+                    // FOSS FORGE 2.0 MINI-GAME
+                  </span>
+                </div>
+                <p className="font-mono text-[11px] text-[#aab5ac]">
+                  Built with open source by <span className="text-[#e8ece3] font-bold">USAR FOSS Club</span> (UFC) · GGSIPU East Delhi Campus
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 sm:gap-4 flex-wrap justify-center font-mono text-xs">
+              <a
+                href="https://www.fossclub.tech"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#2ee58f] hover:underline font-bold"
+              >
+                FOSSCLUB.TECH ↗
+              </a>
+              <span className="text-white/20">•</span>
+              <a
+                href="https://unstop.com/hackathons/foss-forge-20-university-school-of-automation-robotics-usar-guru-gobind-singh-indraprastha-university-ggsipu--1767553"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#ffe36e] hover:underline font-bold"
+              >
+                UNSTOP HACKATHON ↗
+              </a>
+              <span className="text-white/20">•</span>
+              <a
+                href="https://github.com/harshitthek/Matiks"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#aab5ac] hover:text-[#e8ece3] hover:underline"
+              >
+                GITHUB ↗
+              </a>
+            </div>
+
+            <div className="hidden lg:flex items-center gap-2">
+              <FlowerSticker id={2} size={36} rotation={-6} withTape tapeColor="signal" />
+            </div>
+          </div>
         </footer>
       )}
     </div>

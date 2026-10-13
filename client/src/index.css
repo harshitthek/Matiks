@@ -33,6 +33,12 @@
   --f-pixel: 'Pixelify Sans', monospace;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
   background-color: var(--ink);
@@ -42,6 +48,15 @@ body {
   -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
   min-height: 100dvh;
+  touch-action: manipulation;
+  overscroll-behavior-y: none;
+}
+
+input,
+button,
+select,
+textarea {
+  touch-action: manipulation;
 }
 
 @media (max-width: 640px) {
@@ -140,6 +155,65 @@ body {
   border-color: var(--ink);
 }
 
+.btn-butter {
+  background: var(--butter);
+  color: var(--ink);
+  border-color: var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.btn-butter .disc {
+  background: var(--ink);
+  color: var(--butter);
+  border-color: var(--ink);
+}
+
+.btn-pink {
+  background: var(--pink);
+  color: var(--ink);
+  border-color: var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.btn-pink .disc {
+  background: var(--ink);
+  color: var(--pink);
+  border-color: var(--ink);
+}
+
+.btn-lilac {
+  background: var(--lilac);
+  color: var(--ink);
+  border-color: var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.btn-lilac .disc {
+  background: var(--ink);
+  color: var(--lilac);
+  border-color: var(--ink);
+}
+
+.btn-ink {
+  background: var(--ink);
+  color: var(--cream);
+  border-color: var(--ink);
+  box-shadow: 4px 4px 0 var(--signal);
+}
+
+.btn-ink .disc {
+  background: var(--signal);
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.btn-paper {
+  background: var(--cream);
+  color: var(--ink);
+  border-color: var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
 .btn-amber {
   background: var(--amber);
   color: var(--ink);
@@ -167,15 +241,42 @@ body {
   box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.7);
 }
 
-/* Washi Tape Strips */
+/* Authentic Torn Washi Tape Strips (USAR-FOSS/ufc_website) */
 .tape {
   position: absolute;
-  height: 26px;
+  height: 22px;
   width: 84px;
-  opacity: 0.92;
-  clip-path: polygon(0% 4%, 100% 0%, 98% 96%, 2% 100%);
+  opacity: 0.88;
+  clip-path: polygon(
+    0 8%,
+    4% 0,
+    8% 10%,
+    12% 0,
+    100% 0,
+    96% 12%,
+    100% 26%,
+    96% 40%,
+    100% 55%,
+    96% 70%,
+    100% 84%,
+    97% 100%,
+    12% 100%,
+    8% 90%,
+    4% 100%,
+    0 92%,
+    3% 70%,
+    0 50%,
+    3% 30%
+  );
   pointer-events: none;
   z-index: 10;
+}
+
+.tape::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.28) 0 2px, transparent 2px 7px);
 }
 
 .tape-butter { background: var(--butter); }
@@ -183,6 +284,63 @@ body {
 .tape-signal { background: var(--signal); }
 .tape-lilac { background: var(--lilac); }
 .tape-sky { background: var(--sky); }
+
+/* Die-cut sticker outline and lift shadow (USAR-FOSS/ufc_website) */
+.die-cut {
+  filter: drop-shadow(2.5px 0 0 #fff) drop-shadow(-2.5px 0 0 #fff) drop-shadow(0 2.5px 0 #fff) drop-shadow(0 -2.5px 0 #fff)
+    drop-shadow(0 8px 12px rgba(0, 0, 0, 0.45));
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.die-cut:hover {
+  transform: scale(1.1) rotate(5deg);
+}
+
+/* Post-It note with lifted corner (USAR-FOSS/ufc_website) */
+.postit {
+  position: relative;
+  background: var(--butter);
+  color: #1a1a14;
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.12),
+    0 12px 20px -8px rgba(0, 0, 0, 0.5);
+}
+
+.postit::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 24px;
+  height: 24px;
+  background: linear-gradient(135deg, transparent 50%, rgba(0, 0, 0, 0.16) 50%, rgba(255, 255, 255, 0.35));
+  border-top-left-radius: 4px;
+}
+
+/* Dotted grid on ink background */
+.dotgrid {
+  background-image: radial-gradient(rgba(232, 236, 227, 0.12) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Highlighter marker sweep */
+.marker {
+  background-image: linear-gradient(transparent 52%, var(--butter) 52% 92%, transparent 92%);
+  padding: 0 0.12em;
+  margin: 0 -0.04em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.marker-signal {
+  background-image: linear-gradient(transparent 52%, var(--signal) 52% 92%, transparent 92%);
+}
+
+.marker-pink {
+  background-image: linear-gradient(transparent 52%, var(--pink) 52% 92%, transparent 92%);
+}
 
 /* Live Pulsing Radar Dot */
 .ping-dot {
@@ -275,14 +433,9 @@ body {
   0% {
     box-shadow: 0 0 0 6px var(--ember), inset 0 0 24px rgba(255, 107, 94, 0.5);
     border-color: var(--ember);
-    transform: translateX(-4px);
   }
-  25% { transform: translateX(4px); }
-  50% { transform: translateX(-4px); }
-  75% { transform: translateX(4px); }
   100% {
     box-shadow: 0 0 0 0 rgba(255, 107, 94, 0), inset 0 0 0 rgba(255, 107, 94, 0);
-    transform: translateX(0);
   }
 }
 

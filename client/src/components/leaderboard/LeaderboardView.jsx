@@ -6,6 +6,8 @@ import { RadarDot } from '../common/RadarDot.jsx';
 import { TactileButton } from '../common/TactileButton.jsx';
 import { PodiumCard } from './PodiumCard.jsx';
 import { LeaderboardRow } from './LeaderboardRow.jsx';
+import { FlowerSticker } from '../common/FlowerSticker.jsx';
+import { FossForgeBadge } from '../common/FossForgeBadge.jsx';
 import { connectLeaderboardStream } from '../../services/sse.js';
 import { soundFx } from '../../services/soundFx.js';
 
@@ -206,6 +208,22 @@ export function LeaderboardView({ onReturnToLobby }) {
       <div className="cyber-card cyber-card-butter p-6 md:p-8 relative mb-8 text-center">
         <WashiTape color="signal" rotation="-2deg" className="-top-3 left-8" />
         <WashiTape color="ember" rotation="3deg" className="-top-3 right-8" />
+        <FlowerSticker
+          id={3}
+          size={50}
+          rotation={-14}
+          withTape
+          tapeColor="butter"
+          className="hidden md:inline-block absolute -top-5 left-16 z-10"
+        />
+        <FlowerSticker
+          id={8}
+          size={50}
+          rotation={12}
+          withTape
+          tapeColor="signal"
+          className="hidden md:inline-block absolute -top-5 right-16 z-10"
+        />
 
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-2">
@@ -230,21 +248,21 @@ export function LeaderboardView({ onReturnToLobby }) {
                 ) : (
                   <>
                     <TactileButton
-                      variant="butter"
-                      onClick={startCeremony}
-                      className="px-3 py-1 text-xs"
-                      title="Replay podium ceremony reveal"
-                    >
-                      🔄 REPLAY
-                    </TactileButton>
-                    <TactileButton
-                      variant="ghost"
-                      onClick={resetCeremony}
-                      className="px-2.5 py-1 text-xs"
-                      title="Return to standard live leaderboard view"
-                    >
-                      ✕ LIVE VIEW
-                    </TactileButton>
+                    variant="butter"
+                    onClick={startCeremony}
+                    className="px-3 py-1 text-xs"
+                    title="Replay podium ceremony reveal"
+                  >
+                    🔄 REPLAY
+                  </TactileButton>
+                  <TactileButton
+                    variant="ghost"
+                    onClick={resetCeremony}
+                    className="px-2.5 py-1 text-xs"
+                    title="Return to standard live leaderboard view"
+                  >
+                    ✕ LIVE VIEW
+                  </TactileButton>
                   </>
                 )}
               </>
@@ -262,12 +280,21 @@ export function LeaderboardView({ onReturnToLobby }) {
           </div>
         </div>
 
+        <div className="flex items-center justify-center gap-2 mb-2">
+          <div className="w-5 h-5 rounded-xs bg-[#E6F8ED] border border-[#090c0a] p-0.5 flex items-center justify-center shrink-0">
+            <img src="/brand/ufc-logo.svg" alt="UFC" className="w-full h-full object-contain" />
+          </div>
+          <span className="font-mono text-xs font-black tracking-widest text-[#2ee58f] uppercase">
+            FOSS FORGE 2.0 // AUDITORIUM STAGE ARENA
+          </span>
+        </div>
+
         <div className="mb-3">
           <RansomNote text="TOURNAMENT PODIUM" size="xl" />
         </div>
 
         <p className="font-mono text-xs md:text-sm text-[#ffe36e] uppercase tracking-wider font-bold">
-          LIVE SQUAD STANDINGS • MATIKS HACKATHON ARENA
+          LIVE SQUAD STANDINGS • USAR FOSS CLUB (UFC) · GGSIPU EAST DELHI CAMPUS
         </p>
 
         {/* Contest Window Status Pill */}
@@ -385,6 +412,62 @@ export function LeaderboardView({ onReturnToLobby }) {
           </div>
         </div>
       )}
+
+      {/* Stage Partners & Community Ecosystem Ribbon */}
+      <div className="cyber-card p-4 sm:p-5 mb-8 text-center bg-[#0f1411]">
+        <div className="flex items-center justify-center gap-2 mb-3">
+          <span className="font-mono text-[10px] text-[#aab5ac] tracking-widest uppercase font-bold">
+            COMMUNITY & EVENT PARTNERS // FOSS FORGE 2.0
+          </span>
+        </div>
+        <div className="flex items-center justify-center flex-wrap gap-6 sm:gap-10 opacity-75 hover:opacity-100 transition-opacity">
+          <a
+            href="https://unstop.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Unstop"
+            className="hover:scale-105 transition-transform"
+          >
+            <img src="/logos/unstop.svg" alt="Unstop" className="h-5 sm:h-6 object-contain brightness-0 invert" />
+          </a>
+          <a
+            href="https://fossunited.org"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="FOSS United"
+            className="hover:scale-105 transition-transform"
+          >
+            <img src="/logos/fossunited.webp" alt="FOSS United" className="h-5 sm:h-6 object-contain brightness-0 invert" />
+          </a>
+          <a
+            href="https://codecrafters.io"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="CodeCrafters"
+            className="hover:scale-105 transition-transform"
+          >
+            <img src="/logos/codecrafters.svg" alt="CodeCrafters" className="h-5 sm:h-6 object-contain brightness-0 invert" />
+          </a>
+          <a
+            href="https://kiwix.org"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Kiwix"
+            className="hover:scale-105 transition-transform"
+          >
+            <img src="/logos/kiwix-light.svg" alt="Kiwix" className="h-5 sm:h-6 object-contain" />
+          </a>
+          <a
+            href="https://owasp.org"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="OWASP"
+            className="hover:scale-105 transition-transform"
+          >
+            <img src="/logos/owasp.webp" alt="OWASP" className="h-5 sm:h-6 object-contain brightness-0 invert" />
+          </a>
+        </div>
+      </div>
 
       {/* Zero Question Leak Notice */}
       <div className="text-center font-mono text-[11px] text-[#aab5ac]/60 py-2">

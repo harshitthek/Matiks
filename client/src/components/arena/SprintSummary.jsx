@@ -2,6 +2,7 @@ import React from 'react';
 import { RansomNote } from '../common/RansomNote.jsx';
 import { WashiTape } from '../common/WashiTape.jsx';
 import { TactileButton } from '../common/TactileButton.jsx';
+import { FlowerSticker } from '../common/FlowerSticker.jsx';
 
 /**
  * Post-Sprint Results & Performance Summary Screen.
@@ -89,9 +90,22 @@ export function SprintSummary({
       {/* Title Card */}
       <div className="cyber-card cyber-card-signal p-6 md:p-8 text-center relative mb-6">
         <WashiTape color="signal" rotation="-2deg" className="-top-3 -right-4" />
+        <FlowerSticker
+          id={10}
+          size={50}
+          rotation={-12}
+          withTape
+          tapeColor="butter"
+          className="hidden sm:inline-block absolute -top-5 left-10 z-10"
+        />
 
-        <div className="font-mono text-xs text-[#2ee58f] font-bold tracking-widest uppercase mb-3">
-          § 03 // SPRINT COMPLETED • AUDIT LOG VERIFIED
+        <div className="flex items-center justify-center gap-2 mb-2">
+          <div className="w-4 h-4 rounded-xs bg-[#E6F8ED] border border-[#090c0a] p-0.5 flex items-center justify-center shrink-0">
+            <img src="/brand/ufc-logo.svg" alt="UFC" className="w-full h-full object-contain" />
+          </div>
+          <span className="font-mono text-xs text-[#2ee58f] font-bold tracking-widest uppercase">
+            FOSS FORGE 2.0 // SPRINT TELEMETRY
+          </span>
         </div>
 
         <div className="mb-4">

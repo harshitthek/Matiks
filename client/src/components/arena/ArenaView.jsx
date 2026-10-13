@@ -69,6 +69,8 @@ export function ArenaView({
   currentRoll,
   currentName,
   exitPromptRequested = false,
+  isAudioMuted: propIsAudioMuted = null,
+  onToggleAudioMute = null,
   onDismissExitPrompt,
   onSprintFinishedChange,
   onStateSync,
@@ -101,6 +103,17 @@ export function ArenaView({
       ? Boolean(document.fullscreenElement || document.webkitFullscreenElement)
       : false
   );
+  const [internalIsAudioMuted, setInternalIsAudioMuted] = useState(() => soundFx.isMuted());
+  const isAudioMuted = propIsAudioMuted !== null ? propIsAudioMuted : internalIsAudioMuted;
+
+  const handleToggleAudio = useCallback(() => {
+    if (onToggleAudioMute) {
+      onToggleAudioMute();
+    } else {
+      const nextMuted = soundFx.toggleMute();
+      setInternalIsAudioMuted(nextMuted);
+    }
+  }, [onToggleAudioMute]);
 
   const enteredFullscreenByArenaRef = useRef(false);
   const userOptedOutOfFullscreenRef = useRef(false);
@@ -192,10 +205,6 @@ export function ArenaView({
     };
   }, []);
 
-  // Proactively attempt auto-fullscreen when entering arena
-  useEffect(() => {
-    void requestFullscreenSafe(false);
-  }, [requestFullscreenSafe]);
 
   // Cleanly exit fullscreen on sprint completion or unmount ONLY if entered by arena
   useEffect(() => {
@@ -520,14 +529,6 @@ export function ArenaView({
     (digit) => {
       if (isFinishedRef.current || isFinished || isPaused) return;
 
-      if (
-        typeof document !== 'undefined' &&
-        !(document.fullscreenElement || document.webkitFullscreenElement) &&
-        !userOptedOutOfFullscreenRef.current
-      ) {
-        void requestFullscreenSafe(false);
-      }
-
       // If a submission is currently in flight, buffer the typed digit for the next question
       if (isSubmittingRef.current) {
         if (pendingInputBufferRef.current.length < 6) {
@@ -605,14 +606,6 @@ export function ArenaView({
 
       if (!isGameKey) return;
 
-      if (
-        typeof document !== 'undefined' &&
-        !(document.fullscreenElement || document.webkitFullscreenElement) &&
-        !userOptedOutOfFullscreenRef.current
-      ) {
-        void requestFullscreenSafe(false);
-      }
-
       if (e.key >= '0' && e.key <= '9') {
         soundFx.playKeyClick();
         handleDigit(e.key);
@@ -687,7 +680,7 @@ export function ArenaView({
   }
 
   return (
-    <div className="w-full max-w-2xl mx-auto h-full max-h-[100dvh] flex flex-col justify-between overflow-hidden px-2.5 sm:px-4 py-1 sm:py-3 select-none">
+    <div className="w-full max-w-2xl mx-auto h-full max-h-[100dvh] flex flex-col justify-between overflow-hidden px-2.5 sm:px-4 py-1 sm:py-3 select-none touch-manipulation overscroll-none">
       {/* Top Header Telemetry */}
       <div className="shrink-0 flex items-center justify-between gap-1.5 sm:gap-2 mb-1 sm:mb-2 pb-1 sm:pb-2 border-b-2 border-[#2ee58f]/20">
         <div className="flex items-center gap-1 sm:gap-2">
@@ -709,6 +702,15 @@ export function ArenaView({
             title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
           >
             {isFullscreen ? '⛶ EXIT FULL' : '⛶ FULL'}
+          </button>
+          <button
+            type="button"
+            onClick={handleToggleAudio}
+            className="font-mono text-[10px] sm:text-xs text-[#aab5ac] hover:text-[#2ee58f] px-1.5 sm:px-2 py-0.5 border border-white/15 hover:border-[#2ee58f] transition-colors cursor-pointer"
+            title={isAudioMuted ? 'Sound FX: Muted (Click to enable audio feedback)' : 'Sound FX: Active (Click to mute)'}
+            aria-label={isAudioMuted ? 'Unmute sound effects' : 'Mute sound effects'}
+          >
+            {isAudioMuted ? '🔇' : '🔊'}
           </button>
           <span className="hidden sm:inline font-mono text-xs text-[#2ee58f] font-bold tracking-widest uppercase truncate max-w-[140px] md:max-w-[200px]">
             {currentName ? `${currentName} // ` : ''}§ 02 ARENA

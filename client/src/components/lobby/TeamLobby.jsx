@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { TactileButton } from '../common/TactileButton.jsx';
 import { WashiTape } from '../common/WashiTape.jsx';
 import { RadarDot } from '../common/RadarDot.jsx';
+import { FlowerSticker } from '../common/FlowerSticker.jsx';
+import { FossForgeBadge } from '../common/FossForgeBadge.jsx';
 import { CountdownOverlay } from './CountdownOverlay.jsx';
 import { toggleReady, getTeamSnapshot, resetTeamSprint } from '../../services/api.js';
 import { connectTeamStream } from '../../services/sse.js';
@@ -478,12 +480,25 @@ export function TeamLobby({
       {/* Squad Header Card */}
       <div className="cyber-card p-6 md:p-8 mb-6 relative">
         <WashiTape color="butter" rotation="-3deg" className="-top-3 -right-4" />
+        <FlowerSticker
+          id={7}
+          size={46}
+          rotation={-10}
+          withTape
+          tapeColor="pink"
+          className="hidden sm:inline-block absolute -top-6 left-12 z-10"
+        />
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
           <div>
-            <span className="font-mono text-xs tracking-widest text-[#2ee58f] uppercase font-bold">
-              SQUAD NAME
-            </span>
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <span className="font-mono text-xs tracking-widest text-[#2ee58f] uppercase font-bold">
+                SQUAD REGISTRATION
+              </span>
+              <span className="font-mono text-[10px] bg-[#2ee58f]/15 text-[#2ee58f] border border-[#2ee58f]/40 px-1.5 py-0.5 font-bold uppercase tracking-wider">
+                FOSS FORGE 2.0 // UFC
+              </span>
+            </div>
             <h1 className="font-display font-extrabold text-2xl md:text-4xl text-[#e8ece3] tracking-tight">
               {snapshot?.teamName || 'Loading Squad...'}
             </h1>
