@@ -1,0 +1,149 @@
+// MATIKS HACKATHON ENGINE — RELATIONAL SCHEMA (schema.prisma)
+// Database provider: PostgreSQL (via Prisma ORM)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoomStatus {
+  LOBBY
+  AWAITING_READY
+  COUNTDOWN
+  IN_SPRINT
+  FINISHED
+  DISSOLVED
+}
+
+enum OperatorMode {
+  add
+  sub
+  mixed
+}
+
+model Team {
+  id              String        @id @default(cuid())
+  teamCode        String        @unique
+  teamName        String
+  targetSize      Int           @default(3)
+  operatorMode    OperatorMode  @default(add)
+  status          RoomStatus    @default(LOBBY)
+  captainRoll     String
+  isDisqualified  Boolean       @default(false)
+  scoreAdjustment Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  members         TeamMember[]
+  sprintSessions  SprintSession[]
+  leaderboardRank LeaderboardStanding?
+}
+
+model TeamMember {
+  id           String    @id @default(cuid())
+  teamCode     String
+  rollNumber   String    @unique
+  name         String
+  memberToken  String    @unique
+  isReady      Boolean   @default(false)
+  isExcused    Boolean   @default(false)
+  isClubMember Boolean   @default(false)
+  joinedAt     DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  team         Team      @relation(fields: [teamCode], references: [teamCode], onDelete: Cascade)
+
+  @@index([teamCode])
+}
+
+model SprintSession {
+  sessionId          String      @id
+  teamCode           String
+  rollNumber         String      @default("")
+  questions          Json?
+  startedAt          BigInt
+  expiresAt          BigInt
+  durationSeconds    Int         @default(120)
+  isFinished         Boolean     @default(false)
+  isPaused           Boolean     @default(false)
+  pausedAt           BigInt?
+  accumulatedPauseMs BigInt      @default(0)
+  isTimeOut          Boolean     @default(false)
+  score              Int         @default(0)
+  averageTimeSeconds Float       @default(0)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  team               Team        @relation(fields: [teamCode], references: [teamCode], onDelete: Cascade)
+  submissions        QuestionSubmission[]
+
+  @@index([teamCode])
+  @@index([rollNumber])
+}
+
+model QuestionSubmission {
+  id             String        @id @default(cuid())
+  sessionId      String
+  rollNumber     String
+  questionIndex  Int
+  operandA       Int
+  operandB       Int
+  operator       String
+  bucket         String
+  userAnswer     Int
+  expectedAnswer Int
+  isCorrect      Boolean
+  latencyMs      Int
+  speedBonus     Int           @default(0)
+  streak         Int           @default(0)
+  pointsAwarded  Int           @default(0)
+  isAnomaly      Boolean       @default(false)
+  submittedAt    BigInt
+
+  session        SprintSession @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+
+  @@index([sessionId, rollNumber])
+  @@index([sessionId, questionIndex])
+  @@index([rollNumber])
+}
+
+model LeaderboardStanding {
+  id                 String    @id @default(cuid())
+  teamCode           String    @unique
+  teamName           String
+  rank               Int
+  averageScore       Int       @default(0)
+  averageTimeSeconds Float     @default(0)
+  isFinished         Boolean   @default(false)
+  updatedAt          DateTime  @updatedAt
+
+  team               Team      @relation(fields: [teamCode], references: [teamCode], onDelete: Cascade)
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  action      String
+  targetTeam  String?
+  targetRoll  String?
+  performedBy String   @default("ADMIN")
+  reason      String?
+  details     Json?
+  timestamp   BigInt
+  createdAt   DateTime @default(now())
+
+  @@index([targetTeam])
+  @@index([timestamp])
+}
+
+model TournamentWindow {
+  id        String       @id @default("GLOBAL")
+  isOpen    Boolean      @default(true)
+  openedAt  BigInt?
+  closesAt  BigInt?
+  roundMode OperatorMode @default(add)
+  updatedAt DateTime     @updatedAt
+}

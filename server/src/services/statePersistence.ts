@@ -104,6 +104,43 @@ export class StatePersistenceService {
   }
 
   /**
+   * Validates structural integrity of a persisted tournament snapshot.
+   */
+  private isValidSnapshot(obj: unknown): obj is PersistedTournamentState {
+    return (
+      obj !== null &&
+      typeof obj === 'object' &&
+      (obj as PersistedTournamentState).version === 1 &&
+      typeof (obj as PersistedTournamentState).savedAt === 'number' &&
+      Array.isArray((obj as PersistedTournamentState).rooms) &&
+      Array.isArray((obj as PersistedTournamentState).sessions) &&
+      Array.isArray((obj as PersistedTournamentState).rollToTeamMap) &&
+      Array.isArray((obj as PersistedTournamentState).auditLogs)
+    );
+  }
+
+  /**
+   * Reads and parses the tournament snapshot from disk without immediately applying it.
+   */
+  public readDiskSnapshot(): PersistedTournamentState | null {
+    try {
+      if (!fs.existsSync(this.filePath)) {
+        return null;
+      }
+      const raw = fs.readFileSync(this.filePath, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (!this.isValidSnapshot(parsed)) {
+        console.warn('[StatePersistence] Disk snapshot failed structural validation, ignoring.');
+        return null;
+      }
+      return parsed;
+    } catch (err: unknown) {
+      console.warn('[StatePersistence] Failed to read disk snapshot:', err);
+      return null;
+    }
+  }
+
+  /**
    * Loads the persisted tournament snapshot from disk if available and restores RoomManager state.
    */
   public loadFromDisk(): boolean {
@@ -113,8 +150,9 @@ export class StatePersistenceService {
       }
 
       const raw = fs.readFileSync(this.filePath, 'utf-8');
-      const parsed = JSON.parse(raw) as PersistedTournamentState;
-      if (!parsed || parsed.version !== 1) {
+      const parsed = JSON.parse(raw);
+      if (!this.isValidSnapshot(parsed)) {
+        console.warn('[StatePersistence] Disk snapshot failed structural validation, ignoring.');
         return false;
       }
 

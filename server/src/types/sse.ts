@@ -45,6 +45,7 @@ export interface TeamRoom {
   operatorMode?: OperatorMode;
   isDisqualified?: boolean;
   disqualificationReason?: string;
+  scoreAdjustment?: number;
 }
 
 export interface SubmissionRecord {

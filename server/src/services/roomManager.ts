@@ -35,6 +35,7 @@ import { sseHub } from './sseHub.js';
 import { leaderboardManager } from './leaderboardManager.js';
 import { windowManager } from './windowManager.js';
 import { metrics } from './metrics.js';
+import { databaseService } from './databaseService.js';
 
 export interface SerializedTeamRoom extends Omit<TeamRoom, 'members'> {
   members: Array<[string, TeamMember]>;
@@ -71,17 +72,37 @@ export class RoomManager {
     return this.auditDir;
   }
 
+  private persistenceHooks: Array<() => void> = [];
+
   public setPersistenceHook(hook?: () => void): void {
-    this.onStateMutated = hook;
+    if (hook) {
+      this.persistenceHooks = [hook];
+    } else {
+      this.persistenceHooks = [];
+    }
+  }
+
+  public addPersistenceHook(hook: () => void): void {
+    this.persistenceHooks.push(hook);
+  }
+
+  public removePersistenceHook(hook: () => void): void {
+    this.persistenceHooks = this.persistenceHooks.filter((h) => h !== hook);
   }
 
   private notifyStateMutated(): void {
-    if (!this.onStateMutated) return;
-    try {
-      this.onStateMutated();
-    } catch (err: unknown) {
-      console.error('State persistence hook failed:', err);
+    for (const hook of this.persistenceHooks) {
+      try {
+        hook();
+      } catch (err: unknown) {
+        console.error('State persistence hook failed:', err);
+      }
     }
+  }
+
+  private logAudit(auditRecord: AuditRecord): void {
+    this.auditLogs.push(auditRecord);
+    void databaseService.recordAudit(auditRecord);
   }
 
   /**
@@ -160,6 +181,7 @@ export class RoomManager {
     this.rollToTeamMap.set(cleanRoll, teamCode);
 
     this.syncLeaderboard(room);
+    void databaseService.syncTeam(room);
     return { room, teamCode, memberToken };
   }
 
@@ -192,6 +214,7 @@ export class RoomManager {
         existing.isClubMember = isClubMember;
       }
       this.broadcastSnapshot(room);
+      void databaseService.syncTeam(room);
       return { room, member: existing, memberToken: existing.token || '' };
     }
 
@@ -234,6 +257,7 @@ export class RoomManager {
 
     this.broadcastSnapshot(room);
     this.syncLeaderboard(room);
+    void databaseService.syncTeam(room);
 
     return { room, member: newMember, memberToken };
   }
@@ -280,6 +304,7 @@ export class RoomManager {
 
     const wasCaptain = member.isCaptain;
     room.members.delete(cleanRoll);
+    void databaseService.deleteMember(cleanCode, cleanRoll);
     if (this.rollToTeamMap.get(cleanRoll) === cleanCode) {
       this.rollToTeamMap.delete(cleanRoll);
     }
@@ -290,6 +315,7 @@ export class RoomManager {
       this.roomUsedPairKeys.delete(cleanCode);
       leaderboardManager.removeTeam(cleanCode, true);
       sseHub.clearChannelBuffer(`team:${cleanCode}`);
+      void databaseService.deleteTeam(cleanCode);
       this.notifyStateMutated();
       return { dissolved: true };
     }
@@ -312,6 +338,7 @@ export class RoomManager {
 
     this.broadcastSnapshot(room);
     this.syncLeaderboard(room);
+    void databaseService.syncTeam(room);
     return { dissolved: false, room };
   }
 
@@ -383,6 +410,7 @@ export class RoomManager {
 
     this.broadcastSnapshot(room);
     this.syncLeaderboard(room);
+    void databaseService.syncTeam(room);
     return room;
   }
 
@@ -443,6 +471,7 @@ export class RoomManager {
     }
 
     this.syncLeaderboard(room);
+    void databaseService.syncTeam(room);
     return { room, allReady };
   }
 
@@ -487,6 +516,7 @@ export class RoomManager {
         room.status = 'AWAITING_READY';
         this.broadcastSnapshot(room);
         this.syncLeaderboard(room);
+        void databaseService.syncTeam(room);
         return;
       }
 
@@ -501,6 +531,7 @@ export class RoomManager {
           member.isReady = false;
         }
         this.broadcastSnapshot(room);
+        void databaseService.syncTeam(room);
         sseHub.broadcast(`team:${room.teamCode}`, 'sprint_error', {
           error: 'SPRINT_LAUNCH_FAILED',
           message: 'An error occurred while launching the sprint. Please toggle ready to retry.'
@@ -586,6 +617,13 @@ export class RoomManager {
 
     this.broadcastSnapshot(room);
     this.syncLeaderboard(room);
+    void databaseService.syncTeam(room);
+    for (const sid of Object.values(sessionIds)) {
+      const sess = this.sessions.get(sid);
+      if (sess) {
+        void databaseService.syncSprintSession(sess, room.isPaused, room.pausedAt);
+      }
+    }
 
     // 4. Schedule auto-close timer at 120s + 2.5s network transit grace
     const autoClose = setTimeout(() => {
@@ -646,6 +684,10 @@ export class RoomManager {
       throw new Error(
         `Invalid question index. Expected question ${session.completedQuestions}, got ${questionIndex}.`
       );
+    }
+
+    if (session.questions.length < 15) {
+      throw new Error(`Session contains incomplete question set (${session.questions.length}/15) and cannot accept further submissions.`);
     }
 
     if (questionIndex >= session.questions.length) {
@@ -732,13 +774,6 @@ export class RoomManager {
       anomalyReason: finalAnomalyReason
     };
     session.submissions.push(submission);
-    metrics.recordSubmission({
-      operator: question.operator,
-      bucket: question.bucket,
-      isCorrect: evalResult.isCorrect,
-      isAnomaly: finalIsAnomaly,
-      latencySeconds: validatedLatency / 1000
-    });
 
     // Update room member state
     const member = room.members.get(session.rollNumber);
@@ -747,6 +782,15 @@ export class RoomManager {
       member.completedQuestions = session.completedQuestions;
       member.lastActiveAt = now;
     }
+
+    void databaseService.syncSubmission(sessionId, session.rollNumber, submission, session.teamCode);
+    metrics.recordSubmission({
+      operator: question.operator,
+      bucket: question.bucket,
+      isCorrect: evalResult.isCorrect,
+      isAnomaly: finalIsAnomaly,
+      latencySeconds: validatedLatency / 1000
+    });
 
     // Broadcast teammate_progress to team SSE channel
     const progressEvent: TeammateProgressEvent = {
@@ -762,6 +806,7 @@ export class RoomManager {
     if (session.completedQuestions >= session.questions.length) {
       session.isFinished = true;
       this.persistSessionAudit(session);
+      void databaseService.syncSprintSession(session, room.isPaused, room.pausedAt);
       this.checkRoomCompletion(room);
     }
 
@@ -818,6 +863,13 @@ export class RoomManager {
 
     this.broadcastSnapshot(room);
     this.syncLeaderboard(room);
+    void databaseService.syncTeam(room);
+    for (const member of room.members.values()) {
+      if (member.activeSessionId) {
+        const session = this.sessions.get(member.activeSessionId);
+        if (session) void databaseService.syncSprintSession(session, room.isPaused, room.pausedAt);
+      }
+    }
   }
 
   /**
@@ -905,10 +957,17 @@ export class RoomManager {
         newTeamAverageScore: newAverage
       }
     };
-    this.auditLogs.push(auditRecord);
+    this.logAudit(auditRecord);
 
     this.broadcastSnapshot(room);
     this.syncLeaderboard(room, true);
+    void databaseService.syncTeam(room);
+    if (member.activeSessionId) {
+      const activeSession = this.sessions.get(member.activeSessionId);
+      if (activeSession) {
+        void databaseService.syncSprintSession(activeSession, room.isPaused, room.pausedAt);
+      }
+    }
 
     // If room is in sprint, recheck if remaining active members are all finished
     if (room.status === 'IN_SPRINT') {
@@ -958,7 +1017,16 @@ export class RoomManager {
       this.expiryTimers.delete(room.teamCode);
     }
 
-    this.auditLogs.push({
+    for (const member of room.members.values()) {
+      if (member.activeSessionId) {
+        const session = this.sessions.get(member.activeSessionId);
+        if (session) {
+          void databaseService.syncSprintSession(session, true, room.pausedAt);
+        }
+      }
+    }
+
+    this.logAudit({
       id: `aud_pause_${Date.now()}`,
       timestamp: Date.now(),
       action: 'ROOM_PAUSE',
@@ -968,6 +1036,7 @@ export class RoomManager {
 
     sseHub.broadcast(`team:${room.teamCode}`, 'room_paused', { teamCode: room.teamCode, pausedAt: room.pausedAt });
     this.broadcastSnapshot(room);
+    void databaseService.syncTeam(room);
     this.notifyStateMutated();
   }
 
@@ -992,6 +1061,7 @@ export class RoomManager {
           const session = this.sessions.get(member.activeSessionId);
           if (session) {
             session.expiresAt += pausedDuration;
+            void databaseService.syncSprintSession(session, false);
             const remaining = session.expiresAt + 2500 - Date.now();
             if (remaining > maxRemaining) {
               maxRemaining = remaining;
@@ -1020,7 +1090,7 @@ export class RoomManager {
       }
     }
 
-    this.auditLogs.push({
+    this.logAudit({
       id: `aud_resume_${Date.now()}`,
       timestamp: Date.now(),
       action: 'ROOM_RESUME',
@@ -1030,6 +1100,7 @@ export class RoomManager {
 
     sseHub.broadcast(`team:${room.teamCode}`, 'room_resumed', { teamCode: room.teamCode, resumedAt: Date.now() });
     this.broadcastSnapshot(room);
+    void databaseService.syncTeam(room);
     this.notifyStateMutated();
   }
 
@@ -1051,8 +1122,18 @@ export class RoomManager {
           this.expiryTimers.delete(room.teamCode);
         }
 
+        for (const member of room.members.values()) {
+          if (member.activeSessionId) {
+            const session = this.sessions.get(member.activeSessionId);
+            if (session) {
+              void databaseService.syncSprintSession(session, true, now);
+            }
+          }
+        }
+
         sseHub.broadcast(`team:${room.teamCode}`, 'room_paused', { teamCode: room.teamCode, pausedAt: now });
         this.broadcastSnapshot(room);
+        void databaseService.syncTeam(room);
         pausedTeamCodes.push(room.teamCode);
       }
     }
@@ -1064,7 +1145,7 @@ export class RoomManager {
       adminId,
       details: { pausedCount: pausedTeamCodes.length, pausedTeamCodes }
     };
-    this.auditLogs.push(auditRecord);
+    this.logAudit(auditRecord);
 
     sseHub.broadcastAdminAction({
       action: 'EMERGENCY_PAUSE_ALL',
@@ -1098,6 +1179,7 @@ export class RoomManager {
             const session = this.sessions.get(member.activeSessionId);
             if (session) {
               session.expiresAt += pausedDuration;
+              void databaseService.syncSprintSession(session, false);
               const remaining = session.expiresAt + 2500 - now;
               if (remaining > maxRemaining) {
                 maxRemaining = remaining;
@@ -1127,6 +1209,7 @@ export class RoomManager {
 
         sseHub.broadcast(`team:${room.teamCode}`, 'room_resumed', { teamCode: room.teamCode, resumedAt: now, unfreezeBufferMs: 3000 });
         this.broadcastSnapshot(room);
+        void databaseService.syncTeam(room);
         resumedTeamCodes.push(room.teamCode);
       }
     }
@@ -1138,7 +1221,7 @@ export class RoomManager {
       adminId,
       details: { resumedCount: resumedTeamCodes.length, resumedTeamCodes }
     };
-    this.auditLogs.push(auditRecord);
+    this.logAudit(auditRecord);
 
     sseHub.broadcastAdminAction({
       action: 'EMERGENCY_RESUME_ALL',
@@ -1185,6 +1268,7 @@ export class RoomManager {
 
     const wasCaptain = member.isCaptain;
     room.members.delete(cleanRoll);
+    void databaseService.deleteMember(cleanCode, cleanRoll);
     if (this.rollToTeamMap.get(cleanRoll) === cleanCode) {
       this.rollToTeamMap.delete(cleanRoll);
     }
@@ -1198,6 +1282,7 @@ export class RoomManager {
       this.roomUsedPairKeys.delete(cleanCode);
       leaderboardManager.removeTeam(cleanCode, true);
       sseHub.clearChannelBuffer(`team:${cleanCode}`);
+      void databaseService.deleteTeam(cleanCode);
       dissolved = true;
     } else {
       if (wasCaptain) {
@@ -1211,6 +1296,7 @@ export class RoomManager {
       }
       this.broadcastSnapshot(room);
       this.syncLeaderboard(room);
+      void databaseService.syncTeam(room);
     }
 
     const auditRecord: AuditRecord = {
@@ -1222,7 +1308,7 @@ export class RoomManager {
       adminId,
       details: { wasCaptain, dissolved, remainingMembersCount: room.members.size }
     };
-    this.auditLogs.push(auditRecord);
+    this.logAudit(auditRecord);
 
     sseHub.broadcastAdminAction({
       action: 'KICK_MEMBER',
@@ -1280,6 +1366,7 @@ export class RoomManager {
     this.rooms.delete(cleanCode);
     this.roomUsedPairKeys.delete(cleanCode);
     leaderboardManager.removeTeam(cleanCode, true);
+    void databaseService.deleteTeam(cleanCode);
     sseHub.broadcast(`team:${cleanCode}`, 'sprint_error', {
       error: 'ROOM_DISSOLVED',
       message: `This team room has been dissolved by an organizer: ${reason}`
@@ -1295,7 +1382,7 @@ export class RoomManager {
       adminId,
       reason
     };
-    this.auditLogs.push(auditRecord);
+    this.logAudit(auditRecord);
 
     sseHub.broadcastAdminAction({
       action: 'DISSOLVE_ROOM',
@@ -1335,7 +1422,7 @@ export class RoomManager {
       adminId,
       reason: room.disqualificationReason
     };
-    this.auditLogs.push(auditRecord);
+    this.logAudit(auditRecord);
 
     sseHub.broadcastAdminAction({
       action: 'DISQUALIFY_TEAM',
@@ -1347,6 +1434,7 @@ export class RoomManager {
 
     this.broadcastSnapshot(room);
     this.syncLeaderboard(room, true);
+    void databaseService.syncTeam(room);
     this.notifyStateMutated();
 
     return { success: true, teamCode: cleanCode, isDisqualified: true, reason: room.disqualificationReason };
@@ -1376,7 +1464,7 @@ export class RoomManager {
       teamCode: cleanCode,
       adminId
     };
-    this.auditLogs.push(auditRecord);
+    this.logAudit(auditRecord);
 
     sseHub.broadcastAdminAction({
       action: 'REINSTATE_TEAM',
@@ -1387,6 +1475,7 @@ export class RoomManager {
 
     this.broadcastSnapshot(room);
     this.syncLeaderboard(room, true);
+    void databaseService.syncTeam(room);
     this.notifyStateMutated();
 
     return { success: true, teamCode: cleanCode, isDisqualified: false };
@@ -1420,18 +1509,22 @@ export class RoomManager {
       throw new Error(`Team ${teamCode} has no active unexcused members to apply score adjustments.`);
     }
 
+    room.scoreAdjustment = (room.scoreAdjustment || 0) + deltaPoints;
+
     for (const member of activeMembers) {
       member.individualScore = Math.max(0, member.individualScore + deltaPoints);
       if (member.activeSessionId) {
         const sess = this.sessions.get(member.activeSessionId);
         if (sess) {
           sess.currentScore = member.individualScore;
+          void databaseService.syncSprintSession(sess, room.isPaused, room.pausedAt);
         }
       }
     }
 
     this.syncLeaderboard(room, true);
     this.broadcastSnapshot(room);
+    void databaseService.syncTeam(room);
 
     const activeCount = activeMembers.length;
     const totalScore = activeMembers.reduce((sum, m) => sum + m.individualScore, 0);
@@ -1447,7 +1540,7 @@ export class RoomManager {
       reason,
       details: { deltaPoints, newTeamAverageScore: newAverage }
     };
-    this.auditLogs.push(auditRecord);
+    this.logAudit(auditRecord);
 
     sseHub.broadcastAdminAction({
       action: 'ADJUST_SCORE',
@@ -1488,6 +1581,7 @@ export class RoomManager {
         if (room.status === 'LOBBY' || room.status === 'AWAITING_READY') {
           room.operatorMode = mode;
           this.broadcastSnapshot(room);
+          void databaseService.syncTeam(room);
         }
       }
     }
@@ -1500,7 +1594,7 @@ export class RoomManager {
       adminId,
       details: { newMode: mode ?? 'squad_choice' }
     };
-    this.auditLogs.push(auditRecord);
+    this.logAudit(auditRecord);
 
     sseHub.broadcastAdminAction({
       action: 'ROUND_MODE_CHANGE',
@@ -1510,6 +1604,12 @@ export class RoomManager {
     });
 
     this.notifyStateMutated();
+    void databaseService.syncTournamentWindow(
+      windowManager.isOpen(),
+      windowManager.getConfig().opensAt,
+      windowManager.getConfig().closesAt,
+      mode
+    );
     return this.roundOperatorMode;
   }
 
@@ -1519,6 +1619,7 @@ export class RoomManager {
   private syncLeaderboard(room: TeamRoom, immediate = false): void {
     if (room.status === 'LOBBY') {
       leaderboardManager.removeTeam(room.teamCode, immediate);
+      void databaseService.syncLeaderboard(leaderboardManager.getLeaderboard());
       this.notifyStateMutated();
       return;
     }
@@ -1560,6 +1661,7 @@ export class RoomManager {
     };
 
     leaderboardManager.updateTeam(entry, immediate);
+    void databaseService.syncLeaderboard(leaderboardManager.getLeaderboard());
     this.notifyStateMutated();
   }
 
@@ -1661,6 +1763,20 @@ export class RoomManager {
    */
   public getAllRooms(): TeamSnapshotEvent[] {
     return Array.from(this.rooms.values()).map(r => this.getSnapshot(r));
+  }
+
+  /**
+   * Returns all active internal TeamRoom entity references.
+   */
+  public getRoomEntities(): TeamRoom[] {
+    return Array.from(this.rooms.values());
+  }
+
+  /**
+   * Returns all active internal SprintSession entity references.
+   */
+  public getSessionEntities(): SprintSession[] {
+    return Array.from(this.sessions.values());
   }
 
   /**
@@ -1780,6 +1896,7 @@ export class RoomManager {
 
       this.rooms.set(preset.code, room);
       generatedCodes.push(preset.code);
+      void databaseService.syncTeam(room);
 
       leaderboardManager.updateTeam({
         teamCode: preset.code,
@@ -1799,8 +1916,9 @@ export class RoomManager {
     }
 
     leaderboardManager.broadcastLeaderboard();
+    void databaseService.syncLeaderboard(leaderboardManager.getLeaderboard());
 
-    this.auditLogs.push({
+    this.logAudit({
       id: `aud_sim_${Date.now()}`,
       timestamp: Date.now(),
       action: 'ADMIN_SIMULATE_TEAMS',
@@ -1830,9 +1948,11 @@ export class RoomManager {
       leaderboardManager.removeTeam(code, false);
     }
 
+    void databaseService.deleteTeams(simCodes);
     leaderboardManager.broadcastLeaderboard();
+    void databaseService.syncLeaderboard(leaderboardManager.getLeaderboard());
 
-    this.auditLogs.push({
+    this.logAudit({
       id: `aud_sim_clear_${Date.now()}`,
       timestamp: Date.now(),
       action: 'ADMIN_CLEAR_SIMULATED_TEAMS',
@@ -1905,10 +2025,10 @@ export class RoomManager {
    * and leaderboard entries from a persisted snapshot on server boot.
    */
   public restoreStateSnapshot(snapshot: PersistedTournamentState): void {
-    if (!snapshot || snapshot.version !== 1) return;
+    if (!snapshot || snapshot.version !== 1 || !Array.isArray(snapshot.rooms) || !Array.isArray(snapshot.sessions)) return;
 
-    const prevHook = this.onStateMutated;
-    this.onStateMutated = undefined;
+    const prevHooks = this.persistenceHooks;
+    this.persistenceHooks = [];
 
     try {
       for (const teamCode of this.rooms.keys()) {
@@ -1992,7 +2112,7 @@ export class RoomManager {
 
       leaderboardManager.broadcastLeaderboard();
     } finally {
-      this.onStateMutated = prevHook;
+      this.persistenceHooks = prevHooks;
     }
   }
 

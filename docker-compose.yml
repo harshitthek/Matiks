@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: matiks-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: matiks
+      POSTGRES_PASSWORD: matiks_dev_password
+      POSTGRES_DB: matiks
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U matiks -d matiks"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
