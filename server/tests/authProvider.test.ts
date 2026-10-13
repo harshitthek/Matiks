@@ -757,4 +757,209 @@ describe('Matiks Hackathon — Phase 7: Pluggable Auth & Club OIDC Adapter', () 
       }
     });
   });
+
+  describe('5. OIDC Admin Claims & requireAdminAuth Integration', () => {
+    test('ClubOidcAuthProvider maps is_admin claim and organizer roles to admin role', async () => {
+      const mockServer = http.createServer((req, res) => {
+        if (req.method === 'POST' && req.url === '/api/auth/token') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            access_token: 'mock_token',
+            user: {
+              id: 'ufc_admin_1',
+              rollNumber: 'HARSHIT',
+              name: 'Harshit Lead',
+              email: 'harshit@fossclub.tech',
+              isClubMember: true,
+              is_admin: true,
+              role: 'admin'
+            }
+          }));
+        } else {
+          res.writeHead(404);
+          res.end();
+        }
+      });
+
+      await new Promise<void>((resolve) => mockServer.listen(0, resolve));
+      const port = (mockServer.address() as AddressInfo).port;
+
+      try {
+        const provider = new ClubOidcAuthProvider({
+          issuerUrl: `http://127.0.0.1:${port}`,
+          clientId: 'matiks',
+          clientSecret: 'secret_123',
+          timeoutMs: 1000
+        });
+
+        const authResult = await provider.exchangeCode('valid_code');
+        assert.equal(authResult.user.role, 'admin');
+        assert.equal(authResult.user.is_admin, true);
+        assert.equal(authResult.user.isAdmin, true);
+      } finally {
+        await new Promise<void>((resolve) => mockServer.close(() => resolve()));
+      }
+    });
+
+    test('ADMIN_ROLL_NUMBERS grants is_admin privileges via OIDC exchangeCode while participant login remains unprivileged', async () => {
+      const prevAdminRolls = process.env.ADMIN_ROLL_NUMBERS;
+      process.env.ADMIN_ROLL_NUMBERS = 'SUPERADMIN1,TESTLEAD';
+
+      const mockServer = http.createServer((req, res) => {
+        if (req.method === 'POST' && req.url === '/api/auth/token') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            access_token: 'mock_token',
+            user: {
+              id: 'ufc_user_admin_roll',
+              rollNumber: 'SUPERADMIN1',
+              name: 'Super Admin',
+              email: 'superadmin@example.com',
+              isClubMember: true
+            }
+          }));
+        } else {
+          res.writeHead(404);
+          res.end();
+        }
+      });
+
+      await new Promise<void>((resolve) => mockServer.listen(0, resolve));
+      const port = (mockServer.address() as AddressInfo).port;
+
+      try {
+        const oidcProvider = new ClubOidcAuthProvider({
+          issuerUrl: `http://127.0.0.1:${port}`,
+          clientId: 'matiks',
+          clientSecret: 'secret_123',
+          timeoutMs: 1000
+        });
+
+        // OIDC exchange elevates roll in ADMIN_ROLL_NUMBERS to admin
+        const res = await oidcProvider.exchangeCode('code_admin_roll');
+        assert.equal(res.user.role, 'admin');
+        assert.equal(res.user.is_admin, true);
+        assert.equal(res.user.isAdmin, true);
+
+        // Unauthenticated loginPlayer never elevates privileges
+        const localProvider = new LocalHackathonAuthProvider();
+        const unauthRes = await localProvider.loginPlayer({
+          rollNumber: 'SUPERADMIN1',
+          name: 'Super Admin Impersonator'
+        });
+        assert.equal(unauthRes.user.role, 'participant');
+        assert.equal(unauthRes.user.is_admin, false);
+
+        const normalRes = await localProvider.loginPlayer({
+          rollNumber: 'STUDENT99',
+          name: 'Normal Student'
+        });
+        assert.equal(normalRes.user.role, 'participant');
+        assert.equal(normalRes.user.is_admin, false);
+      } finally {
+        await new Promise<void>((resolve) => mockServer.close(() => resolve()));
+        if (prevAdminRolls === undefined) {
+          delete process.env.ADMIN_ROLL_NUMBERS;
+        } else {
+          process.env.ADMIN_ROLL_NUMBERS = prevAdminRolls;
+        }
+      }
+    });
+
+    test('ADMIN_ROLL_NUMBERS does not grant admin via preferred_username alone without explicit rollNumber claim', async () => {
+      const prevAdminRolls = process.env.ADMIN_ROLL_NUMBERS;
+      process.env.ADMIN_ROLL_NUMBERS = 'TESTLEAD';
+
+      const mockServer = http.createServer((req, res) => {
+        if (req.method === 'POST' && (req.url === '/token' || req.url === '/api/auth/token')) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            access_token: 'mock_token'
+          }));
+        } else if (req.method === 'GET' && (req.url === '/me' || req.url === '/api/auth/me')) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            preferred_username: 'TESTLEAD',
+            name: 'Test Lead',
+            member: true
+          }));
+        } else {
+          res.writeHead(404);
+          res.end();
+        }
+      });
+
+      await new Promise<void>((resolve) => mockServer.listen(0, resolve));
+      const port = (mockServer.address() as AddressInfo).port;
+
+      try {
+        const oidcProvider = new ClubOidcAuthProvider({
+          issuerUrl: `http://127.0.0.1:${port}`,
+          clientId: 'matiks',
+          clientSecret: 'secret_123',
+          timeoutMs: 1000
+        });
+
+        const res = await oidcProvider.exchangeCode('code_lead');
+        assert.equal(res.user.role, 'participant');
+        assert.equal(res.user.is_admin, false);
+        assert.equal(res.user.isAdmin, false);
+      } finally {
+        await new Promise<void>((resolve) => mockServer.close(() => resolve()));
+        if (prevAdminRolls === undefined) {
+          delete process.env.ADMIN_ROLL_NUMBERS;
+        } else {
+          process.env.ADMIN_ROLL_NUMBERS = prevAdminRolls;
+        }
+      }
+    });
+
+    test('requireAdminAuth accepts session tokens with is_admin and rejects non-admin with 403', async () => {
+      const app = createApp();
+      const server = http.createServer(app);
+      await new Promise<void>((resolve) => server.listen(0, resolve));
+      const port = (server.address() as AddressInfo).port;
+      const baseUrl = `http://127.0.0.1:${port}`;
+
+      try {
+        const provider = getAuthProvider();
+
+        // 1. Participant login
+        const participantLogin = await provider.loginPlayer({
+          rollNumber: 'REGULAR01',
+          name: 'Regular Player'
+        });
+
+        // 2. Admin login
+        const adminLogin = await provider.loginAdmin({
+          passcode: getAdminSecret()
+        });
+
+        // 3. Participant accessing /api/admin/telemetry gets 403 Forbidden
+        const participantRes = await fetch(`${baseUrl}/api/admin/telemetry`, {
+          headers: { Authorization: `Bearer ${participantLogin.token}` }
+        });
+        assert.equal(participantRes.status, 403);
+        const participantBody = await participantRes.json();
+        assert.equal(participantBody.error, 'FORBIDDEN_ADMIN_ACCESS');
+
+        // 4. Admin accessing /api/admin/telemetry gets 200 OK
+        const adminRes = await fetch(`${baseUrl}/api/admin/telemetry`, {
+          headers: { Authorization: `Bearer ${adminLogin.token}` }
+        });
+        assert.equal(adminRes.status, 200);
+        const adminBody = await adminRes.json();
+        assert.ok(adminBody.activeRooms !== undefined);
+
+        // 5. Invalid token gets 401 Unauthorized
+        const invalidRes = await fetch(`${baseUrl}/api/admin/telemetry`, {
+          headers: { Authorization: 'Bearer totally_invalid_token' }
+        });
+        assert.equal(invalidRes.status, 401);
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+  });
 });
+

@@ -6,7 +6,8 @@ import { TeamLobby } from './components/lobby/TeamLobby.jsx';
 import { ArenaView } from './components/arena/ArenaView.jsx';
 import { LeaderboardView } from './components/leaderboard/LeaderboardView.jsx';
 import { AdminView } from './components/admin/AdminView.jsx';
-import { leaveTeam, resetTeamSprint } from './services/api.js';
+import { NotFoundView } from './components/common/NotFoundView.jsx';
+import { leaveTeam, resetTeamSprint, getAuthMe } from './services/api.js';
 import { soundFx } from './services/soundFx.js';
 import { FlowerSticker } from './components/common/FlowerSticker.jsx';
 
@@ -46,6 +47,90 @@ export function App() {
   const [inviteTeamCode, setInviteTeamCode] = useState(getUrlInviteTeamCode);
   const [oidcCallbackPending, setOidcCallbackPending] = useState(hasOidcCallbackInUrl);
   const [isAudioMuted, setIsAudioMuted] = useState(() => soundFx.isMuted());
+
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const raw = localStorage.getItem('matiks_oidc_session');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.user) return parsed.user;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  });
+
+  const [hasAdminSession, setHasAdminSession] = useState(() => {
+    try {
+      return Boolean(sessionStorage.getItem('matiks_admin_token'));
+    } catch {
+      return false;
+    }
+  });
+
+  // Verify OIDC session on mount to fetch up-to-date is_admin claims
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('matiks_oidc_session');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed?.token) return;
+      const requestedToken = parsed.token;
+
+      getAuthMe(requestedToken)
+        .then((res) => {
+          let currentStoredToken = null;
+          try {
+            const currentRaw = localStorage.getItem('matiks_oidc_session');
+            if (currentRaw) currentStoredToken = JSON.parse(currentRaw)?.token;
+          } catch {
+            // Ignore parse errors
+          }
+          if (currentStoredToken !== requestedToken) return;
+
+          if (res?.user) {
+            setCurrentUser(res.user);
+            try {
+              localStorage.setItem(
+                'matiks_oidc_session',
+                JSON.stringify({ user: res.user, token: requestedToken })
+              );
+            } catch {
+              // Ignore storage errors
+            }
+          }
+        })
+        .catch((err) => {
+          let currentStoredToken = null;
+          try {
+            const currentRaw = localStorage.getItem('matiks_oidc_session');
+            if (currentRaw) currentStoredToken = JSON.parse(currentRaw)?.token;
+          } catch {
+            // Ignore parse errors
+          }
+          if (currentStoredToken !== requestedToken) return;
+
+          if (err?.status === 401 || err?.status === 403) {
+            setCurrentUser(null);
+            try {
+              localStorage.removeItem('matiks_oidc_session');
+            } catch {
+              // Ignore storage errors
+            }
+          }
+        });
+    } catch {
+      // Ignore parse errors
+    }
+  }, []);
+
+  const isUserAdmin = Boolean(
+    currentUser?.is_admin ||
+    currentUser?.isAdmin ||
+    currentUser?.role === 'admin' ||
+    hasAdminSession
+  );
 
   const handleToggleAudio = useCallback(() => {
     const nextMuted = soundFx.toggleMute();
@@ -487,17 +572,19 @@ export function App() {
               LEADERBOARD 🏆
             </button>
 
-            <button
-              type="button"
-              onClick={() => navigateTo('admin')}
-              className={`font-mono text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 border transition-all ${
-                currentView === 'admin'
-                  ? 'border-[#ff6b5e] bg-[#ff6b5e] text-[#090c0a] font-bold shadow-[2px_2px_0_#090c0a]'
-                  : 'border-white/10 text-[#aab5ac] hover:text-[#e8ece3]'
-              }`}
-            >
-              ADMIN ⚙️
-            </button>
+            {isUserAdmin && (
+              <button
+                type="button"
+                onClick={() => navigateTo('admin')}
+                className={`font-mono text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 border transition-all ${
+                  currentView === 'admin'
+                    ? 'border-[#ff6b5e] bg-[#ff6b5e] text-[#090c0a] font-bold shadow-[2px_2px_0_#090c0a]'
+                    : 'border-white/10 text-[#aab5ac] hover:text-[#e8ece3]'
+                }`}
+              >
+                ADMIN ⚙️
+              </button>
+            )}
 
             {teamSession && currentView === 'squad' && (
               <span className="hidden xs:inline-block sm:inline-block font-mono text-xs font-bold bg-[#ffe36e] text-[#090c0a] px-2 py-0.5 border border-[#090c0a] shadow-[2px_2px_0_#090c0a]">
@@ -526,10 +613,29 @@ export function App() {
         )}
 
         {currentView === 'admin' && (
-          <AdminView
-            onReturnToLobby={() => navigateTo('squad')}
-            onViewLeaderboard={() => navigateTo('leaderboard')}
-          />
+          isUserAdmin ? (
+            <AdminView
+              onReturnToLobby={() => navigateTo('squad')}
+              onViewLeaderboard={() => navigateTo('leaderboard')}
+              onLogin={() => setHasAdminSession(true)}
+              onLogout={() => {
+                setHasAdminSession(false);
+                try {
+                  const rawOidc = localStorage.getItem('matiks_oidc_session');
+                  if (rawOidc) {
+                    const parsed = JSON.parse(rawOidc);
+                    setCurrentUser(parsed?.user || null);
+                  } else {
+                    setCurrentUser(null);
+                  }
+                } catch {
+                  setCurrentUser(null);
+                }
+              }}
+            />
+          ) : (
+            <NotFoundView onReturnToLobby={() => navigateTo('squad')} />
+          )
         )}
 
         <div className={currentView === 'squad' ? (isInActiveArena ? 'w-full h-full flex flex-col min-h-0' : 'w-full') : 'hidden'}>
@@ -593,6 +699,9 @@ export function App() {
               onJoinedTeam={handleJoinedTeam}
               onOidcCallbackComplete={(oidcUser) => {
                 setOidcCallbackPending(false);
+                if (oidcUser) {
+                  setCurrentUser(oidcUser);
+                }
                 if (
                   oidcUser?.rollNumber &&
                   teamSessionRef.current?.rollNumber &&

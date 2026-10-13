@@ -38,14 +38,6 @@ export function AdminAuthGate({ onAuthenticate, onReturnToLobby, error, isSubmit
     onAuthenticate(secret.trim(), organizerName.trim());
   };
 
-  const handleDevPreset = () => {
-    const devName = 'Harshit @ UFC';
-    const devSecret = 'hackathon_admin_secret';
-    setOrganizerName(devName);
-    setSecret(devSecret);
-    onAuthenticate(devSecret, devName);
-  };
-
   return (
     <div className="w-full max-w-md mx-auto px-4 py-12">
       <div className="cyber-card cyber-card-ember p-6 md:p-8 relative text-center">
@@ -131,20 +123,6 @@ export function AdminAuthGate({ onAuthenticate, onReturnToLobby, error, isSubmit
             >
               ← RETURN TO SQUAD LOBBY
             </TactileButton>
-          )}
-
-          {/* Development Quick Helper (Dev Only) */}
-          {Boolean(import.meta.env?.DEV) && (
-            <div className="pt-2 border-t border-white/10">
-              <button
-                type="button"
-                onClick={handleDevPreset}
-                disabled={isSubmitting}
-                className="font-mono text-[11px] text-[#ffe36e] hover:underline"
-              >
-                [ DEV PRESET: USE DEFAULT SECRET ]
-              </button>
-            </div>
           )}
         </form>
       </div>

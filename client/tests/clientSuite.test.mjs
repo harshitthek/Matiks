@@ -205,6 +205,31 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
       const modeBody = JSON.parse(capturedCalls[10].options.body);
       assert.equal(modeBody.operatorMode, 'mixed');
     });
+
+    test('getAuthMe retrieves verified user claims with is_admin and role', async () => {
+      globalThis.fetch = async () => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        json: async () => ({
+          success: true,
+          user: {
+            id: 'oidc_adm1',
+            rollNumber: 'HARSHIT',
+            displayName: 'Harshit K',
+            isClubMember: true,
+            is_admin: true,
+            isAdmin: true,
+            role: 'admin'
+          }
+        })
+      });
+
+      const profile = await api.getAuthMe('valid_session_token');
+      assert.equal(profile.success, true);
+      assert.equal(profile.user.is_admin, true);
+      assert.equal(profile.user.role, 'admin');
+    });
   });
 
   describe('2. Realtime SSE Client (sse.js) — Event Routing, Reconnection & Visibility Resync', () => {
