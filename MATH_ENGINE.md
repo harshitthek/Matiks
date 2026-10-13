@@ -129,14 +129,14 @@ $$\text{Team Final Score} = \frac{1}{N} \sum_{i=1}^N \text{Score}_i$$
 ## 8. Subtraction Borrow Taxonomy & Normalized Generator ($A - B \ge 10$)
 
 To expand competition depth without disrupting muscle memory, subtraction is introduced under strict mathematical constraints:
-* Operands $A, B \in [10, 99]$ with $A > B$.
+* Operands $A \in [20, 99]$ and $B \in [10, 89]$ with $A > B$.
 * **Minimum Difference Invariant:** $A - B \ge 10$. This guarantees all answers are strictly 2 digits ($10 \le A - B \le 89$), preventing single-digit solutions ($52 - 49 = 3$) that would break the universal 2-digit auto-submit reflex.
-* **Anti-Chunking Rules:** $A \not\equiv 0 \pmod{10}$, $B \not\equiv 0 \pmod{10}$, and $\neg(A \equiv 5 \land B \equiv 5)$.
+* **Anti-Chunking Rules:** $A \not\equiv 0 \pmod{10}$, $B \not\equiv 0 \pmod{10}$, $(A - B) \not\equiv 0 \pmod{10}$, and $\neg(A \equiv 5 \pmod{10} \land B \equiv 5 \pmod{10})$.
 
 ### The 2-Bucket Borrow Taxonomy
 | Bucket | Name | Mathematical Constraint | Borrow Operations | Calibrated Baseline $T_{\text{target}}$ |
 | :--- | :--- | :--- | :--- | :--- |
-| **S1** | **Direct (No Borrow)** | $(A \bmod 10) \ge (B \bmod 10)$ and $A - B \ge 10$ | **0 borrows** | **$4.0\text{ seconds}$** |
+| **S1** | **Direct (No Borrow)** | $(A \bmod 10) > (B \bmod 10)$ and $A - B \ge 10$ | **0 borrows** | **$3.8\text{ seconds}$** |
 | **S2** | **Ones Borrow** | $(A \bmod 10) < (B \bmod 10)$ and $A - B \ge 10$ | **1 borrow** (units from tens) | **$6.5\text{ seconds}$** |
 
 ### Subtraction Blueprint (15 Questions Total)

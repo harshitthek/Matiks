@@ -40,7 +40,18 @@ import {
   flushLeaderboardHandler,
   getSessionReplayHandler,
   listSessionReplaysHandler,
-  exportPlayerAuditsCsvHandler
+  exportPlayerAuditsCsvHandler,
+  adminLoginHandler,
+  emergencyPauseAllHandler,
+  emergencyResumeAllHandler,
+  flashBroadcastHandler,
+  kickMemberHandler,
+  dissolveRoomHandler,
+  disqualifyTeamHandler,
+  reinstateTeamHandler,
+  adjustScoreHandler,
+  getRoundModeHandler,
+  setRoundModeHandler
 } from './controllers/adminController.js';
 
 import {
@@ -183,10 +194,21 @@ export function createApp(): express.Application {
   app.get('/api/sprint/sync', syncClientClockHandler);
 
   // Inbound Admin REST endpoints (protected)
+  app.post('/api/admin/login', adminLoginLimiter, adminLoginHandler);
   app.post('/api/admin/window/toggle', requireAdminAuth, toggleWindowHandler);
   app.post('/api/admin/teams/:teamCode/excuse-member', requireAdminAuth, excuseMemberHandler);
   app.post('/api/admin/teams/:teamCode/pause', requireAdminAuth, pauseTeamHandler);
   app.post('/api/admin/teams/:teamCode/resume', requireAdminAuth, resumeTeamHandler);
+  app.post('/api/admin/teams/:teamCode/kick-member', requireAdminAuth, kickMemberHandler);
+  app.post('/api/admin/teams/:teamCode/dissolve', requireAdminAuth, dissolveRoomHandler);
+  app.post('/api/admin/teams/:teamCode/disqualify', requireAdminAuth, disqualifyTeamHandler);
+  app.post('/api/admin/teams/:teamCode/reinstate', requireAdminAuth, reinstateTeamHandler);
+  app.post('/api/admin/teams/:teamCode/adjust-score', requireAdminAuth, adjustScoreHandler);
+  app.post('/api/admin/emergency/pause-all', requireAdminAuth, emergencyPauseAllHandler);
+  app.post('/api/admin/emergency/resume-all', requireAdminAuth, emergencyResumeAllHandler);
+  app.post('/api/admin/broadcast', requireAdminAuth, flashBroadcastHandler);
+  app.get('/api/admin/round-mode', requireAdminAuth, getRoundModeHandler);
+  app.post('/api/admin/round-mode', requireAdminAuth, setRoundModeHandler);
   app.get('/api/admin/audit-logs', requireAdminAuth, getAuditLogsHandler);
   app.get('/api/admin/telemetry', requireAdminAuth, getTelemetryHandler);
   app.get('/api/admin/rooms', requireAdminAuth, getAllRoomsHandler);

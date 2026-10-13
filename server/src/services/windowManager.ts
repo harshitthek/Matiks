@@ -63,6 +63,7 @@ export class WindowManager {
       announcementTicker: ticker ?? this.config.announcementTicker
     };
 
+    leaderboardManager.setPostCloseLive(false);
     this.broadcastStatus();
     for (const cb of this.onOpenCallbacks) {
       try {
@@ -80,7 +81,7 @@ export class WindowManager {
   public closeWindow(): ContestWindowConfig {
     this.config.isOpen = false;
     this.broadcastStatus();
-    leaderboardManager.flush();
+    leaderboardManager.setPostCloseLive(true);
     return this.getConfig();
   }
 

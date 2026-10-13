@@ -140,6 +140,71 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
         }
       );
     });
+
+    test('formats Admin v2.0 governance & emergency endpoints with proper tokens and bodies', async () => {
+      capturedCalls = [];
+      globalThis.fetch = async (url, options = {}) => {
+        capturedCalls.push({ url, options });
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => 'application/json' },
+          json: async () => ({ success: true, url })
+        };
+      };
+
+      await api.adminLogin('hackathon_secret', 'Judge Sneha');
+      await api.adminEmergencyPauseAll('adm.tok.sig');
+      await api.adminEmergencyResumeAll('adm.tok.sig');
+      await api.adminFlashBroadcast('Testing flash banner', 'urgent', 'adm.tok.sig');
+      await api.adminKickMember('CY-01', 'CS002', 'adm.tok.sig');
+      await api.adminDissolveRoom('CY-01', 'Empty lobby', 'adm.tok.sig');
+      await api.adminDisqualifyTeam('CY-01', 'Script injection', 'adm.tok.sig');
+      await api.adminReinstateTeam('CY-01', 'adm.tok.sig');
+      await api.adminAdjustScore('CY-01', 100, 'Bonus points', 'adm.tok.sig');
+      await api.adminGetRoundMode('adm.tok.sig');
+      await api.adminSetRoundMode('mixed', 'adm.tok.sig');
+
+      assert.equal(capturedCalls.length, 11);
+
+      // Verify adminLogin
+      assert.ok(capturedCalls[0].url.endsWith('/api/admin/login'));
+      const loginBody = JSON.parse(capturedCalls[0].options.body);
+      assert.equal(loginBody.secret, 'hackathon_secret');
+      assert.equal(loginBody.organizerName, 'Judge Sneha');
+
+      // Verify emergency pause-all and resume-all
+      assert.ok(capturedCalls[1].url.endsWith('/api/admin/emergency/pause-all'));
+      assert.equal(capturedCalls[1].options.headers['Authorization'], 'Bearer adm.tok.sig');
+      assert.ok(capturedCalls[2].url.endsWith('/api/admin/emergency/resume-all'));
+
+      // Verify flash broadcast
+      assert.ok(capturedCalls[3].url.endsWith('/api/admin/broadcast'));
+      const flashBody = JSON.parse(capturedCalls[3].options.body);
+      assert.equal(flashBody.message, 'Testing flash banner');
+      assert.equal(flashBody.priority, 'urgent');
+
+      // Verify kick & dissolve
+      assert.ok(capturedCalls[4].url.endsWith('/api/admin/teams/CY-01/kick-member'));
+      assert.ok(capturedCalls[5].url.endsWith('/api/admin/teams/CY-01/dissolve'));
+
+      // Verify disqualify & reinstate
+      assert.ok(capturedCalls[6].url.endsWith('/api/admin/teams/CY-01/disqualify'));
+      assert.ok(capturedCalls[7].url.endsWith('/api/admin/teams/CY-01/reinstate'));
+
+      // Verify adjust-score & round-mode
+      assert.ok(capturedCalls[8].url.endsWith('/api/admin/teams/CY-01/adjust-score'));
+      const scoreBody = JSON.parse(capturedCalls[8].options.body);
+      assert.equal(scoreBody.deltaPoints, 100);
+      assert.equal(scoreBody.reason, 'Bonus points');
+
+      assert.ok(capturedCalls[9].url.endsWith('/api/admin/round-mode'));
+      assert.equal(capturedCalls[9].options.method || 'GET', 'GET');
+      assert.ok(capturedCalls[10].url.endsWith('/api/admin/round-mode'));
+      assert.equal(capturedCalls[10].options.method, 'POST');
+      const modeBody = JSON.parse(capturedCalls[10].options.body);
+      assert.equal(modeBody.operatorMode, 'mixed');
+    });
   });
 
   describe('2. Realtime SSE Client (sse.js) — Event Routing, Reconnection & Visibility Resync', () => {

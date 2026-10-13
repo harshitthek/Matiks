@@ -32,6 +32,7 @@ export function TeamLobby({
   const [resumableSprint, setResumableSprint] = useState(null);
   const [error, setError] = useState(null);
   const [countdown, setCountdown] = useState(null); // { secondsRemaining, message }
+  const [flashBanner, setFlashBanner] = useState(null);
   const copyTimerRef = useRef(null);
   const linkTimerRef = useRef(null);
   const suppressedResumeRef = useRef(suppressedResumeSessionId);
@@ -239,6 +240,9 @@ export function TeamLobby({
         setCountdown(null);
         setError(data.message || 'Sprint launch failed.');
       },
+      onFlashAnnouncement: (announcement) => {
+        setFlashBanner(announcement);
+      },
       onError: (err) => {
         console.warn('[Lobby] SSE connection error:', err);
       }
@@ -413,6 +417,35 @@ export function TeamLobby({
           [← LEAVE SQUAD]
         </button>
       </div>
+
+      {/* Global Flash Announcement Banner */}
+      {flashBanner && (
+        <div
+          role="alert"
+          className={`p-3 mb-5 font-mono text-xs flex items-center justify-between border-2 shadow-[4px_4px_0_#090c0a] ${
+            flashBanner.priority === 'emergency'
+              ? 'border-[#ff6b5e] bg-[#ff6b5e]/20 text-[#ff6b5e]'
+              : 'border-[#ffe36e] bg-[#ffe36e]/20 text-[#ffe36e]'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <span>{flashBanner.priority === 'emergency' ? '🚨' : '📢'}</span>
+            <span>
+              <strong className="uppercase mr-1.5 font-black">
+                {flashBanner.priority === 'emergency' ? 'EMERGENCY:' : 'ANNOUNCEMENT:'}
+              </strong>
+              {flashBanner.message}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFlashBanner(null)}
+            className="font-bold ml-2 px-1.5 py-0.5 border border-current hover:bg-white/10 cursor-pointer shrink-0"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Leave Squad Confirmation Banner */}
       {(showLeaveConfirm || leavePromptRequested) && (

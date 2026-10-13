@@ -302,6 +302,33 @@ export class SseHub {
   }
 
   /**
+   * Broadcasts an administrative action across all connected organizer consoles.
+   */
+  public broadcastAdminAction(actionRecord: {
+    action: string;
+    teamCode?: string;
+    details?: Record<string, unknown>;
+    executedBy: string;
+    timestamp: number;
+  }): void {
+    this.broadcast('admin', 'admin_action_broadcast', actionRecord);
+  }
+
+  /**
+   * Broadcasts a priority flash announcement to all channels (team, leaderboard, admin).
+   */
+  public broadcastFlashAnnouncement(message: string, priority: 'normal' | 'emergency' = 'normal'): void {
+    const payload = {
+      message,
+      priority,
+      timestamp: Date.now()
+    };
+    for (const channel of this.channels.keys()) {
+      this.broadcast(channel, 'flash_announcement', payload);
+    }
+  }
+
+  /**
    * Cleans up all connections, buffers, and timers on server shutdown.
    */
   public destroy(): void {

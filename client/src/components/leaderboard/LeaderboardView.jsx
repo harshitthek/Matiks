@@ -20,6 +20,7 @@ export function LeaderboardView({ onReturnToLobby }) {
   const [windowStatus, setWindowStatus] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(() => Date.now());
+  const [flashBanner, setFlashBanner] = useState(null);
 
   // Ceremony Lifecycle: 'LIVE' | 'COUNTDOWN' | 'REVEAL_3RD' | 'REVEAL_2ND' | 'REVEAL_1ST' | 'CELEBRATING'
   const [ceremonyPhase, setCeremonyPhase] = useState('LIVE');
@@ -40,6 +41,9 @@ export function LeaderboardView({ onReturnToLobby }) {
       },
       onWindowStatus: (status) => {
         setWindowStatus(status);
+      },
+      onFlashAnnouncement: (announcement) => {
+        setFlashBanner(announcement);
       },
       onConnectionChange: (connected) => {
         setIsConnected(connected);
@@ -70,14 +74,14 @@ export function LeaderboardView({ onReturnToLobby }) {
         return;
       }
       confetti({
-        particleCount: 35,
+        particleCount: 4,
         angle: 60,
         spread: 60,
         origin: { x: 0.05, y: 0.75 },
         colors: ['#2ee58f', '#ffe36e', '#f5a623', '#ff6b5e']
       });
       confetti({
-        particleCount: 35,
+        particleCount: 4,
         angle: 120,
         spread: 60,
         origin: { x: 0.95, y: 0.75 },
@@ -167,6 +171,37 @@ export function LeaderboardView({ onReturnToLobby }) {
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 py-6 md:py-8">
+      {/* Global Flash Announcement Banner */}
+      {flashBanner && (
+        <div
+          role="alert"
+          className={`p-3.5 mb-6 font-mono text-xs sm:text-sm flex items-center justify-between border-3 shadow-[4px_4px_0_#090c0a] ${
+            flashBanner.priority === 'emergency'
+              ? 'border-[#ff6b5e] bg-[#ff6b5e]/20 text-[#ff6b5e]'
+              : 'border-[#ffe36e] bg-[#ffe36e]/20 text-[#ffe36e]'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="font-extrabold uppercase tracking-wider text-base">
+              {flashBanner.priority === 'emergency' ? '🚨' : '📢'}
+            </span>
+            <span>
+              <strong className="uppercase mr-1.5 font-black">
+                {flashBanner.priority === 'emergency' ? 'ORGANIZER EMERGENCY:' : 'STAGE ANNOUNCEMENT:'}
+              </strong>
+              {flashBanner.message}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFlashBanner(null)}
+            className="font-mono text-xs font-bold px-2 py-0.5 border border-current hover:bg-white/10 transition-colors ml-3 cursor-pointer shrink-0"
+          >
+            DISMISS ✕
+          </button>
+        </div>
+      )}
+
       {/* Top Stage Header */}
       <div className="cyber-card cyber-card-butter p-6 md:p-8 relative mb-8 text-center">
         <WashiTape color="signal" rotation="-2deg" className="-top-3 left-8" />

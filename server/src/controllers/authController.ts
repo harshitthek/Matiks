@@ -16,6 +16,7 @@ import {
   getClubOidcProvider,
   verifyAnySession
 } from '../services/auth/authProviderFactory.js';
+import { roomManager } from '../services/roomManager.js';
 
 function extractBearerToken(req: Request): string | undefined {
   const authHeader = req.headers['authorization'];
@@ -80,7 +81,8 @@ export function getAuthConfigHandler(req: Request, res: Response): void {
     providerName: primaryProvider.providerName,
     oidcIssuer: process.env.CLUB_OIDC_ISSUER_URL || 'https://oidc.fossclub.tech',
     authUrl,
-    state
+    state,
+    roundOperatorMode: roomManager.getRoundOperatorModeOverride()
   });
 }
 

@@ -8,8 +8,20 @@
 import type { Request, Response, NextFunction } from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import { isValidAdminToken } from '../config/env.js';
+import { adminAuthService } from '../services/adminAuthService.js';
 
-export function requireAdminAuth(req: Request, res: Response, next: NextFunction): void {
+declare global {
+  namespace Express {
+    interface Request {
+      adminUser?: {
+        organizerName: string;
+        role: 'organizer' | 'superadmin';
+      };
+    }
+  }
+}
+
+export async function requireAdminAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers['authorization'];
   const adminHeader = req.headers['x-admin-token'] as string | undefined;
 
@@ -23,15 +35,44 @@ export function requireAdminAuth(req: Request, res: Response, next: NextFunction
     }
   }
 
-  if (!isValidAdminToken(providedToken)) {
-    res.status(401).json({
-      error: 'UNAUTHORIZED_ADMIN_ACCESS',
-      message: 'Valid admin token or secret is required to perform this action.'
-    });
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+
+  // 1. Check if token is a valid signed session token
+  const sessionPayload = adminAuthService.verifySessionToken(providedToken);
+  if (sessionPayload) {
+    req.adminUser = {
+      organizerName: sessionPayload.organizerName,
+      role: sessionPayload.role
+    };
+    next();
     return;
   }
 
-  next();
+  // 2. Check if token is the master ADMIN_SECRET (emergency bypass)
+  if (isValidAdminToken(providedToken)) {
+    adminAuthService.recordSuccess(clientIp);
+    const rawOrganizer = req.headers['x-admin-id'] as string | undefined;
+    req.adminUser = {
+      organizerName: adminAuthService.sanitizeOrganizerName(rawOrganizer),
+      role: 'superadmin'
+    };
+    next();
+    return;
+  }
+
+  // Record failure and apply progressive tarpit delay on invalid master-secret candidates
+  if (providedToken && !providedToken.startsWith('adm.')) {
+    adminAuthService.recordFailure(clientIp);
+    const delayMs = adminAuthService.getTarpitDelayMs(clientIp);
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  res.status(401).json({
+    error: 'UNAUTHORIZED_ADMIN_ACCESS',
+    message: 'Valid admin session token or master secret is required to perform this action.'
+  });
 }
 
 /**

@@ -122,9 +122,9 @@
 ### ADR-12: Subtraction Operator Expansion ($A - B \ge 10$) & Mixed Mode
 * **Context:** Adding subtraction without allowing single-digit answers ($52 - 49 = 3$), which would create cognitive asymmetry with 2-digit addition and break the 2-digit auto-submit reflex.
 * **Decision:**
-  * Strictly enforce $A - B \ge 10$ with operands $A, B \in [10, 99]$ and $A > B$, guaranteeing strictly positive, 2-digit answers ($10 \le A - B \le 89$).
-  * Enforce 2-bucket borrow taxonomy: S1 (No Borrow, $A \pmod{10} \ge B \pmod{10}$) and S2 (Ones Borrow, $A \pmod{10} < B \pmod{10}$).
-  * Anti-chunking filters: no 0-endings, no double-5 endings, no duplicates.
+  * Strictly enforce $A - B \ge 10$ with operands $A \in [20, 99]$ and $B \in [10, 89]$ and $A > B$, guaranteeing strictly positive, 2-digit answers ($10 \le A - B \le 89$).
+  * Enforce 2-bucket borrow taxonomy: S1 (No Borrow, $A \pmod{10} > B \pmod{10}$) and S2 (Ones Borrow, $A \pmod{10} < B \pmod{10}$).
+  * Anti-chunking filters: no 0-endings (operands or differences), no double-5 endings, no duplicates.
   * Mixed mode balances 8 addition ($B_1..B_4$) and 7 subtraction ($S_1..S_2$) questions with uniform cross-team slot distributions.
 
 ### ADR-13: 100dvh Zero-Scroll Reflex Arena & User-Gesture Fullscreen Activation
@@ -144,16 +144,16 @@
 ### ADR-15: Disk-Backed Dispute Replay Inspector & Memory-Efficient Audit Streaming
 * **Context:** High-concurrency tournaments generate deep telemetry per question that can exhaust server heap memory if held in RAM.
 * **Decision:**
-  * Detailed question telemetry is serialized directly to disk (`server/data/audits/{sessionId}.json`) upon session completion and freed from heap.
+  * Detailed question telemetry is serialized directly to disk (configured by `AUDIT_LOG_DIR`, defaulting to `server/.data/audits/{sessionId}.json`) upon session completion and retained in memory until squad rematch reset.
   * Admin Dispute Replay Inspector (`GET /api/admin/replay/:sessionId`) streams audit chronologies on-demand into an interactive modal in `/admin`.
   * CSV export includes full per-member latency quantiles, anomaly counts, and cheat reason tags.
 
 ### ADR-16: SSE Monotonic 64-bit Circular Buffer Replay & Epoch Desynchronization Recovery
 * **Context:** Wi-Fi jitter causes brief socket disconnects, while server restarts invalidate client-side sequence counters.
 * **Decision:**
-  * Server tags all SSE events with monotonic sequential IDs (`id: 104\n`) and maintains a 100-event circular buffer per channel.
+  * Server tags all SSE events with epoch-prefixed monotonic IDs (`id: <epoch>:<seq>\n`) and maintains a 100-event circular buffer per channel.
   * Clients pass `Last-Event-ID` on reconnection to replay missed events without full state re-fetch.
-  * Process boots with a unique epoch UUID; if the client's epoch mismatches or the event ID falls outside the retained window, the server emits a clean `stream_resync` event to trigger snapshot synchronization.
+  * Process boots with a numeric Unix-second startup epoch; if the client's epoch mismatches or the sequence number falls outside the retained window, the server emits a clean `stream_resync` event to trigger snapshot synchronization.
   * Turnkey Caddy and Nginx HTTP/2 configs provided in `server/deploy/` with `X-Accel-Buffering: no`.
 
 ### ADR-17: Low-Cardinality Prometheus Metrics & Structured Monotonic Request Logging

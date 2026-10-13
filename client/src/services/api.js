@@ -51,7 +51,7 @@ async function request(endpoint, options = {}) {
 /**
  * Creates a new squad room.
  */
-export async function createTeam(teamName, targetSize, captainRoll, captainName, sessionToken, operatorMode = 'add') {
+export async function createTeam(teamName, targetSize, captainRoll, captainName, sessionToken, operatorMode) {
   const headers = { 'Content-Type': 'application/json' };
   if (sessionToken) {
     headers['x-session-token'] = sessionToken;
@@ -454,7 +454,8 @@ export async function exportPlayerAuditsCsv(adminToken) {
   const res = await fetch(`${BASE_URL}/admin/export/player-audits-csv`, {
     headers: {
       'ngrok-skip-browser-warning': 'true',
-      'x-admin-token': adminToken || ''
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
     }
   });
   const text = await res.text();
@@ -472,5 +473,158 @@ export async function exportPlayerAuditsCsv(adminToken) {
   }
   return text;
 }
+
+/**
+ * Admin: Authenticate organizer with secret and organizer name, returning signed HMAC session token.
+ */
+export async function adminLogin(secret, organizerName) {
+  return request('/admin/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ secret, organizerName })
+  });
+}
+
+/**
+ * Admin: Emergency halt all active sprints simultaneously.
+ */
+export async function adminEmergencyPauseAll(adminToken) {
+  return request('/admin/emergency/pause-all', {
+    method: 'POST',
+    headers: {
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    }
+  });
+}
+
+/**
+ * Admin: Emergency unfreeze all paused sprints with synchronized countdown.
+ */
+export async function adminEmergencyResumeAll(adminToken) {
+  return request('/admin/emergency/resume-all', {
+    method: 'POST',
+    headers: {
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    }
+  });
+}
+
+/**
+ * Admin: Broadcast high-priority flash banner to all live rooms.
+ */
+export async function adminFlashBroadcast(message, priority = 'emergency', adminToken) {
+  return request('/admin/broadcast', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    },
+    body: JSON.stringify({ message, priority })
+  });
+}
+
+/**
+ * Admin: Kick a disruptive or phantom member from a pre-sprint room (LOBBY/AWAITING_READY).
+ */
+export async function adminKickMember(teamCode, rollNumber, adminToken) {
+  return request(`/admin/teams/${encodeURIComponent(teamCode)}/kick-member`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    },
+    body: JSON.stringify({ rollNumber })
+  });
+}
+
+/**
+ * Admin: Dissolve an abandoned or invalid pre-sprint room.
+ */
+export async function adminDissolveRoom(teamCode, reason, adminToken) {
+  return request(`/admin/teams/${encodeURIComponent(teamCode)}/dissolve`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    },
+    body: JSON.stringify({ reason })
+  });
+}
+
+/**
+ * Admin: Disqualify a team and sink them to the bottom of standings.
+ */
+export async function adminDisqualifyTeam(teamCode, reason, adminToken) {
+  return request(`/admin/teams/${encodeURIComponent(teamCode)}/disqualify`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    },
+    body: JSON.stringify({ reason })
+  });
+}
+
+/**
+ * Admin: Reinstate a disqualified team to active standings.
+ */
+export async function adminReinstateTeam(teamCode, adminToken) {
+  return request(`/admin/teams/${encodeURIComponent(teamCode)}/reinstate`, {
+    method: 'POST',
+    headers: {
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    }
+  });
+}
+
+/**
+ * Admin: Manually adjust team score with mandatory audit justification.
+ */
+export async function adminAdjustScore(teamCode, scoreDelta, reason, adminToken) {
+  return request(`/admin/teams/${encodeURIComponent(teamCode)}/adjust-score`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    },
+    body: JSON.stringify({ deltaPoints: scoreDelta, reason })
+  });
+}
+
+/**
+ * Admin: Retrieve the active tournament round operator mode ('add' | 'sub' | 'mixed').
+ */
+export async function adminGetRoundMode(adminToken) {
+  return request('/admin/round-mode', {
+    headers: {
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    }
+  });
+}
+
+/**
+ * Admin: Set tournament round operator mode for subsequent rooms and rematches.
+ */
+export async function adminSetRoundMode(mode, adminToken) {
+  return request('/admin/round-mode', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    },
+    body: JSON.stringify({ operatorMode: mode })
+  });
+}
+
 
 

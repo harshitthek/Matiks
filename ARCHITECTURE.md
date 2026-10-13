@@ -514,7 +514,7 @@ When the central club website (`fossclub.tech`) completes its OIDC endpoints:
 ### 11.1 Resilient SSE Circular Buffer Replay
 * **Circular Ring Buffer:** The `SseHub` maintains an in-memory queue ($K = 100$ items) of previous events per channel.
 * **`Last-Event-ID` Handshake:** When reconnecting after campus Wi-Fi drops, browser `EventSource` passes `Last-Event-ID`. The hub replays missed events $[ \text{lastId} + 1, \text{current} ]$ without requesting a full team snapshot.
-* **Epoch-Aware Desync Guard:** Process boots with an epoch UUID. If the server restarts or the client's `lastEventId` falls outside the retained ring buffer, the server emits `stream_resync` instructing the client to fetch a fresh full state snapshot.
+* **Epoch-Aware Desync Guard:** Process boots with a numeric Unix-second startup epoch (`<epoch>:<seq>`). If the server restarts or the client's `lastEventId` falls outside the retained ring buffer, the server emits `stream_resync` instructing the client to fetch a fresh full state snapshot.
 
 ### 11.2 Anti-Screen-Peeking Delayed Broadcast Queue
 * Public `/api/sse/leaderboard` streams through a sliding FIFO queue with a configurable delay (`LEADERBOARD_STREAM_DELAY_MS`, default 5000ms), preventing teams near the stage screen from monitoring competitor streaks.

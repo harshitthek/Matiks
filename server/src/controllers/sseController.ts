@@ -148,6 +148,8 @@ export function sseTeamHandler(req: Request, res: Response): void {
           questionIndex: sub.questionIndex,
           a: q?.a,
           b: q?.b,
+          operator: q?.operator,
+          bucket: q?.bucket,
           answer: sub.submittedAnswer,
           isCorrect: sub.isCorrect,
           pointsAwarded: sub.pointsAwarded,

@@ -87,6 +87,7 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
   const [rollNumber, setRollNumber] = useState(init.initialRoll);
   const [name, setName] = useState(init.initialName);
   const [operatorMode, setOperatorMode] = useState(init.initialOperatorMode); // 'add' | 'sub' | 'mixed'
+  const [lockedRoundMode, setLockedRoundMode] = useState(null);
   const [loading, setLoading] = useState(false);
   const [oidcLoading, setOidcLoading] = useState(init.hasOidcCallback);
   const [error, setError] = useState(init.initialOidcError);
@@ -97,6 +98,27 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
   useEffect(() => {
     onOidcCallbackCompleteRef.current = onOidcCallbackComplete;
   }, [onOidcCallbackComplete]);
+
+  useEffect(() => {
+    let active = true;
+    getAuthConfig()
+      .then((cfg) => {
+        if (!active) return;
+        const override = cfg?.roundOperatorMode;
+        if (override === 'add' || override === 'sub' || override === 'mixed') {
+          setLockedRoundMode(override);
+          setOperatorMode(override);
+        } else {
+          setLockedRoundMode(null);
+        }
+      })
+      .catch(() => {
+        // Ignore network errors on config fetch
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -486,28 +508,37 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
 
               <div>
                 <label className="block font-mono text-xs uppercase tracking-wider text-[#e8ece3] mb-1.5">
-                  Arithmetic Mode
+                  Arithmetic Mode{' '}
+                  {lockedRoundMode && (
+                    <span className="text-[10px] text-[#ffe36e] ml-1">
+                      (LOCKED BY ORGANIZER)
+                    </span>
+                  )}
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { id: 'add', label: '+ ADD', title: 'Addition (15 questions)' },
                     { id: 'sub', label: '- SUB', title: 'Subtraction (15 questions)' },
                     { id: 'mixed', label: '± MIXED', title: 'Mixed (8 Add + 7 Sub)' }
-                  ].map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setOperatorMode(m.id)}
-                      className={`py-2 px-2 border-2 font-mono text-xs tracking-wider uppercase font-bold transition-all cursor-pointer ${
-                        operatorMode === m.id
-                          ? 'border-[#090c0a] bg-[#2ee58f] text-[#090c0a] shadow-[3px_3px_0_#090c0a]'
-                          : 'border-[#aab5ac]/30 bg-[#090c0a] text-[#aab5ac]'
-                      }`}
-                      title={m.title}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
+                  ].map((m) => {
+                    const effectiveMode = lockedRoundMode || operatorMode;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        disabled={Boolean(lockedRoundMode)}
+                        onClick={() => !lockedRoundMode && setOperatorMode(m.id)}
+                        className={`py-2 px-2 border-2 font-mono text-xs tracking-wider uppercase font-bold transition-all ${
+                          effectiveMode === m.id
+                            ? 'border-[#090c0a] bg-[#2ee58f] text-[#090c0a] shadow-[3px_3px_0_#090c0a]'
+                            : 'border-[#aab5ac]/30 bg-[#090c0a] text-[#aab5ac]'
+                        } ${lockedRoundMode ? 'opacity-75 cursor-not-allowed' : 'cursor-pointer'}`}
+                        title={m.title}
+                      >
+                        {m.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </>

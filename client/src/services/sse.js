@@ -141,6 +141,18 @@ export function connectTeamStream(teamCode, token, handlers = {}) {
       }
     });
 
+    // 5b. Flash announcement banner
+    eventSource.addEventListener('flash_announcement', (e) => {
+      updateEventId(e);
+      resetKeepaliveWatchdog();
+      try {
+        const data = JSON.parse(e.data);
+        handlers.onFlashAnnouncement?.(data);
+      } catch (err) {
+        console.error('[SSE] Failed to parse flash_announcement:', err);
+      }
+    });
+
     // 6. Teammate progress HUD update
     eventSource.addEventListener('teammate_progress', (e) => {
       updateEventId(e);
@@ -339,6 +351,17 @@ export function connectLeaderboardStream(handlers = {}) {
         handlers.onStreamResync?.(data);
       } catch (err) {
         console.error('[SSE:Leaderboard] Stream resync parse error:', err);
+      }
+    });
+
+    eventSource.addEventListener('flash_announcement', (e) => {
+      if (e?.lastEventId) lastEventId = e.lastEventId;
+      markConnectionHealthy();
+      try {
+        const data = JSON.parse(e.data);
+        handlers.onFlashAnnouncement?.(data);
+      } catch (err) {
+        console.error('[SSE:Leaderboard] Flash announcement parse error:', err);
       }
     });
   };
@@ -554,6 +577,28 @@ export function connectAdminStream(adminToken, handlers = {}) {
         handlers.onFullRefreshNeeded?.(data);
       } catch (err) {
         console.error('[SSE:Admin] Stream resync parse error:', err);
+      }
+    });
+
+    eventSource.addEventListener('admin_action_broadcast', (e) => {
+      if (e?.lastEventId) lastEventId = e.lastEventId;
+      markConnectionHealthy();
+      try {
+        const data = JSON.parse(e.data);
+        handlers.onAdminAction?.(data);
+      } catch (err) {
+        console.error('[SSE:Admin] Admin action broadcast parse error:', err);
+      }
+    });
+
+    eventSource.addEventListener('flash_announcement', (e) => {
+      if (e?.lastEventId) lastEventId = e.lastEventId;
+      markConnectionHealthy();
+      try {
+        const data = JSON.parse(e.data);
+        handlers.onFlashAnnouncement?.(data);
+      } catch (err) {
+        console.error('[SSE:Admin] Flash announcement parse error:', err);
       }
     });
   };

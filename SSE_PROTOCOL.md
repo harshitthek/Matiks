@@ -346,11 +346,11 @@ document.addEventListener('visibilitychange', () => {
 
 To survive Wi-Fi packet loss without triggering expensive full-state roundtrips, the SSE Hub implements monotonic 64-bit sequence tagging and circular buffer replay:
 
-1. **Monotonic IDs:** Every SSE data event is prefixed with a sequential ID (`id: <number>\n`).
+1. **Monotonic IDs:** Every SSE data event is prefixed with a composite `epoch:seq` ID (`id: <epoch>:<seq>\n`).
 2. **In-Memory Ring Buffer:** Retains the last $K = 100$ events per channel.
-3. **Reconnection Header & Query Param:** When `EventSource` reconnects or reloads, it sends `Last-Event-ID: <id>` or `?lastEventId=<id>`.
-4. **Replay Dispatch:** If the requested ID is within the retained buffer, the server immediately pushes missed events $[ \text{lastEventId} + 1, \text{latest} ]$.
-5. **Epoch Desynchronization Protection:** Process boots with an epoch UUID. If the server restarts or the client's `lastEventId` falls outside the retained buffer, the server emits `event: stream_resync` instructing the client to fetch a fresh full snapshot.
+3. **Reconnection Header & Query Param:** When `EventSource` reconnects or reloads, it sends the full `epoch:seq` string via `Last-Event-ID: <epoch>:<seq>` or `?lastEventId=<epoch>:<seq>` (a bare `<seq>` number is also accepted for legacy clients, skipping epoch validation).
+4. **Replay Dispatch:** If the requested sequence number is within the retained buffer and the epoch matches, the server immediately pushes missed events $[ \text{lastEventId} + 1, \text{latest} ]$.
+5. **Epoch Desynchronization Protection:** The server boots with a process epoch (`Math.floor(Date.now() / 1000)` Unix seconds at startup). If the server restarts (causing an epoch mismatch) or the client's `lastEventId` falls outside the retained buffer, the server emits `event: stream_resync` instructing the client to fetch a fresh full snapshot.
 
 ---
 
@@ -362,5 +362,5 @@ To survive Wi-Fi packet loss without triggering expensive full-state roundtrips,
 * **Instant Flush:** The moment the contest window is closed or enters the 3-second settling freeze, the delayed queue is instantly flushed to display authoritative final standings for the podium reveal.
 
 ### Production Observability Endpoints
-* `GET /metrics`: Prometheus text exposition endpoint protected by `METRICS_TOKEN` / `ADMIN_SECRET` constant-time authorization. Exposes active SSE connections, submission counters, latency histograms (SSE streams excluded to protect percentiles), and room states.
+* `GET /metrics`: Prometheus text exposition endpoint. Authentication is enforced in production (`NODE_ENV=production`) or when `REQUIRE_METRICS_AUTH=true` (and whenever `METRICS_TOKEN` is configured outside `NODE_ENV=test`) via constant-time `METRICS_TOKEN` / `ADMIN_SECRET` verification (`Authorization: Bearer <token>` or `x-metrics-token`), and remains open for local scraping in development (when `METRICS_TOKEN` is unset) and test environments. Exposes active SSE connections, submission counters, latency histograms (SSE streams excluded to protect percentiles), and room states.
 * `GET /api/admin/replay/:sessionId`: Streams millisecond-by-millisecond question submission telemetry from disk audits into the admin dispute inspector modal.

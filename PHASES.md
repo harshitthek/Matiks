@@ -159,7 +159,7 @@
 ### Phase 11: Disk-Backed Dispute Replay & Full Audit Telemetry
 * **Objectives:** Provide millisecond-by-millisecond anti-cheat inspection without memory leaks.
 * **Deliverables:**
-  * Session completion serializes full question telemetry to `server/data/audits/{sessionId}.json`.
+  * Session completion serializes full question telemetry to `server/.data/audits/{sessionId}.json`.
   * `GET /api/admin/replay/:sessionId` streams audit chronologies on-demand into an interactive modal.
   * Enhanced RFC-4180 CSV export with per-member latency quantiles, anomaly counts, and cheat reason tags.
 * **Exit Criteria:** Disputed sessions replayable in Admin UI; CSV formulas safely neutralized.

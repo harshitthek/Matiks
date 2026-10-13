@@ -53,6 +53,11 @@ export function normalizeRoute(rawPath: string): string {
     path === '/api/admin/flush-leaderboard' ||
     path === '/api/admin/replays' ||
     path === '/api/admin/export/player-audits-csv' ||
+    path === '/api/admin/login' ||
+    path === '/api/admin/emergency/pause-all' ||
+    path === '/api/admin/emergency/resume-all' ||
+    path === '/api/admin/broadcast' ||
+    path === '/api/admin/round-mode' ||
     path === '/metrics'
   ) {
     return path;
@@ -73,6 +78,21 @@ export function normalizeRoute(rawPath: string): string {
   }
   if (/^\/api\/admin\/teams\/[^/]+\/resume$/.test(path)) {
     return '/api/admin/teams/:teamCode/resume';
+  }
+  if (/^\/api\/admin\/teams\/[^/]+\/kick-member$/.test(path)) {
+    return '/api/admin/teams/:teamCode/kick-member';
+  }
+  if (/^\/api\/admin\/teams\/[^/]+\/dissolve$/.test(path)) {
+    return '/api/admin/teams/:teamCode/dissolve';
+  }
+  if (/^\/api\/admin\/teams\/[^/]+\/disqualify$/.test(path)) {
+    return '/api/admin/teams/:teamCode/disqualify';
+  }
+  if (/^\/api\/admin\/teams\/[^/]+\/reinstate$/.test(path)) {
+    return '/api/admin/teams/:teamCode/reinstate';
+  }
+  if (/^\/api\/admin\/teams\/[^/]+\/adjust-score$/.test(path)) {
+    return '/api/admin/teams/:teamCode/adjust-score';
   }
   if (/^\/api\/admin\/replay\/[^/]+$/.test(path)) {
     return '/api/admin/replay/:sessionId';
@@ -418,7 +438,17 @@ export class MetricsRegistry {
           ? 'sub'
           : 'other';
 
-    const rawBucket = (params.bucket || 'other').toLowerCase().replace(/\s+/g, '_');
+    const BUCKET_LABELS: Record<string, string> = {
+      B1: 'no_carry',
+      B2: 'ones_carry',
+      B3: 'tens_carry',
+      B4: 'double_carry',
+      S1: 'no_borrow',
+      S2: 'ones_borrow'
+    };
+    const normalizedBucket =
+      BUCKET_LABELS[(params.bucket || '').toUpperCase()] ??
+      (params.bucket || 'other').toLowerCase().replace(/\s+/g, '_');
     const bucket = [
       'no_carry',
       'ones_carry',
@@ -426,8 +456,8 @@ export class MetricsRegistry {
       'double_carry',
       'no_borrow',
       'ones_borrow'
-    ].includes(rawBucket)
-      ? rawBucket
+    ].includes(normalizedBucket)
+      ? normalizedBucket
       : 'other';
 
     const result = params.isAnomaly ? 'anomaly' : params.isCorrect ? 'correct' : 'incorrect';

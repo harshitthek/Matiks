@@ -23,7 +23,7 @@ Teams gather in an interactive lobby, sync up their roster, select an operator m
 
 | Parameter | Specification | Detailed Rule |
 | :--- | :--- | :--- |
-| **Math Scope** | **Addition, Subtraction & Mixed Mode** | Operands $A, B \in [10, 99]$. Addition sums can cross $100$ up to $198$. Subtraction strictly enforces $A - B \ge 10$ ($10 \le A - B \le 89$) so answers are always non-negative and 2 digits. Mixed mode balances 8 addition + 7 subtraction questions. |
+| **Math Scope** | **Addition, Subtraction & Mixed Mode** | Addition uses $A, B \in [10, 99]$ (sums up to $198$). Subtraction uses $A \in [20, 99], B \in [10, 89]$ and strictly enforces $A - B \ge 10$ ($10 \le A - B \le 89$) so answers are always non-negative and 2 digits. Mixed mode balances 8 addition + 7 subtraction questions. |
 | **Question Count** | **15 Questions** | Standardized set per sprint; latency calibrated per problem complexity. |
 | **Total Duration** | **2 Minutes (120s)** | Strict server-side timestamp countdown. $+2.5\text{s}$ transit grace for valid submissions. |
 | **Difficulty Engine** | **Zero-Luck Normalized** | Addition: **3 No-Carry (B1), 4 Ones-Carry (B2), 4 Century-Carry (B3), 4 Double-Carry (B4)** targeting $[1650, 1750]$. Subtraction: **7 No-Borrow (S1), 8 Ones-Borrow (S2)** targeting $[520, 580]$. Sampled in $\mathcal{O}(1)$ time ($0.11\text{ms}$/paper) with commutative deduplication, 0/double-5 exclusions, and cross-game non-repetition. |

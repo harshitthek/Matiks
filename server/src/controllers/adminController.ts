@@ -10,6 +10,8 @@ import { randomUUID } from 'node:crypto';
 import { roomManager } from '../services/roomManager.js';
 import { windowManager } from '../services/windowManager.js';
 import { leaderboardManager } from '../services/leaderboardManager.js';
+import { adminAuthService } from '../services/adminAuthService.js';
+import { sseHub } from '../services/sseHub.js';
 
 const adminStreamTickets = new Map<string, number>();
 
@@ -346,6 +348,223 @@ export function exportPlayerAuditsCsvHandler(_req: Request, res: Response): void
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to export player audits';
     res.status(500).json({ error: message });
+  }
+}
+
+export async function adminLoginHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const { secret, organizerName } = req.body || {};
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+
+    const result = await adminAuthService.loginOrganizer(secret, organizerName, clientIp);
+
+    if (!result.success) {
+      res.status(401).json({
+        error: 'INVALID_ADMIN_CREDENTIALS',
+        message: 'Invalid administrator secret key.',
+        tarpitMs: result.tarpitMs
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      token: result.token,
+      organizerName: result.payload?.organizerName,
+      role: result.payload?.role,
+      expiresAt: result.payload?.expiresAt
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Admin authentication failed';
+    res.status(500).json({ error: message });
+  }
+}
+
+export function emergencyPauseAllHandler(req: Request, res: Response): void {
+  try {
+    const adminId = req.adminUser?.organizerName || (req.headers['x-admin-id'] as string) || 'admin_organizer';
+    const result = roomManager.emergencyPauseAllSprints(adminId);
+    res.status(200).json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to pause all sprints';
+    res.status(500).json({ error: message });
+  }
+}
+
+export function emergencyResumeAllHandler(req: Request, res: Response): void {
+  try {
+    const adminId = req.adminUser?.organizerName || (req.headers['x-admin-id'] as string) || 'admin_organizer';
+    const result = roomManager.emergencyResumeAllSprints(adminId);
+    res.status(200).json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to resume all sprints';
+    res.status(500).json({ error: message });
+  }
+}
+
+export function flashBroadcastHandler(req: Request, res: Response): void {
+  try {
+    const { message, priority } = req.body || {};
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      res.status(400).json({ error: 'Announcement message is required.' });
+      return;
+    }
+
+    const cleanMsg = message.trim().slice(0, 200);
+    const cleanPriority = priority === 'emergency' || priority === 'urgent' ? 'emergency' : 'normal';
+    sseHub.broadcastFlashAnnouncement(cleanMsg, cleanPriority);
+
+    const adminId = req.adminUser?.organizerName || (req.headers['x-admin-id'] as string) || 'admin_organizer';
+    sseHub.broadcastAdminAction({
+      action: 'FLASH_ANNOUNCEMENT',
+      details: { message: cleanMsg, priority: cleanPriority },
+      executedBy: adminId,
+      timestamp: Date.now()
+    });
+
+    res.status(200).json({
+      success: true,
+      message: cleanMsg,
+      priority: cleanPriority,
+      broadcastAt: Date.now()
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to broadcast flash announcement';
+    res.status(500).json({ error: message });
+  }
+}
+
+export function kickMemberHandler(req: Request, res: Response): void {
+  try {
+    const rawCode = req.params['teamCode'];
+    const teamCode = Array.isArray(rawCode) ? rawCode[0] : rawCode;
+    const { rollNumber } = req.body || {};
+
+    if (!teamCode || !rollNumber) {
+      res.status(400).json({ error: 'teamCode and rollNumber are required' });
+      return;
+    }
+
+    const adminId = req.adminUser?.organizerName || (req.headers['x-admin-id'] as string) || 'admin_organizer';
+    const result = roomManager.kickMemberFromRoom(teamCode, rollNumber, adminId);
+    res.status(200).json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to kick member';
+    res.status(400).json({ error: message });
+  }
+}
+
+export function dissolveRoomHandler(req: Request, res: Response): void {
+  try {
+    const rawCode = req.params['teamCode'];
+    const teamCode = Array.isArray(rawCode) ? rawCode[0] : rawCode;
+    const { reason } = req.body || {};
+
+    if (!teamCode) {
+      res.status(400).json({ error: 'teamCode is required' });
+      return;
+    }
+
+    const adminId = req.adminUser?.organizerName || (req.headers['x-admin-id'] as string) || 'admin_organizer';
+    const result = roomManager.dissolveRoom(teamCode, adminId, reason);
+    res.status(200).json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to dissolve room';
+    res.status(400).json({ error: message });
+  }
+}
+
+export function disqualifyTeamHandler(req: Request, res: Response): void {
+  try {
+    const rawCode = req.params['teamCode'];
+    const teamCode = Array.isArray(rawCode) ? rawCode[0] : rawCode;
+    const { reason } = req.body || {};
+
+    if (!teamCode) {
+      res.status(400).json({ error: 'teamCode is required' });
+      return;
+    }
+
+    const adminId = req.adminUser?.organizerName || (req.headers['x-admin-id'] as string) || 'admin_organizer';
+    const result = roomManager.disqualifyTeam(teamCode, adminId, reason || 'Disqualified by tournament organizer');
+    res.status(200).json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to disqualify team';
+    res.status(400).json({ error: message });
+  }
+}
+
+export function reinstateTeamHandler(req: Request, res: Response): void {
+  try {
+    const rawCode = req.params['teamCode'];
+    const teamCode = Array.isArray(rawCode) ? rawCode[0] : rawCode;
+
+    if (!teamCode) {
+      res.status(400).json({ error: 'teamCode is required' });
+      return;
+    }
+
+    const adminId = req.adminUser?.organizerName || (req.headers['x-admin-id'] as string) || 'admin_organizer';
+    const result = roomManager.reinstateTeam(teamCode, adminId);
+    res.status(200).json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to reinstate team';
+    res.status(400).json({ error: message });
+  }
+}
+
+export function adjustScoreHandler(req: Request, res: Response): void {
+  try {
+    const rawCode = req.params['teamCode'];
+    const teamCode = Array.isArray(rawCode) ? rawCode[0] : rawCode;
+    const { deltaPoints, reason } = req.body || {};
+
+    if (!teamCode || deltaPoints === undefined) {
+      res.status(400).json({ error: 'teamCode and deltaPoints are required' });
+      return;
+    }
+
+    const delta = Number(deltaPoints);
+    if (!Number.isFinite(delta)) {
+      res.status(400).json({ error: 'deltaPoints must be a finite number' });
+      return;
+    }
+
+    const adminId = req.adminUser?.organizerName || (req.headers['x-admin-id'] as string) || 'admin_organizer';
+    const result = roomManager.adjustTeamScore(teamCode, delta, reason || 'Administrative score adjustment', adminId);
+    res.status(200).json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to adjust score';
+    res.status(400).json({ error: message });
+  }
+}
+
+export function getRoundModeHandler(_req: Request, res: Response): void {
+  res.status(200).json({
+    operatorMode: roomManager.getRoundOperatorMode(),
+    overrideMode: roomManager.getRoundOperatorModeOverride()
+  });
+}
+
+export function setRoundModeHandler(req: Request, res: Response): void {
+  try {
+    const { operatorMode } = req.body || {};
+    const normalized = operatorMode === null || operatorMode === 'none' ? null : operatorMode;
+    if (normalized !== null && normalized !== 'add' && normalized !== 'sub' && normalized !== 'mixed') {
+      res.status(400).json({ error: 'operatorMode must be "add", "sub", "mixed", or null' });
+      return;
+    }
+
+    const adminId = req.adminUser?.organizerName || (req.headers['x-admin-id'] as string) || 'admin_organizer';
+    const mode = roomManager.setRoundOperatorMode(normalized, adminId);
+    res.status(200).json({
+      success: true,
+      operatorMode: mode ?? 'add',
+      overrideMode: mode
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to set round operator mode';
+    res.status(400).json({ error: message });
   }
 }
 

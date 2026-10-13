@@ -43,6 +43,8 @@ export interface TeamRoom {
   completedAt?: number;
   masterPaperId?: string;
   operatorMode?: OperatorMode;
+  isDisqualified?: boolean;
+  disqualificationReason?: string;
 }
 
 export interface SubmissionRecord {
@@ -131,6 +133,8 @@ export interface LeaderboardEntry {
   averageTimeSeconds: number;
   memberBreakdown: MemberLeaderboardSummary[];
   status: 'WAITING' | 'IN_SPRINT' | 'FINISHED';
+  isDisqualified?: boolean;
+  disqualificationReason?: string;
 }
 
 export interface ContestWindowConfig {
@@ -146,6 +150,15 @@ export type AuditAction =
   | 'EXCUSE_MEMBER'
   | 'ROOM_PAUSE'
   | 'ROOM_RESUME'
+  | 'EMERGENCY_PAUSE_ALL'
+  | 'EMERGENCY_RESUME_ALL'
+  | 'KICK_MEMBER'
+  | 'DISSOLVE_ROOM'
+  | 'DISQUALIFY_TEAM'
+  | 'REINSTATE_TEAM'
+  | 'ADJUST_SCORE'
+  | 'ROUND_MODE_CHANGE'
+  | 'FLASH_ANNOUNCEMENT'
   | 'WINDOW_TOGGLE'
   | 'REATTEMPT_GRANTED'
   | 'ADMIN_SIMULATE_TEAMS'
@@ -174,6 +187,8 @@ export interface TeamSnapshotEvent {
   isPaused?: boolean;
   startedAt?: number;
   operatorMode?: OperatorMode;
+  isDisqualified?: boolean;
+  disqualificationReason?: string;
   members: {
     rollNumber: string;
     name: string;

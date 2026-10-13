@@ -95,6 +95,7 @@ export function ArenaView({
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [submissionError, setSubmissionError] = useState(null);
   const [teammates, setTeammates] = useState([]);
+  const [flashBanner, setFlashBanner] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(() =>
     typeof document !== 'undefined'
       ? Boolean(document.fullscreenElement || document.webkitFullscreenElement)
@@ -332,6 +333,9 @@ export function ArenaView({
           pauseStartRef.current = null;
         }
         setIsPaused(false);
+      },
+      onFlashAnnouncement: (announcement) => {
+        setFlashBanner(announcement);
       }
     });
 
@@ -722,6 +726,30 @@ export function ArenaView({
           </span>
         </div>
       </div>
+
+      {/* Global Flash Announcement Banner */}
+      {flashBanner && (
+        <div
+          role="alert"
+          className={`shrink-0 p-1.5 sm:p-2 mb-1 sm:mb-2 font-mono text-[11px] sm:text-xs flex items-center justify-between border-2 shadow-[2px_2px_0_#090c0a] ${
+            flashBanner.priority === 'emergency'
+              ? 'border-[#ff6b5e] bg-[#ff6b5e]/20 text-[#ff6b5e]'
+              : 'border-[#ffe36e] bg-[#ffe36e]/20 text-[#ffe36e]'
+          }`}
+        >
+          <div className="flex items-center gap-1.5 truncate">
+            <span>{flashBanner.priority === 'emergency' ? '🚨' : '📢'}</span>
+            <span className="truncate">{flashBanner.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFlashBanner(null)}
+            className="font-bold ml-2 px-1 border border-current hover:bg-white/10 cursor-pointer shrink-0"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Accidental Back / Exit Confirmation Bar */}
       {(showExitConfirm || exitPromptRequested) && (

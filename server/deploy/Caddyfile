@@ -10,7 +10,7 @@
 {$SITE_ADDRESS::80} {
     # 1. Realtime SSE Streams: Unbuffered instant flush (Caddy natively handles text/event-stream)
     handle /api/sse/* {
-        reverse_proxy localhost:3000 {
+        reverse_proxy localhost:{$BACKEND_PORT:3001} {
             header_up Host {host}
             header_up X-Real-IP {remote_host}
         }
@@ -18,7 +18,7 @@
 
     # 2. REST API Endpoints
     handle /api/* {
-        reverse_proxy localhost:3000
+        reverse_proxy localhost:{$BACKEND_PORT:3001}
     }
 
     # 3. Static Client Build (Vite) with SPA Fallback

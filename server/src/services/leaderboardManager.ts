@@ -12,6 +12,17 @@ import { sseHub } from './sseHub.js';
 const MAX_STREAM_DELAY_MS = 300_000; // 5 minutes maximum delay
 const MAX_DELAYED_QUEUE_SIZE = 100;
 
+function resolveInitialStreamDelayMs(): number {
+  const raw = process.env.LEADERBOARD_STREAM_DELAY_MS;
+  if (raw !== undefined && raw.trim() !== '') {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed)) {
+      return Math.min(MAX_STREAM_DELAY_MS, Math.max(0, Math.floor(parsed)));
+    }
+  }
+  return process.env.NODE_ENV === 'test' ? 0 : 5000;
+}
+
 export class LeaderboardManager {
   private entries = new Map<string, LeaderboardEntry>();
   private broadcastTimeout: NodeJS.Timeout | null = null;
@@ -20,7 +31,19 @@ export class LeaderboardManager {
   private lastPublicSnapshot: LeaderboardEntry[] = [];
   private hasReleasedPublicSnapshot = false;
   private pendingBroadcast = false;
-  private streamDelayMs = 0;
+  private streamDelayMs = resolveInitialStreamDelayMs();
+  private postCloseLive = false;
+
+  /**
+   * Controls whether public leaderboard broadcasts bypass streamDelayMs after the
+   * contest window closes (preventing delayed queued snapshots from reordering the podium).
+   */
+  public setPostCloseLive(live: boolean): void {
+    this.postCloseLive = live;
+    if (live) {
+      this.flush();
+    }
+  }
 
   /**
    * Sets the anti-screen-peeking delay (in milliseconds) for the public leaderboard SSE stream.
@@ -133,6 +156,13 @@ export class LeaderboardManager {
     const list = Array.from(this.entries.values());
 
     list.sort((a, b) => {
+      // Disqualified teams always rank at the absolute bottom
+      const disqA = a.isDisqualified ? 1 : 0;
+      const disqB = b.isDisqualified ? 1 : 0;
+      if (disqA !== disqB) {
+        return disqA - disqB;
+      }
+
       // Primary: Status group priority (racing and finished teams rank above WAITING teams)
       const priorityA = a.status === 'WAITING' ? 1 : 0;
       const priorityB = b.status === 'WAITING' ? 1 : 0;
@@ -175,7 +205,7 @@ export class LeaderboardManager {
     // Admin stream is ALWAYS authoritative and immediate (0ms delay)
     sseHub.broadcast('admin', 'leaderboard_update', sorted);
 
-    if (this.streamDelayMs <= 0) {
+    if (this.streamDelayMs <= 0 || this.postCloseLive) {
       this.clearDelayedQueue();
       const snapshot = this.cloneSnapshot(sorted);
       this.lastPublicSnapshot = snapshot;
@@ -295,6 +325,7 @@ export class LeaderboardManager {
     }
     this.clearDelayedQueue();
     this.pendingBroadcast = false;
+    this.postCloseLive = false;
     this.entries.clear();
     this.lastPublicSnapshot = [];
     this.hasReleasedPublicSnapshot = false;

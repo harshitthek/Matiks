@@ -123,7 +123,7 @@ export function ReplayInspectorModal({ sessionId, onClose, adminToken }) {
                     {replay.operatorMode || 'ADD'} MODE
                   </span>
                   <span className="text-[10px] text-[#ffe36e]">
-                    Max Streak: {replay.consecutiveStreak || 0}
+                    Max Streak: {Math.max(0, ...(replay.submissions || []).map((s) => s.streakAfter ?? 0), replay.consecutiveStreak ?? 0)}
                   </span>
                 </div>
 
@@ -210,10 +210,14 @@ export function ReplayInspectorModal({ sessionId, onClose, adminToken }) {
                             <div className="flex items-center gap-2 text-right">
                               <span
                                 className={`font-bold ${
-                                  sub.pointsAwarded > 0 ? 'text-[#2ee58f]' : 'text-[#aab5ac]'
+                                  sub.pointsAwarded > 0
+                                    ? 'text-[#2ee58f]'
+                                    : sub.pointsAwarded < 0
+                                    ? 'text-[#ff6b5e]'
+                                    : 'text-[#aab5ac]'
                                 }`}
                               >
-                                +{sub.pointsAwarded} pts
+                                {sub.pointsAwarded > 0 ? `+${sub.pointsAwarded}` : sub.pointsAwarded} pts
                               </span>
                               {sub.streakAfter !== undefined && (
                                 <span className="text-[#ffe36e] text-[11px]">

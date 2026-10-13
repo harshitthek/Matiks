@@ -61,7 +61,8 @@ export async function createTeamHandler(req: Request, res: Response): Promise<vo
       : undefined;
 
     const rawMode = req.body.operatorMode;
-    const operatorMode: OperatorMode = (rawMode === 'sub' || rawMode === 'mixed') ? rawMode : 'add';
+    const operatorMode: OperatorMode | undefined =
+      rawMode === 'add' || rawMode === 'sub' || rawMode === 'mixed' ? rawMode : undefined;
 
     const size = typeof targetSize === 'number' ? targetSize : 3;
     const { room, teamCode, memberToken } = roomManager.createTeam(

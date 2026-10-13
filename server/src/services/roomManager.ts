@@ -43,6 +43,7 @@ export interface SerializedTeamRoom extends Omit<TeamRoom, 'members'> {
 export interface PersistedTournamentState {
   version: 1;
   savedAt: number;
+  roundOperatorMode?: OperatorMode | null;
   rooms: SerializedTeamRoom[];
   sessions: Array<[string, SprintSession]>;
   rollToTeamMap: Array<[string, string]>;
@@ -59,6 +60,7 @@ export class RoomManager {
   private expiryTimers = new Map<string, NodeJS.Timeout>();
   private lastQuestionTimes = new Map<string, number>(); // sessionId -> timestamp
   private auditDir = process.env.AUDIT_LOG_DIR || path.join(process.cwd(), '.data', 'audits');
+  private roundOperatorMode: OperatorMode | null = null;
   private onStateMutated?: () => void;
 
   public setAuditDir(dir: string): void {
@@ -113,7 +115,7 @@ export class RoomManager {
     captainRoll: string,
     captainName: string,
     isClubMember?: boolean,
-    operatorMode: OperatorMode = 'add'
+    operatorMode?: OperatorMode
   ): { room: TeamRoom; teamCode: string; memberToken: string } {
     if (!Number.isInteger(targetSize) || targetSize < 2 || targetSize > 4) {
       throw new Error('Target team size must be an integer between 2 and 4 members.');
@@ -151,7 +153,7 @@ export class RoomManager {
       status: 'LOBBY',
       isPaused: false,
       createdAt: Date.now(),
-      operatorMode: operatorMode || 'add'
+      operatorMode: this.roundOperatorMode ?? operatorMode ?? 'add'
     };
 
     this.rooms.set(teamCode, room);
@@ -377,6 +379,7 @@ export class RoomManager {
     room.completedAt = undefined;
     room.isPaused = false;
     room.pausedAt = undefined;
+    room.operatorMode = this.roundOperatorMode ?? room.operatorMode ?? 'add';
 
     this.broadcastSnapshot(room);
     this.syncLeaderboard(room);
@@ -527,7 +530,7 @@ export class RoomManager {
 
     // 1. Generate master 15-question paper with zero-luck taxonomy,
     // excluding all pairs previously played by this squad
-    const masterPaper = mathEngine.generateSprintPaper(undefined, roomUsedKeys, room.operatorMode || 'add');
+    const masterPaper = mathEngine.generateSprintPaper(undefined, roomUsedKeys, room.operatorMode || this.roundOperatorMode || 'add');
     const masterQuestions = masterPaper.questions;
     room.masterPaperId = masterPaper.paperId;
     for (const q of masterQuestions) {
@@ -1031,6 +1034,486 @@ export class RoomManager {
   }
 
   /**
+   * Pauses all active sprint rooms simultaneously (Emergency Organizer Control).
+   */
+  public emergencyPauseAllSprints(adminId: string): { success: boolean; pausedCount: number; pausedTeamCodes: string[] } {
+    const pausedTeamCodes: string[] = [];
+    const now = Date.now();
+
+    for (const room of this.rooms.values()) {
+      if (room.status === 'IN_SPRINT' && !room.isPaused) {
+        room.isPaused = true;
+        room.pausedAt = now;
+
+        const activeExpiry = this.expiryTimers.get(room.teamCode);
+        if (activeExpiry) {
+          clearTimeout(activeExpiry);
+          this.expiryTimers.delete(room.teamCode);
+        }
+
+        sseHub.broadcast(`team:${room.teamCode}`, 'room_paused', { teamCode: room.teamCode, pausedAt: now });
+        this.broadcastSnapshot(room);
+        pausedTeamCodes.push(room.teamCode);
+      }
+    }
+
+    const auditRecord: AuditRecord = {
+      id: `aud_em_pause_${now}`,
+      timestamp: now,
+      action: 'EMERGENCY_PAUSE_ALL',
+      adminId,
+      details: { pausedCount: pausedTeamCodes.length, pausedTeamCodes }
+    };
+    this.auditLogs.push(auditRecord);
+
+    sseHub.broadcastAdminAction({
+      action: 'EMERGENCY_PAUSE_ALL',
+      details: { pausedCount: pausedTeamCodes.length, pausedTeamCodes },
+      executedBy: adminId,
+      timestamp: now
+    });
+
+    sseHub.broadcastFlashAnnouncement('🚨 EMERGENCY: ALL ACTIVE SPRINTS HAVE BEEN PAUSED BY ORGANIZERS', 'emergency');
+    this.notifyStateMutated();
+
+    return { success: true, pausedCount: pausedTeamCodes.length, pausedTeamCodes };
+  }
+
+  /**
+   * Resumes all paused sprint rooms with synchronized unfreeze buffer (Emergency Organizer Control).
+   */
+  public emergencyResumeAllSprints(adminId: string): { success: boolean; resumedCount: number; resumedTeamCodes: string[] } {
+    const resumedTeamCodes: string[] = [];
+    const now = Date.now();
+
+    sseHub.broadcastFlashAnnouncement('▶ ATTENTION: ALL PAUSED SPRINTS HAVE RESUMED', 'normal');
+
+    for (const room of this.rooms.values()) {
+      if (room.isPaused && room.pausedAt) {
+        const pausedDuration = now - room.pausedAt;
+        let maxRemaining = 0;
+
+        for (const member of room.members.values()) {
+          if (member.activeSessionId) {
+            const session = this.sessions.get(member.activeSessionId);
+            if (session) {
+              session.expiresAt += pausedDuration;
+              const remaining = session.expiresAt + 2500 - now;
+              if (remaining > maxRemaining) {
+                maxRemaining = remaining;
+              }
+            }
+            if (this.lastQuestionTimes.has(member.activeSessionId)) {
+              const prevTime = this.lastQuestionTimes.get(member.activeSessionId)!;
+              this.lastQuestionTimes.set(member.activeSessionId, prevTime + pausedDuration);
+            }
+          }
+        }
+
+        room.isPaused = false;
+        room.pausedAt = undefined;
+
+        if (room.status === 'IN_SPRINT' && maxRemaining > 0) {
+          const autoClose = setTimeout(() => {
+            try {
+              this.handleSprintTimeout(room.teamCode);
+            } catch (err: unknown) {
+              console.error(`Error during resumed sprint timeout for team ${room.teamCode}:`, err);
+            }
+          }, maxRemaining);
+          autoClose.unref?.();
+          this.expiryTimers.set(room.teamCode, autoClose);
+        }
+
+        sseHub.broadcast(`team:${room.teamCode}`, 'room_resumed', { teamCode: room.teamCode, resumedAt: now, unfreezeBufferMs: 3000 });
+        this.broadcastSnapshot(room);
+        resumedTeamCodes.push(room.teamCode);
+      }
+    }
+
+    const auditRecord: AuditRecord = {
+      id: `aud_em_resume_${now}`,
+      timestamp: now,
+      action: 'EMERGENCY_RESUME_ALL',
+      adminId,
+      details: { resumedCount: resumedTeamCodes.length, resumedTeamCodes }
+    };
+    this.auditLogs.push(auditRecord);
+
+    sseHub.broadcastAdminAction({
+      action: 'EMERGENCY_RESUME_ALL',
+      details: { resumedCount: resumedTeamCodes.length, resumedTeamCodes },
+      executedBy: adminId,
+      timestamp: now
+    });
+
+    this.notifyStateMutated();
+    return { success: true, resumedCount: resumedTeamCodes.length, resumedTeamCodes };
+  }
+
+  /**
+   * Kicks an unresponsive or invalid member from a pre-sprint room (LOBBY or AWAITING_READY).
+   * Strict invariant: Forbidden during IN_SPRINT or FINISHED (use excuseMember instead).
+   */
+  public kickMemberFromRoom(
+    teamCode: string,
+    rollNumber: string,
+    adminId: string
+  ): {
+    success: boolean;
+    teamCode: string;
+    kickedRollNumber: string;
+    remainingMembersCount: number;
+    dissolved: boolean;
+  } {
+    const cleanCode = teamCode.trim().toUpperCase();
+    const cleanRoll = rollNumber.trim().toUpperCase();
+    const room = this.rooms.get(cleanCode);
+
+    if (!room) {
+      throw new Error(`Team ${teamCode} does not exist.`);
+    }
+
+    if (room.status !== 'LOBBY' && room.status !== 'AWAITING_READY') {
+      throw new Error(`Cannot kick member while team is in ${room.status} status. Use [EXCUSE MEMBER] during active or finished sprints to preserve score integrity.`);
+    }
+
+    const member = room.members.get(cleanRoll);
+    if (!member) {
+      throw new Error(`Member with roll number ${rollNumber} is not in team ${teamCode}.`);
+    }
+
+    const wasCaptain = member.isCaptain;
+    room.members.delete(cleanRoll);
+    if (this.rollToTeamMap.get(cleanRoll) === cleanCode) {
+      this.rollToTeamMap.delete(cleanRoll);
+    }
+
+    const now = Date.now();
+    let dissolved = false;
+
+    if (room.members.size === 0) {
+      this.clearRoomTimers(cleanCode);
+      this.rooms.delete(cleanCode);
+      this.roomUsedPairKeys.delete(cleanCode);
+      leaderboardManager.removeTeam(cleanCode, true);
+      sseHub.clearChannelBuffer(`team:${cleanCode}`);
+      dissolved = true;
+    } else {
+      if (wasCaptain) {
+        const nextCaptain = room.members.values().next().value;
+        if (nextCaptain) {
+          nextCaptain.isCaptain = true;
+        }
+      }
+      if (room.status === 'AWAITING_READY' && room.members.size < room.targetSize) {
+        room.status = 'LOBBY';
+      }
+      this.broadcastSnapshot(room);
+      this.syncLeaderboard(room);
+    }
+
+    const auditRecord: AuditRecord = {
+      id: `aud_kick_${now}`,
+      timestamp: now,
+      action: 'KICK_MEMBER',
+      teamCode: cleanCode,
+      rollNumber: cleanRoll,
+      adminId,
+      details: { wasCaptain, dissolved, remainingMembersCount: room.members.size }
+    };
+    this.auditLogs.push(auditRecord);
+
+    sseHub.broadcastAdminAction({
+      action: 'KICK_MEMBER',
+      teamCode: cleanCode,
+      details: { rollNumber: cleanRoll, wasCaptain, dissolved },
+      executedBy: adminId,
+      timestamp: now
+    });
+
+    this.notifyStateMutated();
+
+    return {
+      success: true,
+      teamCode: cleanCode,
+      kickedRollNumber: cleanRoll,
+      remainingMembersCount: room.members.size,
+      dissolved
+    };
+  }
+
+  /**
+   * Dissolves an abandoned or troll team room before sprint execution.
+   */
+  public dissolveRoom(
+    teamCode: string,
+    adminId: string,
+    reason = 'Administrative dissolution'
+  ): { success: boolean; teamCode: string; message: string } {
+    const cleanCode = teamCode.trim().toUpperCase();
+    const room = this.rooms.get(cleanCode);
+    if (!room) {
+      throw new Error(`Team ${teamCode} does not exist.`);
+    }
+
+    if (room.status === 'IN_SPRINT' && !room.isPaused) {
+      throw new Error(`Cannot dissolve team ${teamCode} while an active sprint is running. Pause the sprint first or wait for completion.`);
+    }
+
+    this.clearRoomTimers(cleanCode);
+    for (const [roll, member] of room.members.entries()) {
+      if (this.rollToTeamMap.get(roll) === cleanCode) {
+        this.rollToTeamMap.delete(roll);
+      }
+      if (member.activeSessionId) {
+        const sess = this.sessions.get(member.activeSessionId);
+        if (sess) {
+          sess.isFinished = true;
+          this.persistSessionAudit(sess);
+          this.sessions.delete(member.activeSessionId);
+        }
+        this.lastQuestionTimes.delete(member.activeSessionId);
+      }
+    }
+
+    this.rooms.delete(cleanCode);
+    this.roomUsedPairKeys.delete(cleanCode);
+    leaderboardManager.removeTeam(cleanCode, true);
+    sseHub.broadcast(`team:${cleanCode}`, 'sprint_error', {
+      error: 'ROOM_DISSOLVED',
+      message: `This team room has been dissolved by an organizer: ${reason}`
+    });
+    sseHub.clearChannelBuffer(`team:${cleanCode}`);
+
+    const now = Date.now();
+    const auditRecord: AuditRecord = {
+      id: `aud_dissolve_${now}`,
+      timestamp: now,
+      action: 'DISSOLVE_ROOM',
+      teamCode: cleanCode,
+      adminId,
+      reason
+    };
+    this.auditLogs.push(auditRecord);
+
+    sseHub.broadcastAdminAction({
+      action: 'DISSOLVE_ROOM',
+      teamCode: cleanCode,
+      details: { reason },
+      executedBy: adminId,
+      timestamp: now
+    });
+
+    this.notifyStateMutated();
+    return { success: true, teamCode: cleanCode, message: `Team room ${cleanCode} successfully dissolved.` };
+  }
+
+  /**
+   * Disqualifies a team from tournament podium rankings while preserving audit trail.
+   */
+  public disqualifyTeam(
+    teamCode: string,
+    adminId: string,
+    reason: string
+  ): { success: boolean; teamCode: string; isDisqualified: boolean; reason: string } {
+    const cleanCode = teamCode.trim().toUpperCase();
+    const room = this.rooms.get(cleanCode);
+    if (!room) {
+      throw new Error(`Team ${teamCode} does not exist.`);
+    }
+
+    room.isDisqualified = true;
+    room.disqualificationReason = reason.trim() || 'Rule violation';
+
+    const now = Date.now();
+    const auditRecord: AuditRecord = {
+      id: `aud_disq_${now}`,
+      timestamp: now,
+      action: 'DISQUALIFY_TEAM',
+      teamCode: cleanCode,
+      adminId,
+      reason: room.disqualificationReason
+    };
+    this.auditLogs.push(auditRecord);
+
+    sseHub.broadcastAdminAction({
+      action: 'DISQUALIFY_TEAM',
+      teamCode: cleanCode,
+      details: { reason: room.disqualificationReason },
+      executedBy: adminId,
+      timestamp: now
+    });
+
+    this.broadcastSnapshot(room);
+    this.syncLeaderboard(room, true);
+    this.notifyStateMutated();
+
+    return { success: true, teamCode: cleanCode, isDisqualified: true, reason: room.disqualificationReason };
+  }
+
+  /**
+   * Reinstates a previously disqualified team.
+   */
+  public reinstateTeam(
+    teamCode: string,
+    adminId: string
+  ): { success: boolean; teamCode: string; isDisqualified: boolean } {
+    const cleanCode = teamCode.trim().toUpperCase();
+    const room = this.rooms.get(cleanCode);
+    if (!room) {
+      throw new Error(`Team ${teamCode} does not exist.`);
+    }
+
+    room.isDisqualified = false;
+    room.disqualificationReason = undefined;
+
+    const now = Date.now();
+    const auditRecord: AuditRecord = {
+      id: `aud_reinstate_${now}`,
+      timestamp: now,
+      action: 'REINSTATE_TEAM',
+      teamCode: cleanCode,
+      adminId
+    };
+    this.auditLogs.push(auditRecord);
+
+    sseHub.broadcastAdminAction({
+      action: 'REINSTATE_TEAM',
+      teamCode: cleanCode,
+      executedBy: adminId,
+      timestamp: now
+    });
+
+    this.broadcastSnapshot(room);
+    this.syncLeaderboard(room, true);
+    this.notifyStateMutated();
+
+    return { success: true, teamCode: cleanCode, isDisqualified: false };
+  }
+
+  /**
+   * Applies a structured score adjustment/penalty to a team with mandatory logged justification.
+   */
+  public adjustTeamScore(
+    teamCode: string,
+    deltaPoints: number,
+    reason: string,
+    adminId: string
+  ): { success: boolean; teamCode: string; newTeamAverageScore: number; deltaPoints: number } {
+    const cleanCode = teamCode.trim().toUpperCase();
+    const room = this.rooms.get(cleanCode);
+    if (!room) {
+      throw new Error(`Team ${teamCode} does not exist.`);
+    }
+
+    if (!Number.isFinite(deltaPoints)) {
+      throw new Error('deltaPoints must be a finite number.');
+    }
+
+    if (room.status !== 'IN_SPRINT' && room.status !== 'FINISHED') {
+      throw new Error(`Score adjustments require an active or finished sprint (room is in ${room.status} status).`);
+    }
+
+    const activeMembers = Array.from(room.members.values()).filter(m => !m.isExcused);
+    if (activeMembers.length === 0) {
+      throw new Error(`Team ${teamCode} has no active unexcused members to apply score adjustments.`);
+    }
+
+    for (const member of activeMembers) {
+      member.individualScore = Math.max(0, member.individualScore + deltaPoints);
+      if (member.activeSessionId) {
+        const sess = this.sessions.get(member.activeSessionId);
+        if (sess) {
+          sess.currentScore = member.individualScore;
+        }
+      }
+    }
+
+    this.syncLeaderboard(room, true);
+    this.broadcastSnapshot(room);
+
+    const activeCount = activeMembers.length;
+    const totalScore = activeMembers.reduce((sum, m) => sum + m.individualScore, 0);
+    const newAverage = activeCount > 0 ? Number((totalScore / activeCount).toFixed(2)) : 0;
+
+    const now = Date.now();
+    const auditRecord: AuditRecord = {
+      id: `aud_score_adj_${now}`,
+      timestamp: now,
+      action: 'ADJUST_SCORE',
+      teamCode: cleanCode,
+      adminId,
+      reason,
+      details: { deltaPoints, newTeamAverageScore: newAverage }
+    };
+    this.auditLogs.push(auditRecord);
+
+    sseHub.broadcastAdminAction({
+      action: 'ADJUST_SCORE',
+      teamCode: cleanCode,
+      details: { deltaPoints, newTeamAverageScore: newAverage, reason },
+      executedBy: adminId,
+      timestamp: now
+    });
+
+    this.notifyStateMutated();
+    return { success: true, teamCode: cleanCode, newTeamAverageScore: newAverage, deltaPoints };
+  }
+
+  /**
+   * Returns active tournament round operator mode.
+   */
+  public getRoundOperatorMode(): OperatorMode {
+    return this.roundOperatorMode ?? 'add';
+  }
+
+  /**
+   * Returns explicitly configured round operator mode override, or null when squads choose freely.
+   */
+  public getRoundOperatorModeOverride(): OperatorMode | null {
+    return this.roundOperatorMode;
+  }
+
+  /**
+   * Sets active tournament round operator mode (add, sub, mixed, or null to allow squad choice).
+   */
+  public setRoundOperatorMode(mode: OperatorMode | null, adminId: string): OperatorMode | null {
+    if (mode !== null && mode !== 'add' && mode !== 'sub' && mode !== 'mixed') {
+      throw new Error(`Invalid operator mode: ${mode}. Allowed: add, sub, mixed, or null.`);
+    }
+    this.roundOperatorMode = mode;
+    if (mode !== null) {
+      for (const room of this.rooms.values()) {
+        if (room.status === 'LOBBY' || room.status === 'AWAITING_READY') {
+          room.operatorMode = mode;
+          this.broadcastSnapshot(room);
+        }
+      }
+    }
+    const now = Date.now();
+
+    const auditRecord: AuditRecord = {
+      id: `aud_mode_${now}`,
+      timestamp: now,
+      action: 'ROUND_MODE_CHANGE',
+      adminId,
+      details: { newMode: mode ?? 'squad_choice' }
+    };
+    this.auditLogs.push(auditRecord);
+
+    sseHub.broadcastAdminAction({
+      action: 'ROUND_MODE_CHANGE',
+      details: { newMode: mode ?? 'squad_choice', overrideMode: mode },
+      executedBy: adminId,
+      timestamp: now
+    });
+
+    this.notifyStateMutated();
+    return this.roundOperatorMode;
+  }
+
+  /**
    * Synchronizes team average score and telemetry with the LeaderboardManager.
    */
   private syncLeaderboard(room: TeamRoom, immediate = false): void {
@@ -1071,7 +1554,9 @@ export class RoomManager {
       activeMembersCount: activeCount,
       averageTimeSeconds,
       memberBreakdown,
-      status
+      status,
+      isDisqualified: room.isDisqualified,
+      disqualificationReason: room.disqualificationReason
     };
 
     leaderboardManager.updateTeam(entry, immediate);
@@ -1160,6 +1645,8 @@ export class RoomManager {
       isPaused: room.isPaused,
       startedAt: room.startedAt,
       operatorMode: room.operatorMode || 'add',
+      isDisqualified: room.isDisqualified,
+      disqualificationReason: room.disqualificationReason,
       members: membersList,
       allReady,
       contestWindow: {
@@ -1405,6 +1892,7 @@ export class RoomManager {
     return {
       version: 1,
       savedAt: Date.now(),
+      roundOperatorMode: this.roundOperatorMode,
       rooms: serializedRooms,
       sessions: Array.from(this.sessions.entries()),
       rollToTeamMap: Array.from(this.rollToTeamMap.entries()),
@@ -1432,6 +1920,12 @@ export class RoomManager {
       this.lastQuestionTimes.clear();
       leaderboardManager.clear();
 
+      this.roundOperatorMode =
+        snapshot.roundOperatorMode === 'add' ||
+        snapshot.roundOperatorMode === 'sub' ||
+        snapshot.roundOperatorMode === 'mixed'
+          ? snapshot.roundOperatorMode
+          : null;
       this.auditLogs = Array.isArray(snapshot.auditLogs) ? [...snapshot.auditLogs] : [];
       this.rollToTeamMap = new Map(Array.isArray(snapshot.rollToTeamMap) ? snapshot.rollToTeamMap : []);
       this.sessions = new Map(Array.isArray(snapshot.sessions) ? snapshot.sessions : []);
@@ -1692,6 +2186,7 @@ export class RoomManager {
     this.roomUsedPairKeys.clear();
     this.auditLogs = [];
     this.lastQuestionTimes.clear();
+    this.roundOperatorMode = null;
     leaderboardManager.clear();
     this.notifyStateMutated();
   }
