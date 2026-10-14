@@ -4,8 +4,6 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "devCommand": "npm run dev",
-  "cleanUrls": true,
-  "trailingSlash": false,
   "headers": [
     {
       "source": "/assets/(.*)",
@@ -44,7 +42,7 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!api/).*)",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
