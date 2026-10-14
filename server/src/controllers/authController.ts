@@ -70,9 +70,10 @@ export function getAuthConfigHandler(req: Request, res: Response): void {
 
   if (state && state !== existingStateCookie) {
     const isSecure = process.env.NODE_ENV === 'production' || req.secure || req.headers['x-forwarded-proto'] === 'https';
+    const sameSite = isSecure ? 'None' : 'Lax';
     res.setHeader(
       'Set-Cookie',
-      `matiks_oidc_state=${encodeURIComponent(state)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600${isSecure ? '; Secure' : ''}`
+      `matiks_oidc_state=${encodeURIComponent(state)}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=600${isSecure ? '; Secure; Partitioned' : ''}`
     );
   }
 
@@ -184,7 +185,13 @@ export async function exchangeOidcCodeHandler(req: Request, res: Response): Prom
       return;
     }
 
-    const clientStateCookie = extractCookie(req, 'matiks_oidc_state');
+    const cookieState = extractCookie(req, 'matiks_oidc_state');
+    const headerState = typeof req.headers['x-client-state'] === 'string' ? req.headers['x-client-state'] : undefined;
+    const clientStateCookie = (cookieState && cookieState === state)
+      ? cookieState
+      : (headerState && headerState === state)
+        ? headerState
+        : (cookieState || headerState);
     const primaryProvider = getAuthProvider();
     const provider = (!primaryProvider.exchangeCode && clientStateCookie)
       ? getClubOidcProvider()
@@ -233,9 +240,10 @@ export async function exchangeOidcCodeHandler(req: Request, res: Response): Prom
     const result = await provider.exchangeCode(code, state);
 
     const isSecure = process.env.NODE_ENV === 'production' || req.secure || req.headers['x-forwarded-proto'] === 'https';
+    const sameSite = isSecure ? 'None' : 'Lax';
     res.setHeader(
       'Set-Cookie',
-      `matiks_oidc_state=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${isSecure ? '; Secure' : ''}`
+      `matiks_oidc_state=; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=0${isSecure ? '; Secure; Partitioned' : ''}`
     );
 
     res.status(200).json({

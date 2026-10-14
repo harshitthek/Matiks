@@ -374,11 +374,15 @@ export const getAuthMe = getAuthUser;
 /**
  * Auth: Exchanges central USAR FOSS Club OIDC authorization code.
  */
-export async function exchangeOidcCode(code, state) {
+export async function exchangeOidcCode(code, state, clientState) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (clientState) {
+    headers['x-client-state'] = clientState;
+  }
   return request('/auth/oidc/exchange', {
     method: 'POST',
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ code, state })
   });
 }

@@ -140,8 +140,16 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
       const cleanUrl = window.location.pathname === '/auth/callback' ? '/' : window.location.pathname;
       window.history.replaceState({}, '', cleanUrl);
 
+      let savedState = null;
+      try {
+        savedState = sessionStorage.getItem('matiks_oidc_state');
+        sessionStorage.removeItem('matiks_oidc_state');
+      } catch {
+        savedState = null;
+      }
+
       let authenticatedUser = null;
-      exchangeOidcCode(code, state)
+      exchangeOidcCode(code, state, savedState)
         .then((res) => {
           if (res?.user && res?.token) {
             authenticatedUser = res.user;
@@ -213,6 +221,13 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
       const cfg = await getAuthConfig(true);
       if (!cfg?.authUrl) {
         throw new Error('OIDC authorization URL is not available on this server.');
+      }
+      if (cfg.state) {
+        try {
+          sessionStorage.setItem('matiks_oidc_state', cfg.state);
+        } catch {
+          // Ignore storage errors
+        }
       }
       window.location.assign(cfg.authUrl);
     } catch (err) {
