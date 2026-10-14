@@ -25,7 +25,7 @@ import type {
   AdminLoginCredentials,
   AuthResult
 } from '../../types/auth.js';
-import { getAdminSecret, getAdminRollNumbers, getAdminEmails } from '../../config/env.js';
+import { getAdminSecret, getAdminRollNumbers, getAdminEmails, getAdminUsernames } from '../../config/env.js';
 
 export interface ClubOidcConfig {
   issuerUrl?: string;
@@ -579,6 +579,10 @@ export class ClubOidcAuthProvider implements IAuthProvider {
       const assertedRoll = String(claims.rollNumber || trustedU?.rollNumber || '').trim().toUpperCase();
       const isRosterAdmin = assertedRoll !== '' && adminRollNumbers.has(assertedRoll);
 
+      const adminUsernames = getAdminUsernames();
+      const verifiedUsername = String(claims.preferred_username || trustedU?.githubUsername || '').trim().toLowerCase().replace(/^@/, '');
+      const isUsernameAdmin = verifiedUsername !== '' && adminUsernames.has(verifiedUsername);
+
       const isAdminClaim =
         claims.is_admin === true ||
         claims.isAdmin === true ||
@@ -589,7 +593,8 @@ export class ClubOidcAuthProvider implements IAuthProvider {
         rolesList.includes('organizer') ||
         rolesList.includes('superadmin') ||
         isRosterAdmin ||
-        isEmailAdmin;
+        isEmailAdmin ||
+        isUsernameAdmin;
 
       const user: AuthUser = {
         id: claims.sub ? `oidc_${claims.sub}` : u?.id || `oidc_${cleanRoll}`,

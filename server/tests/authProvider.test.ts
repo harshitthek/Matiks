@@ -914,6 +914,60 @@ describe('Matiks Hackathon — Phase 7: Pluggable Auth & Club OIDC Adapter', () 
       }
     });
 
+    test('ADMIN_GITHUB_USERNAMES grants is_admin privileges via OIDC exchangeCode and verifySession', async () => {
+      const prevAdminUsers = process.env.ADMIN_GITHUB_USERNAMES;
+      process.env.ADMIN_GITHUB_USERNAMES = 'harshitthek,leaddev';
+
+      const mockServer = http.createServer((req, res) => {
+        if (req.method === 'POST' && (req.url === '/token' || req.url === '/api/auth/token')) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            access_token: 'mock_token'
+          }));
+        } else if (req.method === 'GET' && (req.url === '/me' || req.url === '/api/auth/me')) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            preferred_username: 'harshitthek',
+            name: 'Harshit Sharma',
+            member: true
+          }));
+        } else {
+          res.writeHead(404);
+          res.end();
+        }
+      });
+
+      await new Promise<void>((resolve) => mockServer.listen(0, resolve));
+      const port = (mockServer.address() as AddressInfo).port;
+
+      try {
+        const oidcProvider = new ClubOidcAuthProvider({
+          issuerUrl: `http://127.0.0.1:${port}`,
+          clientId: 'matiks',
+          clientSecret: 'secret_123',
+          timeoutMs: 1000
+        });
+
+        const res = await oidcProvider.exchangeCode('code_harshit');
+        assert.equal(res.user.role, 'admin');
+        assert.equal(res.user.is_admin, true);
+        assert.equal(res.user.isAdmin, true);
+        assert.equal(res.user.githubUsername, 'harshitthek');
+
+        const sessionUser = await oidcProvider.verifySession(res.token);
+        assert.ok(sessionUser);
+        assert.equal(sessionUser?.is_admin, true);
+        assert.equal(sessionUser?.role, 'admin');
+      } finally {
+        await new Promise<void>((resolve) => mockServer.close(() => resolve()));
+        if (prevAdminUsers === undefined) {
+          delete process.env.ADMIN_GITHUB_USERNAMES;
+        } else {
+          process.env.ADMIN_GITHUB_USERNAMES = prevAdminUsers;
+        }
+      }
+    });
+
     test('requireAdminAuth accepts session tokens with is_admin and rejects non-admin with 403', async () => {
       const app = createApp();
       const server = http.createServer(app);

@@ -80,7 +80,7 @@ function loadInitialState(initialTeamCode) {
  * Onboarding panel for creating a new squad or joining an existing one,
  * with integrated USAR FOSS Club OIDC (oidc.fossclub.tech) PKCE Single Sign-On.
  */
-export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallbackComplete }) {
+export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallbackComplete, onNavigateToAdmin }) {
   const [init] = useState(() => loadInitialState(initialTeamCode));
   const [mode, setMode] = useState(init.initialMode); // 'join' | 'create'
   const [teamName, setTeamName] = useState(init.initialTeamName);
@@ -437,7 +437,11 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
                     <span className="font-mono text-xs font-bold text-[#e8ece3] truncate">
                       {oidcSession.user.displayName}
                     </span>
-                    {oidcSession.user.isClubMember ? (
+                    {(oidcSession.user.is_admin || oidcSession.user.isAdmin || oidcSession.user.role === 'admin') ? (
+                      <span className="px-1.5 py-0.5 bg-[#ff6b5e] text-[#090c0a] border border-[#090c0a] font-mono text-[10px] font-bold uppercase tracking-wider">
+                        ★ ADMIN
+                      </span>
+                    ) : oidcSession.user.isClubMember ? (
                       <span className="px-1.5 py-0.5 bg-[#ffe36e] text-[#090c0a] border border-[#090c0a] font-mono text-[10px] font-bold uppercase tracking-wider">
                         ★ UFC MEMBER
                       </span>
@@ -454,13 +458,24 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleClearOidcSession}
-                className="px-2.5 py-1 bg-[#090c0a] text-[#aab5ac] hover:text-[#ff6b5e] border border-[#aab5ac]/30 hover:border-[#ff6b5e] font-mono text-[10px] uppercase tracking-wider transition-colors shrink-0"
-              >
-                SIGN OUT
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {(oidcSession.user.is_admin || oidcSession.user.isAdmin || oidcSession.user.role === 'admin') && onNavigateToAdmin && (
+                  <button
+                    type="button"
+                    onClick={onNavigateToAdmin}
+                    className="px-2.5 py-1 bg-[#ff6b5e] hover:bg-[#ff8577] text-[#090c0a] border border-[#090c0a] font-mono font-bold text-[10px] uppercase tracking-wider shadow-[2px_2px_0_#090c0a] hover:translate-x-0.5 transition-all"
+                  >
+                    ADMIN DASHBOARD ⚙️
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleClearOidcSession}
+                  className="px-2.5 py-1 bg-[#090c0a] text-[#aab5ac] hover:text-[#ff6b5e] border border-[#aab5ac]/30 hover:border-[#ff6b5e] font-mono text-[10px] uppercase tracking-wider transition-colors shrink-0"
+                >
+                  SIGN OUT
+                </button>
+              </div>
             </div>
           ) : (
             <div className="flex flex-col gap-2">

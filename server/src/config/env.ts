@@ -53,3 +53,13 @@ export function getAdminEmails(): Set<string> {
   );
 }
 
+export function getAdminUsernames(): Set<string> {
+  const raw = process.env.ADMIN_GITHUB_USERNAMES || process.env.ADMIN_USERNAMES || '';
+  return new Set(
+    raw
+      .split(',')
+      .map(s => s.trim().toLowerCase().replace(/^@/, ''))
+      .filter(Boolean)
+  );
+}
+

@@ -697,6 +697,7 @@ export function App() {
               key={inviteTeamCode}
               initialTeamCode={inviteTeamCode}
               onJoinedTeam={handleJoinedTeam}
+              onNavigateToAdmin={() => navigateTo('admin')}
               onOidcCallbackComplete={(oidcUser) => {
                 setOidcCallbackPending(false);
                 if (oidcUser) {
