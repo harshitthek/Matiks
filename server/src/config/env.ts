@@ -32,3 +32,24 @@ export function isValidAdminToken(candidate?: string): boolean {
   if (candBuf.length !== secretBuf.length) return false;
   return timingSafeEqual(candBuf, secretBuf);
 }
+
+export function getAdminRollNumbers(): Set<string> {
+  const raw = process.env.ADMIN_ROLL_NUMBERS || '';
+  return new Set(
+    raw
+      .split(',')
+      .map(s => s.trim().toUpperCase())
+      .filter(Boolean)
+  );
+}
+
+export function getAdminEmails(): Set<string> {
+  const raw = process.env.ADMIN_EMAILS || '';
+  return new Set(
+    raw
+      .split(',')
+      .map(s => s.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+

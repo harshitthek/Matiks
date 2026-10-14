@@ -369,6 +369,8 @@ export async function getAuthUser(token) {
   return request('/auth/me', { headers });
 }
 
+export const getAuthMe = getAuthUser;
+
 /**
  * Auth: Exchanges central USAR FOSS Club OIDC authorization code.
  */

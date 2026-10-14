@@ -9,6 +9,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import { isValidAdminToken } from '../config/env.js';
 import { adminAuthService } from '../services/adminAuthService.js';
+import { verifyAnySession } from '../services/auth/authProviderFactory.js';
 
 declare global {
   namespace Express {
@@ -48,7 +49,27 @@ export async function requireAdminAuth(req: Request, res: Response, next: NextFu
     return;
   }
 
-  // 2. Check if token is the master ADMIN_SECRET (emergency bypass)
+  // 2. Check if token is an authenticated user session with admin privileges (Club OIDC SSO / Admin)
+  if (providedToken) {
+    const authUser = await verifyAnySession(providedToken);
+    if (authUser) {
+      if (authUser.role === 'admin' || authUser.is_admin || authUser.isAdmin) {
+        req.adminUser = {
+          organizerName: authUser.displayName || authUser.rollNumber || 'Organizer',
+          role: 'organizer'
+        };
+        next();
+        return;
+      }
+      res.status(403).json({
+        error: 'FORBIDDEN_ADMIN_ACCESS',
+        message: 'Administrator privileges (is_admin) required to perform this action.'
+      });
+      return;
+    }
+  }
+
+  // 3. Check if token is the master ADMIN_SECRET (emergency bypass)
   if (isValidAdminToken(providedToken)) {
     adminAuthService.recordSuccess(clientIp);
     const rawOrganizer = req.headers['x-admin-id'] as string | undefined;

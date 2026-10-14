@@ -25,7 +25,7 @@ import type {
   AdminLoginCredentials,
   AuthResult
 } from '../../types/auth.js';
-import { getAdminSecret } from '../../config/env.js';
+import { getAdminSecret, getAdminRollNumbers, getAdminEmails } from '../../config/env.js';
 
 export interface ClubOidcConfig {
   issuerUrl?: string;
@@ -62,9 +62,13 @@ interface OidcClaims {
   email_verified?: boolean;
   member?: boolean;
   role?: string;
+  clubRole?: string;
   rollNumber?: string;
   isClubMember?: boolean;
   githubUsername?: string;
+  is_admin?: boolean;
+  isAdmin?: boolean;
+  roles?: string[];
 }
 
 interface JwksKey extends JsonWebKey {
@@ -468,6 +472,10 @@ export class ClubOidcAuthProvider implements IAuthProvider {
           isClubMember?: boolean;
           picture?: string;
           role?: string;
+          clubRole?: string;
+          is_admin?: boolean;
+          isAdmin?: boolean;
+          roles?: string[];
         };
       };
 
@@ -477,8 +485,11 @@ export class ClubOidcAuthProvider implements IAuthProvider {
         claims = await this.verifyIdToken(payload.id_token, expectedNonce);
       }
 
-      if (payload.access_token && (!claims.name || typeof claims.member !== 'boolean')) {
+      if (payload.access_token && (!claims.name || typeof claims.member !== 'boolean' || claims.is_admin === undefined || claims.isAdmin === undefined || !claims.role || !claims.clubRole || !claims.roles)) {
         const userInfo = await this.fetchUserInfo(payload.access_token);
+        if (claims.sub && userInfo.sub && claims.sub !== userInfo.sub) {
+          throw new Error('OIDC UserInfo sub mismatch with verified id_token sub.');
+        }
         claims = { ...userInfo, ...claims };
         if (typeof claims.member !== 'boolean' && typeof userInfo.member === 'boolean') {
           claims.member = userInfo.member;
@@ -497,6 +508,18 @@ export class ClubOidcAuthProvider implements IAuthProvider {
         }
         if (!claims.role && userInfo.role) {
           claims.role = userInfo.role;
+        }
+        if (userInfo.is_admin !== undefined && claims.is_admin === undefined) {
+          claims.is_admin = userInfo.is_admin;
+        }
+        if (userInfo.isAdmin !== undefined && claims.isAdmin === undefined) {
+          claims.isAdmin = userInfo.isAdmin;
+        }
+        if (!claims.clubRole && userInfo.clubRole) {
+          claims.clubRole = userInfo.clubRole;
+        }
+        if (!claims.roles && userInfo.roles) {
+          claims.roles = userInfo.roles;
         }
       }
 
@@ -524,6 +547,50 @@ export class ClubOidcAuthProvider implements IAuthProvider {
             ? u.isClubMember
             : await this.validateClubMembership(cleanRoll);
 
+      const isTestEnv = process.env.NODE_ENV === 'test';
+      const trustedU = isTestEnv ? u : undefined;
+
+      const roleVal = String(claims.role || trustedU?.role || '').toLowerCase().trim();
+      const clubRoleVal = String(claims.clubRole || trustedU?.clubRole || '').toLowerCase().trim();
+      const isOrganizerRole =
+        roleVal === 'admin' ||
+        roleVal === 'organizer' ||
+        roleVal === 'superadmin' ||
+        clubRoleVal === 'admin' ||
+        clubRoleVal === 'organizer' ||
+        clubRoleVal === 'superadmin';
+
+      const rolesList: string[] = [
+        ...(Array.isArray(claims.roles) ? claims.roles : []),
+        ...(Array.isArray(trustedU?.roles) ? trustedU!.roles : [])
+      ].map(r => String(r).toLowerCase().trim());
+
+      const adminEmails = getAdminEmails();
+      const isClaimsEmailVerified = claims.email_verified === true;
+      const verifiedClaimsEmail = (isClaimsEmailVerified && claims.email) ? claims.email.toLowerCase().trim() : null;
+      const isUEmailVerified = (trustedU as { email_verified?: boolean } | undefined)?.email_verified === true;
+      const verifiedUEmail = (isUEmailVerified && trustedU?.email) ? trustedU.email.toLowerCase().trim() : null;
+
+      const isEmailAdmin =
+        (verifiedClaimsEmail !== null && adminEmails.has(verifiedClaimsEmail)) ||
+        (verifiedUEmail !== null && adminEmails.has(verifiedUEmail));
+
+      const adminRollNumbers = getAdminRollNumbers();
+      const assertedRoll = String(claims.rollNumber || trustedU?.rollNumber || '').trim().toUpperCase();
+      const isRosterAdmin = assertedRoll !== '' && adminRollNumbers.has(assertedRoll);
+
+      const isAdminClaim =
+        claims.is_admin === true ||
+        claims.isAdmin === true ||
+        trustedU?.is_admin === true ||
+        trustedU?.isAdmin === true ||
+        isOrganizerRole ||
+        rolesList.includes('admin') ||
+        rolesList.includes('organizer') ||
+        rolesList.includes('superadmin') ||
+        isRosterAdmin ||
+        isEmailAdmin;
+
       const user: AuthUser = {
         id: claims.sub ? `oidc_${claims.sub}` : u?.id || `oidc_${cleanRoll}`,
         rollNumber: cleanRoll,
@@ -532,8 +599,10 @@ export class ClubOidcAuthProvider implements IAuthProvider {
         email: claims.email || u?.email,
         githubUsername: claims.preferred_username || u?.githubUsername,
         picture: claims.picture || u?.picture,
-        clubRole: claims.role || u?.role,
-        role: 'participant'
+        clubRole: claims.clubRole || trustedU?.clubRole || claims.role || trustedU?.role,
+        role: isAdminClaim ? 'admin' : 'participant',
+        is_admin: isAdminClaim,
+        isAdmin: isAdminClaim
       };
 
       if (this.sessions.size > 500) {
@@ -572,14 +641,16 @@ export class ClubOidcAuthProvider implements IAuthProvider {
       throw new Error('Roll number and name are required for player login.');
     }
 
-    // Direct roll-number logins cannot be treated as verified club members without central OIDC authentication
+    // Direct roll-number logins cannot be treated as verified club members or admins without central OIDC authentication
     const user: AuthUser = {
       id: `oidc_${cleanRoll}`,
       rollNumber: cleanRoll,
       displayName: cleanName,
       isClubMember: false,
       teamCode: teamCode ? teamCode.trim().toUpperCase() : undefined,
-      role: 'participant'
+      role: 'participant',
+      is_admin: false,
+      isAdmin: false
     };
 
     if (this.sessions.size > 500) {
@@ -620,7 +691,9 @@ export class ClubOidcAuthProvider implements IAuthProvider {
       rollNumber: 'ADMIN',
       displayName: 'Hackathon Organizer (OIDC Mode)',
       isClubMember: true,
-      role: 'admin'
+      role: 'admin',
+      is_admin: true,
+      isAdmin: true
     };
 
     if (this.sessions.size > 500) {

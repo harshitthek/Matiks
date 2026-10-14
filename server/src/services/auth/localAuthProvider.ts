@@ -16,7 +16,7 @@ import type {
   AdminLoginCredentials,
   AuthResult
 } from '../../types/auth.js';
-import { getAdminSecret } from '../../config/env.js';
+import { getAdminSecret, getAdminRollNumbers } from '../../config/env.js';
 
 interface SessionData {
   user: AuthUser;
@@ -80,7 +80,9 @@ export class LocalHackathonAuthProvider implements IAuthProvider {
       displayName: cleanName,
       isClubMember,
       teamCode: teamCode ? teamCode.trim().toUpperCase() : undefined,
-      role: 'participant'
+      role: 'participant',
+      is_admin: false,
+      isAdmin: false
     };
 
     const token = this.generateToken();
@@ -117,7 +119,9 @@ export class LocalHackathonAuthProvider implements IAuthProvider {
       rollNumber: 'ADMIN',
       displayName: 'Hackathon Organizer',
       isClubMember: true,
-      role: 'admin'
+      role: 'admin',
+      is_admin: true,
+      isAdmin: true
     };
 
     if (this.sessions.size > 500) {

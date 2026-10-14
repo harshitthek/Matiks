@@ -14,6 +14,8 @@ export interface AuthUser {
   isClubMember: boolean; // Verified UFC / FOSS club member status
   teamCode?: string; // Associated team room
   role: AuthRole;
+  is_admin?: boolean;
+  isAdmin?: boolean;
   email?: string;
   githubUsername?: string;
   picture?: string;

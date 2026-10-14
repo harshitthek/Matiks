@@ -54,10 +54,20 @@ const ORGANIZER_NAME_KEY = 'matiks_organizer_name';
  * state-targeted global emergency controls, Omni-Search HUD (Ctrl+K),
  * tournament round operator configuration, and live multi-organizer audit sync.
  */
-export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
+export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogout }) {
   const [adminToken, setAdminToken] = useState(() => {
     try {
-      return sessionStorage.getItem(ADMIN_STORAGE_KEY) || null;
+      const explicitToken = sessionStorage.getItem(ADMIN_STORAGE_KEY);
+      if (explicitToken) return explicitToken;
+
+      const rawOidc = localStorage.getItem('matiks_oidc_session');
+      if (rawOidc) {
+        const parsed = JSON.parse(rawOidc);
+        if (parsed?.token && (parsed.user?.is_admin || parsed.user?.isAdmin || parsed.user?.role === 'admin')) {
+          return parsed.token;
+        }
+      }
+      return null;
     } catch {
       return null;
     }
@@ -65,7 +75,15 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
 
   const [organizerName, setOrganizerName] = useState(() => {
     try {
-      return sessionStorage.getItem(ORGANIZER_NAME_KEY) || localStorage.getItem(ORGANIZER_NAME_KEY) || 'Lead Organizer';
+      const savedName = sessionStorage.getItem(ORGANIZER_NAME_KEY) || localStorage.getItem(ORGANIZER_NAME_KEY);
+      if (savedName) return savedName;
+
+      const rawOidc = localStorage.getItem('matiks_oidc_session');
+      if (rawOidc) {
+        const parsed = JSON.parse(rawOidc);
+        if (parsed?.user?.displayName) return parsed.user.displayName;
+      }
+      return 'Lead Organizer';
     } catch {
       return 'Lead Organizer';
     }
@@ -123,6 +141,7 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
       } catch {
         // Storage unavailable
       }
+      onLogin?.(token);
     } catch (err) {
       setAuthError(err?.message || 'Invalid admin credentials.');
     } finally {
@@ -131,14 +150,53 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
   };
 
   const handleLogout = useCallback(() => {
-    setAdminToken(null);
     try {
       sessionStorage.removeItem(ADMIN_STORAGE_KEY);
       sessionStorage.removeItem(ORGANIZER_NAME_KEY);
+      const rawOidc = localStorage.getItem('matiks_oidc_session');
+      if (rawOidc) {
+        const parsed = JSON.parse(rawOidc);
+        if (parsed?.token && adminToken === parsed.token) {
+          localStorage.removeItem('matiks_oidc_session');
+        }
+      }
     } catch {
       // Storage unavailable
     }
-  }, []);
+    setAdminToken(null);
+    onLogout?.();
+  }, [adminToken, onLogout]);
+
+  const handleTokenAuthFailure = useCallback((failingToken) => {
+    if (failingToken && failingToken !== adminToken) {
+      return;
+    }
+    try {
+      const explicitToken = sessionStorage.getItem(ADMIN_STORAGE_KEY);
+      sessionStorage.removeItem(ADMIN_STORAGE_KEY);
+      sessionStorage.removeItem(ORGANIZER_NAME_KEY);
+
+      if (explicitToken && explicitToken === adminToken) {
+        const rawOidc = localStorage.getItem('matiks_oidc_session');
+        if (rawOidc) {
+          const parsed = JSON.parse(rawOidc);
+          if (
+            parsed?.token &&
+            parsed.token !== adminToken &&
+            (parsed.user?.is_admin || parsed.user?.isAdmin || parsed.user?.role === 'admin')
+          ) {
+            setAdminToken(parsed.token);
+            if (parsed.user?.displayName) setOrganizerName(parsed.user.displayName);
+            onLogout?.();
+            return;
+          }
+        }
+      }
+    } catch {
+      // Storage unavailable
+    }
+    handleLogout();
+  }, [adminToken, handleLogout]);
 
   // Keyboard shortcut listener for Ctrl+K / Cmd+K Omni-Search HUD
   useEffect(() => {
@@ -169,7 +227,7 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
         (res.reason?.status === 401 || res.reason?.status === 403);
 
       if (isAuthError(roomsRes) || isAuthError(telemRes) || isAuthError(logsRes) || isAuthError(delayRes) || isAuthError(modeRes)) {
-        handleLogout();
+        handleTokenAuthFailure(adminToken);
         return;
       }
 
@@ -195,7 +253,7 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
     } catch (err) {
       console.warn('[Admin] Data fetch error:', err);
     }
-  }, [adminToken, handleLogout]);
+  }, [adminToken, handleTokenAuthFailure]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -213,7 +271,7 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
           (res.reason?.status === 401 || res.reason?.status === 403);
 
         if (isAuthError(roomsRes) || isAuthError(telemRes) || isAuthError(logsRes) || isAuthError(delayRes) || isAuthError(modeRes)) {
-          handleLogout();
+          handleTokenAuthFailure(adminToken);
           return;
         }
 
@@ -293,7 +351,7 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
       },
       onError: (err) => {
         if (err?.status === 401 || err?.status === 403) {
-          handleLogout();
+          handleTokenAuthFailure(adminToken);
         }
       }
     });
@@ -301,7 +359,7 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard }) {
     return () => {
       sse.disconnect();
     };
-  }, [adminToken, handleLogout, refreshData]);
+  }, [adminToken, handleTokenAuthFailure, refreshData]);
 
   // Handle Contest Window Toggle
   const handleToggleWindow = async (open, durationMinutes, ticker) => {
