@@ -9,7 +9,6 @@ import { AdminView } from './components/admin/AdminView.jsx';
 import { NotFoundView } from './components/common/NotFoundView.jsx';
 import { leaveTeam, resetTeamSprint, getAuthMe } from './services/api.js';
 import { soundFx } from './services/soundFx.js';
-import { FlowerSticker } from './components/common/FlowerSticker.jsx';
 
 const SESSION_STORAGE_KEY = 'matiks_squad_session';
 const SPRINT_STORAGE_KEY = 'matiks_sprint_session';
@@ -479,7 +478,7 @@ export function App() {
       }
     >
       {/* Procedural Film Grain Overlay */}
-      <GrainOverlay />
+      <GrainOverlay disabled={isInActiveArena} />
 
       {/* Top Banner Marquee (hidden completely during active sprint to give 100% vertical space to arena) */}
       {!isInActiveArena && <MarqueeTicker />}
@@ -776,10 +775,6 @@ export function App() {
               >
                 GITHUB ↗
               </a>
-            </div>
-
-            <div className="hidden lg:flex items-center gap-2">
-              <FlowerSticker id={2} size={36} rotation={-6} withTape tapeColor="signal" />
             </div>
           </div>
         </footer>

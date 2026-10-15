@@ -57,26 +57,52 @@ export function RansomNote({
 
   const selectedSize = sizeStyles[size] || sizeStyles.md;
 
+  // Group characters by word to prevent mid-word line breaks
+  const words = useMemo(() => {
+    const result = [];
+    let currentWord = [];
+    characters.forEach((item, idx) => {
+      if (item.isSpace) {
+        if (currentWord.length > 0) {
+          result.push({ type: 'word', chars: currentWord });
+          currentWord = [];
+        }
+        result.push({ type: 'space', idx });
+      } else {
+        currentWord.push({ ...item, idx });
+      }
+    });
+    if (currentWord.length > 0) {
+      result.push({ type: 'word', chars: currentWord });
+    }
+    return result;
+  }, [characters]);
+
   return (
-    <span className={`inline-flex items-center flex-wrap gap-y-2 ${className}`}>
-      {characters.map((item, idx) => {
-        if (item.isSpace) {
-          return <span key={idx} className="w-2 md:w-3" aria-hidden="true" />;
+    <span className={`inline-flex items-end flex-wrap gap-y-2 ${className}`} aria-label={text} role="text">
+      {words.map((segment, segIdx) => {
+        if (segment.type === 'space') {
+          return <span key={`sp-${segIdx}`} className="w-2 md:w-3" aria-hidden="true" />;
         }
         return (
-          <span
-            key={idx}
-            className={`ransom-tile ${selectedSize}`}
-            style={{
-              backgroundColor: item.bg,
-              clipPath: item.clipPath,
-              transform: `rotate(${item.rotation}deg)`
-            }}
-          >
-            {item.char}
+          <span key={`w-${segIdx}`} className="inline-flex items-end whitespace-nowrap" aria-hidden="true">
+            {segment.chars.map((item) => (
+              <span
+                key={item.idx}
+                className={`ransom-tile ${selectedSize}`}
+                style={{
+                  backgroundColor: item.bg,
+                  clipPath: item.clipPath,
+                  transform: `rotate(${item.rotation}deg)`
+                }}
+              >
+                {item.char}
+              </span>
+            ))}
           </span>
         );
       })}
     </span>
   );
 }
+

@@ -9,7 +9,7 @@ export function TactileButton({
   onClick,
   variant = 'cream',
   disabled = false,
-  showDisc = true,
+  showDisc = false,
   discIcon = '↵',
   className = '',
   type = 'button',
@@ -33,6 +33,8 @@ export function TactileButton({
     ? 'btn-ember'
     : variant === 'ghost'
     ? 'btn-ghost'
+    : variant === 'muted'
+    ? 'btn-muted'
     : '';
 
   const handleClick = (e) => {

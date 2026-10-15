@@ -91,12 +91,13 @@ textarea {
   align-items: center;
   justify-content: center;
   gap: 0.65rem;
-  font-family: var(--font-code);
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-weight: 750;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 0.85rem 1.4rem;
   border: 2.5px solid var(--ink);
+  border-radius: 999px;
   background: var(--cream);
   color: var(--ink);
   box-shadow: 4px 4px 0 var(--ink);
@@ -114,6 +115,11 @@ textarea {
 .btn:active:not(:disabled) {
   transform: translate(3px, 3px) rotate(0.5deg);
   box-shadow: 1px 1px 0 var(--ink);
+}
+
+.btn:focus-visible {
+  outline: 3px solid var(--butter);
+  outline-offset: 4px;
 }
 
 .btn:disabled {
@@ -228,6 +234,19 @@ textarea {
   box-shadow: 4px 4px 0 var(--ink);
 }
 
+.btn-muted {
+  background: var(--ink-2);
+  color: var(--text-dim);
+  border-color: var(--line-bold);
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.4);
+  font-size: 0.8rem;
+}
+
+.btn-muted:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
 .btn-ghost {
   background: var(--ink-2);
   color: var(--text);
@@ -284,6 +303,8 @@ textarea {
 .tape-signal { background: var(--signal); }
 .tape-lilac { background: var(--lilac); }
 .tape-sky { background: var(--sky); }
+.tape-amber { background: var(--amber); }
+.tape-ember { background: var(--ember); }
 
 /* Die-cut sticker outline and lift shadow (USAR-FOSS/ufc_website) */
 .die-cut {
@@ -382,17 +403,39 @@ textarea {
   background-color: var(--ember);
 }
 
+.ping-dot-butter {
+  background-color: var(--butter);
+}
+.ping-dot-butter::after {
+  background-color: var(--butter);
+}
+
 /* Cyber Card Containers */
 .cyber-card {
   background: var(--ink-2);
   border: 2.5px solid var(--line-bold);
-  box-shadow: 6px 6px 0 var(--ink);
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.5);
   position: relative;
 }
 
 .cyber-card-signal {
   border-color: var(--signal);
   box-shadow: 6px 6px 0 var(--signal-deep);
+}
+
+.cyber-card-ember {
+  border-color: var(--ember);
+  box-shadow: 6px 6px 0 rgba(255, 107, 94, 0.3);
+}
+
+.cyber-card-butter {
+  border-color: var(--butter);
+  box-shadow: 6px 6px 0 rgba(255, 227, 110, 0.3);
+}
+
+.cyber-card-amber {
+  border-color: var(--amber);
+  box-shadow: 6px 6px 0 rgba(245, 166, 35, 0.3);
 }
 
 /* Scissor-Cut Ransom Tiles */
@@ -470,4 +513,31 @@ textarea {
   -webkit-tap-highlight-color: transparent;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
 
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .btn:hover:not(:disabled),
+  .btn:active:not(:disabled),
+  .btn .disc,
+  .btn:hover:not(:disabled) .disc,
+  .die-cut,
+  .die-cut:hover {
+    transition: none;
+    animation: none;
+  }
+
+  .ping-dot::after {
+    animation: none;
+  }
+}

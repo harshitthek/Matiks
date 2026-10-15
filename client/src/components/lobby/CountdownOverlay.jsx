@@ -22,7 +22,7 @@ export function CountdownOverlay({ secondsRemaining, message }) {
           <RansomNote
             text={displayDigit}
             size="giant"
-            seed={secondsRemaining * 31}
+            seed={42}
           />
         </div>
 

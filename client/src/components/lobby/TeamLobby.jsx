@@ -3,7 +3,6 @@ import { TactileButton } from '../common/TactileButton.jsx';
 import { WashiTape } from '../common/WashiTape.jsx';
 import { RadarDot } from '../common/RadarDot.jsx';
 import { FlowerSticker } from '../common/FlowerSticker.jsx';
-import { FossForgeBadge } from '../common/FossForgeBadge.jsx';
 import { CountdownOverlay } from './CountdownOverlay.jsx';
 import { toggleReady, getTeamSnapshot, resetTeamSprint } from '../../services/api.js';
 import { connectTeamStream } from '../../services/sse.js';

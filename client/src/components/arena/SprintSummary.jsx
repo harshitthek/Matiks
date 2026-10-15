@@ -162,23 +162,23 @@ export function SprintSummary({
 
         {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row flex-wrap gap-3 justify-center">
-          <TactileButton
-            variant="signal"
-            onClick={onReturnToLobby}
-            className="w-full sm:w-auto px-6 py-3.5 text-sm"
-          >
-            ← RETURN TO SQUAD LOBBY
-          </TactileButton>
-
           {onPlayAgain && (
             <TactileButton
-              variant="ghost"
+              variant="signal"
               onClick={onPlayAgain}
               className="w-full sm:w-auto px-6 py-3.5 text-sm"
             >
               🔄 PLAY AGAIN WITH SQUAD
             </TactileButton>
           )}
+
+          <TactileButton
+            variant="ghost"
+            onClick={onReturnToLobby}
+            className="w-full sm:w-auto px-6 py-3.5 text-sm"
+          >
+            ← RETURN TO SQUAD LOBBY
+          </TactileButton>
 
           {onViewLeaderboard && (
             <TactileButton
@@ -246,40 +246,67 @@ export function SprintSummary({
             PROBLEM AUDIT BREAKDOWN ({submissions.length}/{totalQuestions})
           </h3>
           <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-            {submissions.map((sub, idx) => (
-              <div
-                key={idx}
-                className={`flex items-center justify-between p-2.5 border font-mono text-xs ${
-                  sub.isCorrect
-                    ? 'border-[#2ee58f]/30 bg-[#2ee58f]/5 text-[#e8ece3]'
-                    : 'border-[#ff6b5e]/30 bg-[#ff6b5e]/5 text-[#ff6b5e]'
-                }`}
-              >
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <span className="text-[#aab5ac]">#{idx + 1}</span>
-                  {sub.bucket && (
-                    <span className="text-[10px] px-1 py-0.5 border border-[#2ee58f]/30 text-[#2ee58f] font-mono font-bold">
-                      {sub.bucket}
+            {submissions.map((sub, idx) => {
+              const expectedAnswer =
+                sub.correctAnswer ??
+                sub.actualAnswer ??
+                (Number.isFinite(sub.a) && Number.isFinite(sub.b)
+                  ? sub.operator === '-'
+                    ? sub.a - sub.b
+                    : sub.operator === '*' || sub.operator === '×'
+                    ? sub.a * sub.b
+                    : sub.operator === '/' || sub.operator === '÷'
+                    ? (sub.b !== 0 ? Math.floor(sub.a / sub.b) : null)
+                    : sub.a + sub.b
+                  : null);
+
+              const userAnswer = sub.answer ?? sub.submittedAnswer;
+
+              return (
+                <div
+                  key={idx}
+                  className={`flex items-center justify-between p-2.5 border font-mono text-xs ${
+                    sub.isCorrect
+                      ? 'border-[#2ee58f]/30 bg-[#2ee58f]/5 text-[#e8ece3]'
+                      : 'border-[#ff6b5e]/30 bg-[#ff6b5e]/5 text-[#ff6b5e]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                    <span className="text-[#aab5ac]">#{idx + 1}</span>
+                    {sub.bucket && (
+                      <span className="text-[10px] px-1 py-0.5 border border-[#2ee58f]/30 text-[#2ee58f] font-mono font-bold">
+                        {sub.bucket}
+                      </span>
+                    )}
+                    <span className="font-bold text-[#e8ece3]">
+                      {sub.a} {sub.operator || '+'} {sub.b} ={' '}
+                      <span className={sub.isCorrect ? 'text-[#2ee58f]' : 'text-[#ff6b5e] line-through'}>
+                        {userAnswer}
+                      </span>
                     </span>
-                  )}
-                  <span className="font-bold">
-                    {sub.a} {sub.operator || '+'} {sub.b} = {sub.answer}
-                  </span>
+                    {!sub.isCorrect && expectedAnswer !== null ? (
+                      <span className="text-[#2ee58f] font-bold text-[11px] px-1.5 py-0.5 bg-[#2ee58f]/10 border border-[#2ee58f]/30">
+                        CORRECT: {expectedAnswer}
+                      </span>
+                    ) : sub.isCorrect && (
+                      <span className="text-[#2ee58f] text-[11px] font-bold">✓</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-[#aab5ac]">
+                      {((sub.latencyMs || 0) / 1000).toFixed(1)}s
+                    </span>
+                    <span
+                      className={`font-bold ${
+                        sub.isCorrect ? 'text-[#2ee58f]' : 'text-[#ff6b5e]'
+                      }`}
+                    >
+                      {sub.isCorrect ? `+${sub.pointsAwarded} pts` : `${sub.pointsAwarded} pts`}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-[#aab5ac]">
-                    {((sub.latencyMs || 0) / 1000).toFixed(1)}s
-                  </span>
-                  <span
-                    className={`font-bold ${
-                      sub.isCorrect ? 'text-[#2ee58f]' : 'text-[#ff6b5e]'
-                    }`}
-                  >
-                    {sub.isCorrect ? `+${sub.pointsAwarded} pts` : `${sub.pointsAwarded} pts`}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

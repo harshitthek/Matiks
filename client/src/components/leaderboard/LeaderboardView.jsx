@@ -7,7 +7,6 @@ import { TactileButton } from '../common/TactileButton.jsx';
 import { PodiumCard } from './PodiumCard.jsx';
 import { LeaderboardRow } from './LeaderboardRow.jsx';
 import { FlowerSticker } from '../common/FlowerSticker.jsx';
-import { FossForgeBadge } from '../common/FossForgeBadge.jsx';
 import { connectLeaderboardStream } from '../../services/sse.js';
 import { soundFx } from '../../services/soundFx.js';
 

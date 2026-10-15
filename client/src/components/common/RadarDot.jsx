@@ -8,10 +8,14 @@ export function RadarDot({
   className = '',
   label
 }) {
-  const dotClass = status === 'online'
+  const dotClass = status === 'online' || status === 'signal'
     ? 'ping-dot'
     : status === 'amber'
     ? 'ping-dot ping-dot-amber'
+    : status === 'offline'
+    ? 'ping-dot ping-dot-ember'
+    : status === 'butter'
+    ? 'ping-dot ping-dot-butter'
     : 'ping-dot ping-dot-ember';
 
   return (

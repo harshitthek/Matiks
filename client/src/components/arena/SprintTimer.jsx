@@ -102,9 +102,10 @@ export function SprintTimer({
           TIME REMAINING
         </span>
         <span
-          className={`font-mono text-base md:text-lg font-bold tracking-wider ${colorClass} ${
+          className={`font-mono text-base md:text-lg font-bold tracking-wider tabular-nums ${colorClass} ${
             isDanger ? 'animate-pulse' : ''
           }`}
+          style={{ fontVariantNumeric: 'tabular-nums' }}
         >
           {formattedTime}
         </span>

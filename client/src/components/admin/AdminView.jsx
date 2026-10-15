@@ -3,7 +3,6 @@ import { RansomNote } from '../common/RansomNote.jsx';
 import { WashiTape } from '../common/WashiTape.jsx';
 import { RadarDot } from '../common/RadarDot.jsx';
 import { TactileButton } from '../common/TactileButton.jsx';
-import { FlowerSticker } from '../common/FlowerSticker.jsx';
 import { AdminAuthGate } from './AdminAuthGate.jsx';
 import { TelemetryCards } from './TelemetryCards.jsx';
 import { ContestWindowWidget } from './ContestWindowWidget.jsx';

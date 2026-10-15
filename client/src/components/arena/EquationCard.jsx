@@ -82,7 +82,7 @@ export function EquationCard({
 
           {/* User Input Answer Box */}
           <div
-            className={`w-[78px] xs:w-[92px] sm:w-[115px] md:w-[145px] h-[44px] xs:h-[48px] sm:h-[60px] md:h-[74px] shrink-0 bg-[#090c0a] border-3 border-[#2ee58f] flex items-center justify-center px-1 sm:px-2 shadow-[2px_2px_0_#2ee58f] sm:shadow-[3px_3px_0_#2ee58f] text-[#2ee58f] font-mono tracking-tight ${
+            className={`w-[78px] xs:w-[92px] sm:w-[115px] md:w-[145px] h-[44px] xs:h-[48px] sm:h-[60px] md:h-[74px] shrink-0 bg-[#090c0a] border-2 border-[#2ee58f] flex items-center justify-center px-1 sm:px-2 shadow-[2px_2px_0_#2ee58f] sm:shadow-[3px_3px_0_#2ee58f] text-[#2ee58f] font-mono tracking-tight ${
               currentInput.length >= 5
                 ? 'text-xs xs:text-sm sm:text-lg md:text-xl'
                 : currentInput.length === 4

@@ -451,6 +451,7 @@ export function ArenaView({
             a: activeQuestion?.a,
             b: activeQuestion?.b,
             answer: parsedAnswer,
+            correctAnswer: activeQuestion?.answer ?? deriveExpectedAnswer(activeQuestion),
             isCorrect,
             pointsAwarded: points,
             latencyMs: clientDeltaMs
