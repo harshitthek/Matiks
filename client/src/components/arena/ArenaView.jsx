@@ -98,6 +98,8 @@ export function ArenaView({
   const [submissionError, setSubmissionError] = useState(null);
   const [teammates, setTeammates] = useState([]);
   const [flashBanner, setFlashBanner] = useState(null);
+  const [remainingSeconds, setRemainingSeconds] = useState(durationSeconds || 120);
+
   const [isFullscreen, setIsFullscreen] = useState(() =>
     typeof document !== 'undefined'
       ? Boolean(document.fullscreenElement || document.webkitFullscreenElement)
@@ -680,10 +682,27 @@ export function ArenaView({
     );
   }
 
+  const arenaGlow = remainingSeconds <= 15
+    ? 'rgba(255, 107, 94, 0.22)'
+    : remainingSeconds <= 45
+      ? 'rgba(245, 166, 35, 0.16)'
+      : streak >= 3
+        ? 'rgba(255, 227, 110, 0.18)'
+        : 'rgba(46, 229, 143, 0.10)';
+
   return (
-    <div className="w-full max-w-2xl mx-auto h-full max-h-[100dvh] flex flex-col justify-between overflow-hidden px-2.5 sm:px-4 py-1 sm:py-3 select-none touch-manipulation overscroll-none">
+    <div
+      className="w-full h-full max-h-[100dvh] flex flex-col justify-between overflow-x-hidden overflow-y-auto px-2 sm:px-4 py-1.5 sm:py-2.5 select-none touch-manipulation overscroll-none arena-stage"
+      style={{ '--arena-glow': arenaGlow }}
+    >
+      {/* Blueprint Corner Registration Crosshairs */}
+      <span className="arena-crosshair arena-crosshair-tl" aria-hidden="true" />
+      <span className="arena-crosshair arena-crosshair-tr" aria-hidden="true" />
+      <span className="arena-crosshair arena-crosshair-bl" aria-hidden="true" />
+      <span className="arena-crosshair arena-crosshair-br" aria-hidden="true" />
+
       {/* Top Header Telemetry */}
-      <div className="shrink-0 flex items-center justify-between gap-1.5 sm:gap-2 mb-1 sm:mb-2 pb-1 sm:pb-2 border-b-2 border-[#2ee58f]/20">
+      <div className="shrink-0 flex items-center justify-between gap-1.5 sm:gap-2 mb-1 sm:mb-2 pb-1 sm:pb-1.5 border-b-2 border-[#2ee58f]/20 relative z-10">
         <div className="flex items-center gap-1 sm:gap-2">
           <button
             type="button"
@@ -714,7 +733,7 @@ export function ArenaView({
             {isAudioMuted ? '🔇' : '🔊'}
           </button>
           <span className="hidden sm:inline font-mono text-xs text-[#2ee58f] font-bold tracking-widest uppercase truncate max-w-[140px] md:max-w-[200px]">
-            {currentName ? `${currentName} // ` : ''}§ 02 ARENA
+            {currentName ? `${currentName} // ` : ''}§ 02 COMBAT ARENA
           </span>
         </div>
 
@@ -734,7 +753,7 @@ export function ArenaView({
       {flashBanner && (
         <div
           role="alert"
-          className={`shrink-0 p-1.5 sm:p-2 mb-1 sm:mb-2 font-mono text-[11px] sm:text-xs flex items-center justify-between border-2 shadow-[2px_2px_0_#090c0a] ${
+          className={`shrink-0 p-1.5 sm:p-2 mb-1 sm:mb-2 font-mono text-[11px] sm:text-xs flex items-center justify-between border-2 shadow-[2px_2px_0_#090c0a] relative z-10 ${
             flashBanner.priority === 'emergency'
               ? 'border-[#ff6b5e] bg-[#ff6b5e]/20 text-[#ff6b5e]'
               : 'border-[#ffe36e] bg-[#ffe36e]/20 text-[#ffe36e]'
@@ -756,7 +775,7 @@ export function ArenaView({
 
       {/* Accidental Back / Exit Confirmation Bar */}
       {(showExitConfirm || exitPromptRequested) && (
-        <div className="shrink-0 border-2 border-[#f5a623] bg-[#f5a623]/15 p-2 sm:p-2.5 mb-1 sm:mb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-[3px_3px_0_#090c0a]">
+        <div className="shrink-0 border-2 border-[#f5a623] bg-[#f5a623]/15 p-2 sm:p-2.5 mb-1 sm:mb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-[3px_3px_0_#090c0a] relative z-10">
           <div className="font-mono text-xs text-[#e8ece3]">
             <strong className="text-[#f5a623] uppercase block">
               ⚠️ SPRINT IN PROGRESS!
@@ -782,63 +801,97 @@ export function ArenaView({
         </div>
       )}
 
-      {/* Teammate Live HUD */}
-      <div className="shrink-0 mb-1 sm:mb-1.5">
-        <TeammateHud
-          teammates={teammates}
-          currentRoll={currentRoll}
-          totalQuestions={questions.length || 15}
-        />
-      </div>
-
       {/* Submission Error Banner */}
       {submissionError && (
-        <div className="shrink-0 border-2 border-[#ff6b5e] bg-[#ff6b5e]/20 p-1.5 sm:p-2 mb-1 sm:mb-1.5 text-center font-mono text-xs font-bold text-[#ff6b5e] tracking-widest uppercase">
+        <div className="shrink-0 border-2 border-[#ff6b5e] bg-[#ff6b5e]/20 p-1.5 sm:p-2 mb-1 sm:mb-1.5 text-center font-mono text-xs font-bold text-[#ff6b5e] tracking-widest uppercase relative z-10">
           ⚠️ {submissionError}
         </div>
       )}
 
-      {/* Precision 120s Timer */}
-      <div className="shrink-0 mb-1 sm:mb-2">
-        <SprintTimer
-          startedAt={startedAt}
-          durationSeconds={durationSeconds}
-          isPaused={isPaused}
-          onExpire={handleTimerExpire}
-        />
-      </div>
-
       {/* Paused Overlay Notice */}
       {isPaused && (
-        <div className="shrink-0 border-2 border-[#f5a623] bg-[#f5a623]/20 p-2 sm:p-2.5 mb-1 sm:mb-2 text-center font-mono text-xs font-bold text-[#f5a623] tracking-widest uppercase animate-pulse">
+        <div className="shrink-0 border-2 border-[#f5a623] bg-[#f5a623]/20 p-2 sm:p-2.5 mb-1 sm:mb-2 text-center font-mono text-xs font-bold text-[#f5a623] tracking-widest uppercase animate-pulse relative z-10">
           ⚠️ SPRINT PAUSED BY ORGANIZER — TIMER FROZEN
         </div>
       )}
 
-      {/* Main Equation Card (Reflex 60fps) — expands/shrinks to fit viewport height */}
-      <div className="flex-1 min-h-0 my-auto flex flex-col justify-center">
-        <EquationCard
-          question={currentQuestion}
-          questionNumber={currentIndex + 1}
+      {/* Mobile-Only Teammate Ribbon (compact horizontal strip) */}
+      <div className="md:hidden shrink-0 mb-1">
+        <TeammateHud
+          teammates={teammates}
+          currentRoll={currentRoll}
           totalQuestions={questions.length || 15}
-          currentInput={currentInput}
-          flashState={flashState}
-          lastResult={lastResult}
-          isSubmitting={isSubmitting}
-          hasAutoSubmit={hasAutoSubmit}
+          layout="horizontal"
         />
       </div>
 
-      {/* Tactile On-Screen Numpad for Touch / Mobile */}
-      <div className="shrink-0 w-full max-w-sm mx-auto mt-1 sm:mt-2">
-        <TactileNumpad
-          onDigit={handleDigit}
-          onBackspace={handleBackspace}
-          onClear={handleClear}
-          onSubmit={() => void submitAnswerValue()}
-          showSubmit={!hasAutoSubmit}
-          disabled={isSubmitting || isFinished || isPaused}
-        />
+      {/* Main Battle Deck: 2-Column Battle Station on Desktop, Unified Single-Stream on Mobile */}
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row md:items-stretch gap-2 sm:gap-3 md:gap-5 relative z-10 max-w-5xl mx-auto w-full">
+        {/* Left Battle Sector (Desktop ~58-60%): Timer + Equation Card + Keyboard legend */}
+        <div className="flex-1 min-h-0 flex flex-col justify-between md:justify-center md:gap-3">
+          {/* Precision 120s Timer */}
+          <div className="shrink-0">
+            <SprintTimer
+              startedAt={startedAt}
+              durationSeconds={durationSeconds}
+              isPaused={isPaused}
+              onExpire={handleTimerExpire}
+              onRemainingSecondsChange={setRemainingSeconds}
+            />
+          </div>
+
+          {/* Main Equation Card */}
+          <div className="flex-1 min-h-0 flex flex-col justify-center my-auto">
+            <EquationCard
+              question={currentQuestion}
+              questionNumber={currentIndex + 1}
+              totalQuestions={questions.length || 15}
+              currentInput={currentInput}
+              flashState={flashState}
+              lastResult={lastResult}
+              isSubmitting={isSubmitting}
+              hasAutoSubmit={hasAutoSubmit}
+            />
+          </div>
+
+          {/* Desktop Keyboard Quick-Reference Legend */}
+          <div className="hidden md:flex items-center justify-between px-3 py-1.5 bg-[#090c0a]/60 border border-white/10 text-[11px] font-mono text-[#aab5ac] shrink-0">
+            <span className="flex items-center gap-1.5">
+              <kbd className="px-1 py-0.5 bg-[#141a16] border border-white/20 text-[#2ee58f] font-bold text-[10px]">0-9</kbd> Type Digits
+            </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="px-1 py-0.5 bg-[#141a16] border border-white/20 text-[#ffe36e] font-bold text-[10px]">ENTER / SPACE</kbd> Submit
+            </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="px-1 py-0.5 bg-[#141a16] border border-white/20 text-[#ff6b5e] font-bold text-[10px]">⌫ DEL</kbd> Erase
+            </span>
+          </div>
+        </div>
+
+        {/* Right Tactical Sector (Desktop ~40-42%): Teammate HUD Panel + Tactile Numpad */}
+        <div className="shrink-0 md:w-[300px] lg:w-[340px] flex flex-col justify-center gap-2 md:gap-3">
+          {/* Desktop-Only Teammate HUD Panel */}
+          <div className="hidden md:block">
+            <TeammateHud
+              teammates={teammates}
+              currentRoll={currentRoll}
+              totalQuestions={questions.length || 15}
+              layout="panel"
+            />
+          </div>
+
+          {/* Tactile On-Screen Numpad for Touch / Mouse Click */}
+          <div className="w-full max-w-[280px] sm:max-w-xs md:max-w-none mx-auto shrink-0">
+            <TactileNumpad
+              onDigit={handleDigit}
+              onBackspace={handleBackspace}
+              onClear={handleClear}
+              onSubmit={() => void submitAnswerValue()}
+              showSubmit={!hasAutoSubmit}
+              disabled={isSubmitting || isFinished || isPaused}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -8,13 +8,19 @@ export function SprintTimer({
   startedAt,
   durationSeconds = 120,
   isPaused = false,
-  onExpire
+  onExpire,
+  onRemainingSecondsChange
 }) {
   const onExpireRef = useRef(onExpire);
+  const onRemainingSecondsChangeRef = useRef(onRemainingSecondsChange);
 
   useEffect(() => {
     onExpireRef.current = onExpire;
   }, [onExpire]);
+
+  useEffect(() => {
+    onRemainingSecondsChangeRef.current = onRemainingSecondsChange;
+  }, [onRemainingSecondsChange]);
 
   const [remainingMs, setRemainingMs] = useState(() => {
     const totalDurationMs = durationSeconds * 1000;
@@ -24,6 +30,16 @@ export function SprintTimer({
     }
     return totalDurationMs;
   });
+
+  const lastReportedSecRef = useRef(null);
+
+  useEffect(() => {
+    const sec = Math.ceil(remainingMs / 1000);
+    if (sec !== lastReportedSecRef.current) {
+      lastReportedSecRef.current = sec;
+      onRemainingSecondsChangeRef.current?.(sec);
+    }
+  }, [remainingMs]);
 
   const initialRemainingMsRef = useRef(remainingMs);
   const mountPerfRef = useRef(0);

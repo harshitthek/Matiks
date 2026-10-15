@@ -288,7 +288,7 @@ export class DatabaseService {
               }
             });
           }
-        });
+        }, { maxWait: 10000, timeout: 15000 });
       } catch (err) {
         console.error(`[DatabaseService] Error syncing team #${room.teamCode}:`, err);
       }
@@ -482,7 +482,7 @@ export class DatabaseService {
               score: sub.scoreAfter ?? (sub.pointsAwarded || 0)
             }
           });
-        });
+        }, { maxWait: 10000, timeout: 15000 });
       } catch (err) {
         console.error(`[DatabaseService] Error syncing submission for session ${sessionId}:`, err);
       }
@@ -550,7 +550,7 @@ export class DatabaseService {
               }
             });
           }
-        });
+        }, { maxWait: 10000, timeout: 15000 });
       } catch (err) {
         console.error('[DatabaseService] Error syncing leaderboard standings:', err);
       }

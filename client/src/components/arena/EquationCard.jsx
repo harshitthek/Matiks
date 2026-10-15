@@ -38,10 +38,10 @@ export function EquationCard({
 
   return (
     <div
-      className={`cyber-card p-2.5 sm:p-4 md:p-6 text-center relative transition-colors duration-150 flex flex-col justify-between ${cardBorderClass}`}
+      className={`cyber-card-arena p-3 sm:p-5 md:p-6 text-center relative transition-colors duration-150 flex flex-col justify-between w-full ${cardBorderClass}`}
     >
       {/* Top Question Category & Progress Header */}
-      <div className="flex items-center justify-between pb-1 sm:pb-2 mb-1.5 sm:mb-3 border-b border-[#2ee58f]/20 font-mono text-xs">
+      <div className="flex items-center justify-between pb-1.5 sm:pb-2 mb-2 sm:mb-3 border-b border-[#2ee58f]/20 font-mono text-xs">
         <span className={`px-2 py-0.5 border font-bold text-[10px] sm:text-[11px] ${badge.bg} ${badge.border} ${badge.text}`}>
           {badge.label}
         </span>
@@ -50,20 +50,20 @@ export function EquationCard({
         </span>
       </div>
 
-      {/* Floating Delta Callout Feedback */}
+      {/* Floating Delta Callout Feedback — Pinned to Top Right to Prevent Operand Occlusion */}
       {lastResult && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-10 sm:-translate-y-14 pointer-events-none z-20">
+        <div className="absolute -top-3.5 right-4 pointer-events-none z-30">
           {lastResult.isCorrect ? (
-            <div className="animate-float-up bg-[#2ee58f] text-[#090c0a] font-mono font-extrabold text-xs sm:text-sm md:text-base px-2.5 py-1 border-2 border-[#090c0a] shadow-[3px_3px_0_#090c0a] flex items-center gap-1.5 whitespace-nowrap">
+            <div className="animate-float-up bg-[#2ee58f] text-[#090c0a] font-mono font-black text-xs sm:text-sm px-2.5 py-1 border-2 border-[#090c0a] shadow-[3px_3px_0_#090c0a] flex items-center gap-1.5 whitespace-nowrap">
               <span>+{lastResult.pointsAwarded} PTS</span>
               {lastResult.consecutiveStreak >= 3 && (
-                <span className="text-xs bg-[#090c0a] text-[#ffe36e] px-1 py-0.5">
+                <span className="text-[10px] bg-[#090c0a] text-[#ffe36e] px-1 py-0.5 font-bold">
                   🔥 {lastResult.consecutiveStreak}x
                 </span>
               )}
             </div>
           ) : (
-            <div className="animate-float-up bg-[#ff6b5e] text-[#090c0a] font-mono font-extrabold text-xs sm:text-sm md:text-base px-2.5 py-1 border-2 border-[#090c0a] shadow-[3px_3px_0_#090c0a] whitespace-nowrap">
+            <div className="animate-float-up bg-[#ff6b5e] text-[#090c0a] font-mono font-black text-xs sm:text-sm px-2.5 py-1 border-2 border-[#090c0a] shadow-[3px_3px_0_#090c0a] whitespace-nowrap">
               {lastResult.pointsAwarded} PTS
             </div>
           )}
@@ -71,8 +71,8 @@ export function EquationCard({
       )}
 
       {/* Equation Display */}
-      <div className="my-1 sm:my-3 md:my-5">
-        <div className="flex flex-wrap sm:flex-nowrap items-center justify-center gap-1.5 xs:gap-2 sm:gap-3 md:gap-5 font-display font-extrabold text-2xl xs:text-3xl sm:text-5xl md:text-6xl text-[#e8ece3] tracking-tight max-w-full">
+      <div className="my-2 sm:my-4 md:my-5">
+        <div className="flex flex-wrap sm:flex-nowrap items-center justify-center gap-2 sm:gap-3 md:gap-5 font-display font-extrabold text-2xl xs:text-3xl sm:text-5xl md:text-6xl text-[#e8ece3] tracking-tight max-w-full">
           <span>{question.a}</span>
           <span className="text-[#2ee58f] font-mono font-normal text-xl xs:text-2xl sm:text-4xl md:text-5xl">
             {question.operation || question.operator || '+'}
@@ -82,7 +82,7 @@ export function EquationCard({
 
           {/* User Input Answer Box */}
           <div
-            className={`w-[78px] xs:w-[92px] sm:w-[115px] md:w-[145px] h-[44px] xs:h-[48px] sm:h-[60px] md:h-[74px] shrink-0 bg-[#090c0a] border-2 border-[#2ee58f] flex items-center justify-center px-1 sm:px-2 shadow-[2px_2px_0_#2ee58f] sm:shadow-[3px_3px_0_#2ee58f] text-[#2ee58f] font-mono tracking-tight ${
+            className={`w-[78px] xs:w-[90px] sm:w-[110px] md:w-[130px] h-[44px] xs:h-[48px] sm:h-[56px] md:h-[64px] shrink-0 bg-[#090c0a] border-2 border-[#2ee58f] flex items-center justify-center px-1.5 sm:px-2 shadow-[2px_2px_0_#2ee58f] sm:shadow-[3px_3px_0_#2ee58f] text-[#2ee58f] font-mono tracking-tight ${
               currentInput.length >= 5
                 ? 'text-xs xs:text-sm sm:text-lg md:text-xl'
                 : currentInput.length === 4
