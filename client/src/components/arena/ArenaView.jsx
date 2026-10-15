@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { EquationCard } from './EquationCard.jsx';
 import { TactileNumpad } from './TactileNumpad.jsx';
 import { SprintTimer } from './SprintTimer.jsx';
 import { TeammateHud } from './TeammateHud.jsx';
 import { SprintSummary } from './SprintSummary.jsx';
+import { FlowerSticker } from '../common/FlowerSticker.jsx';
+import { WashiTape } from '../common/WashiTape.jsx';
+import { RadarDot } from '../common/RadarDot.jsx';
 import { submitAnswer, getTeamSnapshot } from '../../services/api.js';
 import { connectTeamStream } from '../../services/sse.js';
 import { soundFx } from '../../services/soundFx.js';
@@ -682,6 +685,23 @@ export function ArenaView({
     );
   }
 
+  const bucketCounts = useMemo(() => {
+    const counts = { B1: 0, B2: 0, B3: 0, B4: 0 };
+    if (Array.isArray(questions)) {
+      for (const q of questions) {
+        if (q && q.bucket && counts[q.bucket] !== undefined) {
+          counts[q.bucket]++;
+        }
+      }
+    }
+    return counts;
+  }, [questions]);
+
+  const onlineTeammatesCount = useMemo(() => {
+    if (!Array.isArray(teammates) || teammates.length === 0) return 1;
+    return teammates.filter((t) => t.connected !== false).length;
+  }, [teammates]);
+
   const arenaGlow = remainingSeconds <= 15
     ? 'rgba(255, 107, 94, 0.22)'
     : remainingSeconds <= 45
@@ -691,18 +711,9 @@ export function ArenaView({
         : 'rgba(46, 229, 143, 0.10)';
 
   return (
-    <div
-      className="w-full h-full max-h-[100dvh] flex flex-col justify-between overflow-x-hidden overflow-y-auto px-2 sm:px-4 py-1.5 sm:py-2.5 select-none touch-manipulation overscroll-none arena-stage"
-      style={{ '--arena-glow': arenaGlow }}
-    >
-      {/* Blueprint Corner Registration Crosshairs */}
-      <span className="arena-crosshair arena-crosshair-tl" aria-hidden="true" />
-      <span className="arena-crosshair arena-crosshair-tr" aria-hidden="true" />
-      <span className="arena-crosshair arena-crosshair-bl" aria-hidden="true" />
-      <span className="arena-crosshair arena-crosshair-br" aria-hidden="true" />
-
+    <div className="w-full max-w-6xl mx-auto h-full max-h-[100dvh] flex flex-col justify-between overflow-x-hidden overflow-y-auto px-2.5 sm:px-4 py-1.5 sm:py-2 select-none touch-manipulation overscroll-none arena-stage">
       {/* Top Header Telemetry */}
-      <div className="shrink-0 flex items-center justify-between gap-1.5 sm:gap-2 mb-1 sm:mb-2 pb-1 sm:pb-1.5 border-b-2 border-[#2ee58f]/20 relative z-10">
+      <div className="shrink-0 flex items-center justify-between gap-1.5 sm:gap-2 mb-1 pb-1 border-b border-[#2ee58f]/20">
         <div className="flex items-center gap-1 sm:gap-2">
           <button
             type="button"
@@ -715,10 +726,16 @@ export function ArenaView({
           <span className="font-mono text-[10px] sm:text-xs font-bold bg-[#ffe36e] text-[#090c0a] px-1.5 sm:px-2 py-0.5 border border-[#090c0a]">
             #{teamCode || 'SQUAD'}
           </span>
+          <div className="hidden sm:flex items-center gap-1 px-1.5 py-0.5 bg-[#090c0a] border border-white/15">
+            <div className="w-3.5 h-3.5 rounded-xs bg-[#E6F8ED] border border-[#090c0a] p-0.5 flex items-center justify-center shrink-0">
+              <img src="/brand/ufc-logo.svg" alt="UFC" className="w-full h-full object-contain" />
+            </div>
+            <span className="font-mono text-[10px] font-bold text-[#e8ece3] uppercase">UFC</span>
+          </div>
           <button
             type="button"
             onClick={toggleFullscreen}
-            className="font-mono text-[10px] sm:text-xs text-[#aab5ac] hover:text-[#2ee58f] px-1.5 sm:px-2 py-0.5 border border-white/15 hover:border-[#2ee58f] transition-colors cursor-pointer"
+            className="hidden sm:inline-block font-mono text-[10px] sm:text-xs text-[#aab5ac] hover:text-[#2ee58f] px-1.5 sm:px-2 py-0.5 border border-white/15 hover:border-[#2ee58f] transition-colors cursor-pointer"
             title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
           >
             {isFullscreen ? '⛶ EXIT FULL' : '⛶ FULL'}
@@ -733,7 +750,7 @@ export function ArenaView({
             {isAudioMuted ? '🔇' : '🔊'}
           </button>
           <span className="hidden sm:inline font-mono text-xs text-[#2ee58f] font-bold tracking-widest uppercase truncate max-w-[140px] md:max-w-[200px]">
-            {currentName ? `${currentName} // ` : ''}§ 02 COMBAT ARENA
+            {currentName ? `${currentName} // ` : ''}§ 02 ARENA
           </span>
         </div>
 
@@ -753,7 +770,7 @@ export function ArenaView({
       {flashBanner && (
         <div
           role="alert"
-          className={`shrink-0 p-1.5 sm:p-2 mb-1 sm:mb-2 font-mono text-[11px] sm:text-xs flex items-center justify-between border-2 shadow-[2px_2px_0_#090c0a] relative z-10 ${
+          className={`shrink-0 p-1.5 sm:p-2 mb-1 sm:mb-2 font-mono text-[11px] sm:text-xs flex items-center justify-between border-2 shadow-[2px_2px_0_#090c0a] ${
             flashBanner.priority === 'emergency'
               ? 'border-[#ff6b5e] bg-[#ff6b5e]/20 text-[#ff6b5e]'
               : 'border-[#ffe36e] bg-[#ffe36e]/20 text-[#ffe36e]'
@@ -775,7 +792,7 @@ export function ArenaView({
 
       {/* Accidental Back / Exit Confirmation Bar */}
       {(showExitConfirm || exitPromptRequested) && (
-        <div className="shrink-0 border-2 border-[#f5a623] bg-[#f5a623]/15 p-2 sm:p-2.5 mb-1 sm:mb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-[3px_3px_0_#090c0a] relative z-10">
+        <div className="shrink-0 border-2 border-[#f5a623] bg-[#f5a623]/15 p-2 sm:p-2.5 mb-1 sm:mb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-[3px_3px_0_#090c0a]">
           <div className="font-mono text-xs text-[#e8ece3]">
             <strong className="text-[#f5a623] uppercase block">
               ⚠️ SPRINT IN PROGRESS!
@@ -803,34 +820,72 @@ export function ArenaView({
 
       {/* Submission Error Banner */}
       {submissionError && (
-        <div className="shrink-0 border-2 border-[#ff6b5e] bg-[#ff6b5e]/20 p-1.5 sm:p-2 mb-1 sm:mb-1.5 text-center font-mono text-xs font-bold text-[#ff6b5e] tracking-widest uppercase relative z-10">
+        <div className="shrink-0 border-2 border-[#ff6b5e] bg-[#ff6b5e]/20 p-1.5 sm:p-2 mb-1 sm:mb-1.5 text-center font-mono text-xs font-bold text-[#ff6b5e] tracking-widest uppercase">
           ⚠️ {submissionError}
         </div>
       )}
 
       {/* Paused Overlay Notice */}
       {isPaused && (
-        <div className="shrink-0 border-2 border-[#f5a623] bg-[#f5a623]/20 p-2 sm:p-2.5 mb-1 sm:mb-2 text-center font-mono text-xs font-bold text-[#f5a623] tracking-widest uppercase animate-pulse relative z-10">
+        <div className="shrink-0 border-2 border-[#f5a623] bg-[#f5a623]/20 p-2 sm:p-2.5 mb-1 sm:mb-2 text-center font-mono text-xs font-bold text-[#f5a623] tracking-widest uppercase animate-pulse">
           ⚠️ SPRINT PAUSED BY ORGANIZER — TIMER FROZEN
         </div>
       )}
 
-      {/* Mobile-Only Teammate Ribbon (compact horizontal strip) */}
-      <div className="md:hidden shrink-0 mb-1">
-        <TeammateHud
-          teammates={teammates}
-          currentRoll={currentRoll}
-          totalQuestions={questions.length || 15}
-          layout="horizontal"
-        />
-      </div>
+      {/* Main Battle Deck: 3-Panel Responsive Station */}
+      <div className="flex-1 min-h-0 flex items-center justify-center lg:gap-6 w-full max-w-full my-auto">
+        {/* Left Flank (Desktop): Carry Taxonomy Guide */}
+        <div className="hidden lg:flex flex-col gap-3 w-56 xl:w-64 shrink-0">
+          <div className="cyber-card p-3 relative text-left">
+            <WashiTape color="signal" rotation="-2.5deg" width="70px" className="-top-3 left-4" />
+            <div className="font-mono text-[10px] text-[#2ee58f] font-bold tracking-widest uppercase mb-2 pb-1 border-b border-[#2ee58f]/20 flex items-center justify-between">
+              <span>CARRY TAXONOMY</span>
+              <span className="text-[9px] text-[#aab5ac]">4 BUCKETS</span>
+            </div>
+            <div className="flex flex-col gap-1.5 font-mono text-[11px]">
+              <div className="p-1.5 bg-[#090c0a] border border-[#ffe36e]/40 flex items-center justify-between">
+                <span className="font-bold text-[#ffe36e]">B1 // NO CARRY</span>
+                <span className="text-[10px] text-[#aab5ac]">{bucketCounts.B1 || 3} Qs</span>
+              </div>
+              <div className="p-1.5 bg-[#090c0a] border border-[#2ee58f]/40 flex items-center justify-between">
+                <span className="font-bold text-[#2ee58f]">B2 // ONES CARRY</span>
+                <span className="text-[10px] text-[#aab5ac]">{bucketCounts.B2 || 4} Qs</span>
+              </div>
+              <div className="p-1.5 bg-[#090c0a] border border-[#f5a623]/40 flex items-center justify-between">
+                <span className="font-bold text-[#f5a623]">B3 // TENS CARRY</span>
+                <span className="text-[10px] text-[#aab5ac]">{bucketCounts.B3 || 4} Qs</span>
+              </div>
+              <div className="p-1.5 bg-[#090c0a] border border-[#ff6b5e]/40 flex items-center justify-between">
+                <span className="font-bold text-[#ff6b5e]">B4 // DOUBLE CARRY</span>
+                <span className="text-[10px] text-[#aab5ac]">{bucketCounts.B4 || 4} Qs</span>
+              </div>
+            </div>
+            <div className="mt-2.5 pt-2 border-t border-white/10 font-mono text-[10px] text-[#aab5ac] flex items-center justify-between">
+              <span>ACTIVE BUCKET:</span>
+              <strong className="text-[#2ee58f] uppercase font-bold">{currentQuestion?.bucket || 'B1'}</strong>
+            </div>
+          </div>
 
-      {/* Main Battle Deck: 2-Column Battle Station on Desktop, Unified Single-Stream on Mobile */}
-      <div className="flex-1 min-h-0 flex flex-col md:flex-row md:items-stretch gap-2 sm:gap-3 md:gap-5 relative z-10 max-w-5xl mx-auto w-full">
-        {/* Left Battle Sector (Desktop ~58-60%): Timer + Equation Card + Keyboard legend */}
-        <div className="flex-1 min-h-0 flex flex-col justify-between md:justify-center md:gap-3">
+          {/* Botanical Sticker Accent */}
+          <div className="flex items-center justify-center py-1">
+            <FlowerSticker id={2} size={50} rotation={-6} withTape tapeColor="butter" interactive />
+          </div>
+        </div>
+
+        {/* Center Stage: Core Combat Reflex Cockpit (Timer + Card + Numpad) */}
+        <div className="w-full max-w-lg min-w-0 flex flex-col items-center gap-1.5 sm:gap-2.5 my-auto">
+          {/* Teammate Live HUD (Horizontal ribbon on mobile/tablet) */}
+          <div className="lg:hidden w-full min-w-0 mb-0.5">
+            <TeammateHud
+              teammates={teammates}
+              currentRoll={currentRoll}
+              totalQuestions={questions.length || 15}
+              layout="horizontal"
+            />
+          </div>
+
           {/* Precision 120s Timer */}
-          <div className="shrink-0">
+          <div className="w-full min-w-0">
             <SprintTimer
               startedAt={startedAt}
               durationSeconds={durationSeconds}
@@ -840,8 +895,8 @@ export function ArenaView({
             />
           </div>
 
-          {/* Main Equation Card */}
-          <div className="flex-1 min-h-0 flex flex-col justify-center my-auto">
+          {/* Main Equation Card — Proportional & Centered */}
+          <div className="w-full min-w-0">
             <EquationCard
               question={currentQuestion}
               questionNumber={currentIndex + 1}
@@ -854,34 +909,8 @@ export function ArenaView({
             />
           </div>
 
-          {/* Desktop Keyboard Quick-Reference Legend */}
-          <div className="hidden md:flex items-center justify-between px-3 py-1.5 bg-[#090c0a]/60 border border-white/10 text-[11px] font-mono text-[#aab5ac] shrink-0">
-            <span className="flex items-center gap-1.5">
-              <kbd className="px-1 py-0.5 bg-[#141a16] border border-white/20 text-[#2ee58f] font-bold text-[10px]">0-9</kbd> Type Digits
-            </span>
-            <span className="flex items-center gap-1.5">
-              <kbd className="px-1 py-0.5 bg-[#141a16] border border-white/20 text-[#ffe36e] font-bold text-[10px]">ENTER / SPACE</kbd> Submit
-            </span>
-            <span className="flex items-center gap-1.5">
-              <kbd className="px-1 py-0.5 bg-[#141a16] border border-white/20 text-[#ff6b5e] font-bold text-[10px]">⌫ DEL</kbd> Erase
-            </span>
-          </div>
-        </div>
-
-        {/* Right Tactical Sector (Desktop ~40-42%): Teammate HUD Panel + Tactile Numpad */}
-        <div className="shrink-0 md:w-[300px] lg:w-[340px] flex flex-col justify-center gap-2 md:gap-3">
-          {/* Desktop-Only Teammate HUD Panel */}
-          <div className="hidden md:block">
-            <TeammateHud
-              teammates={teammates}
-              currentRoll={currentRoll}
-              totalQuestions={questions.length || 15}
-              layout="panel"
-            />
-          </div>
-
-          {/* Tactile On-Screen Numpad for Touch / Mouse Click */}
-          <div className="w-full max-w-[280px] sm:max-w-xs md:max-w-none mx-auto shrink-0">
+          {/* Tactile On-Screen Numpad — Centered Directly Beneath EquationCard */}
+          <div className="w-full max-w-[320px] sm:max-w-[340px]">
             <TactileNumpad
               onDigit={handleDigit}
               onBackspace={handleBackspace}
@@ -890,6 +919,65 @@ export function ArenaView({
               showSubmit={!hasAutoSubmit}
               disabled={isSubmitting || isFinished || isPaused}
             />
+          </div>
+        </div>
+
+        {/* Right Flank (Desktop): Squad Telemetry & Live Stats */}
+        <div className="hidden lg:flex flex-col gap-3 w-56 xl:w-64 shrink-0">
+          <div className="cyber-card p-3 relative text-left">
+            <WashiTape color="pink" rotation="2.5deg" width="70px" className="-top-3 right-4" />
+            <div className="font-mono text-[10px] text-[#ffe36e] font-bold tracking-widest uppercase mb-2 pb-1 border-b border-[#ffe36e]/20 flex items-center justify-between">
+              <span>SQUAD TELEMETRY</span>
+              <span className="text-[9px] text-[#2ee58f]">{onlineTeammatesCount} ONLINE</span>
+            </div>
+
+            <div className="flex flex-col gap-2 font-mono text-[11px]">
+              {(teammates.length > 0 ? teammates : [{ rollNumber: currentRoll || 'YOU', name: currentName || 'Player', currentScore: score, streak, connected: true, completedQuestions: currentIndex }]).map((mate) => {
+                const isMe = mate.rollNumber === currentRoll;
+                const isDone = (mate.completedQuestions || 0) >= (questions.length || 15);
+                const progressPct = Math.min(100, Math.round(((mate.completedQuestions || 0) / (questions.length || 15)) * 100));
+
+                return (
+                  <div
+                    key={mate.rollNumber}
+                    className={`p-2 border bg-[#090c0a] ${
+                      isMe ? 'border-[#2ee58f]/50' : 'border-white/10'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <RadarDot status={mate.connected ? (isDone ? 'butter' : 'online') : 'offline'} />
+                        <span className="font-bold truncate text-[#e8ece3] text-xs">
+                          {mate.name || mate.rollNumber}
+                        </span>
+                        {isMe && <span className="text-[9px] bg-[#2ee58f] text-[#090c0a] font-black px-1">YOU</span>}
+                      </div>
+                      <span className="text-[#ffe36e] font-bold text-xs shrink-0">
+                        {(isMe ? score : (mate.individualScore ?? mate.currentScore ?? 0)).toLocaleString()} pts
+                      </span>
+                    </div>
+
+                    {/* Micro Progress Bar */}
+                    <div className="flex items-center gap-1.5 text-[9px] text-[#aab5ac]">
+                      <div className="flex-1 h-1 bg-[#141a16] border border-white/10 overflow-hidden">
+                        <div
+                          className={`h-full ${isDone ? 'bg-[#ffe36e]' : 'bg-[#2ee58f]'}`}
+                          style={{ width: `${isMe ? Math.min(100, Math.round((currentIndex / (questions.length || 15)) * 100)) : progressPct}%` }}
+                        />
+                      </div>
+                      <span className={isDone ? 'text-[#ffe36e] font-bold' : 'text-[#2ee58f]'}>
+                        {isDone ? 'DONE' : `Q${(isMe ? currentIndex : (mate.completedQuestions || 0)) + 1}`}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Botanical Sticker Accent */}
+          <div className="flex items-center justify-center py-1">
+            <FlowerSticker id={8} size={50} rotation={8} withTape tapeColor="pink" interactive />
           </div>
         </div>
       </div>

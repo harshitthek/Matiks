@@ -39,8 +39,8 @@ export function TactileNumpad({
   const digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
   return (
-    <div className={`w-full max-w-sm mx-auto select-none touch-manipulation ${className}`}>
-      <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5">
+    <div className={`w-full max-w-[320px] sm:max-w-[340px] mx-auto select-none touch-manipulation ${className}`}>
+      <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
         {/* Digits 1 through 9 */}
         {digits.map((digit) => (
           <button
@@ -48,7 +48,7 @@ export function TactileNumpad({
             type="button"
             disabled={disabled}
             onClick={() => handleDigitPress(digit)}
-            className="numpad-btn py-2 sm:py-2.5 md:py-3 bg-[#0f1411] hover:bg-[#161d18] active:bg-[#2ee58f]/20 border-2 border-[#2ee58f]/30 hover:border-[#2ee58f] active:border-[#2ee58f] text-[#e8ece3] font-display font-bold text-xl sm:text-2xl md:text-2xl shadow-[2px_2px_0_#090c0a] sm:shadow-[3px_3px_0_#090c0a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0_#090c0a] transition-all duration-75 cursor-pointer touch-manipulation select-none"
+            className="numpad-btn py-1.5 sm:py-2 md:py-2.5 bg-[#0f1411] hover:bg-[#161d18] active:bg-[#2ee58f]/20 border-2 border-[#2ee58f]/30 hover:border-[#2ee58f] active:border-[#2ee58f] text-[#e8ece3] font-display font-bold text-lg sm:text-xl md:text-2xl shadow-[2px_2px_0_#090c0a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0_#090c0a] transition-all duration-75 cursor-pointer touch-manipulation select-none"
           >
             {digit}
           </button>
@@ -59,7 +59,7 @@ export function TactileNumpad({
           type="button"
           disabled={disabled}
           onClick={() => handleDigitPress('0')}
-          className="numpad-btn py-2 sm:py-2.5 md:py-3 bg-[#0f1411] hover:bg-[#161d18] active:bg-[#2ee58f]/20 border-2 border-[#2ee58f]/30 hover:border-[#2ee58f] active:border-[#2ee58f] text-[#e8ece3] font-display font-bold text-xl sm:text-2xl md:text-2xl shadow-[2px_2px_0_#090c0a] sm:shadow-[3px_3px_0_#090c0a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0_#090c0a] transition-all duration-75 cursor-pointer touch-manipulation select-none"
+          className="numpad-btn py-1.5 sm:py-2 md:py-2.5 bg-[#0f1411] hover:bg-[#161d18] active:bg-[#2ee58f]/20 border-2 border-[#2ee58f]/30 hover:border-[#2ee58f] active:border-[#2ee58f] text-[#e8ece3] font-display font-bold text-lg sm:text-xl md:text-2xl shadow-[2px_2px_0_#090c0a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0_#090c0a] transition-all duration-75 cursor-pointer touch-manipulation select-none"
         >
           0
         </button>
@@ -68,7 +68,7 @@ export function TactileNumpad({
           type="button"
           disabled={disabled}
           onClick={handleClearPress}
-          className="numpad-btn py-2 sm:py-2.5 md:py-3 bg-[#090c0a] hover:bg-[#ff6b5e]/15 active:bg-[#ff6b5e]/25 border-2 border-[#ff6b5e]/60 hover:border-[#ff6b5e] active:border-[#ff6b5e] text-[#ff6b5e] font-mono font-bold text-[11px] sm:text-xs md:text-sm tracking-wider uppercase shadow-[2px_2px_0_#090c0a] sm:shadow-[3px_3px_0_#090c0a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0_#090c0a] transition-all duration-75 cursor-pointer touch-manipulation select-none"
+          className="numpad-btn py-1.5 sm:py-2 md:py-2.5 bg-[#090c0a] hover:bg-[#ff6b5e]/15 active:bg-[#ff6b5e]/25 border-2 border-[#ff6b5e]/60 hover:border-[#ff6b5e] active:border-[#ff6b5e] text-[#ff6b5e] font-mono font-bold text-[11px] sm:text-xs md:text-sm tracking-wider uppercase shadow-[2px_2px_0_#090c0a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0_#090c0a] transition-all duration-75 cursor-pointer touch-manipulation select-none"
         >
           CLR
         </button>
@@ -78,7 +78,7 @@ export function TactileNumpad({
           disabled={disabled}
           onClick={handleBackspacePress}
           aria-label="Backspace"
-          className="numpad-btn py-2 sm:py-2.5 md:py-3 bg-[#090c0a] hover:bg-[#ffe36e]/15 active:bg-[#ffe36e]/25 border-2 border-[#ffe36e]/60 hover:border-[#ffe36e] active:border-[#ffe36e] text-[#ffe36e] font-mono font-black text-[11px] sm:text-xs md:text-sm tracking-wider uppercase shadow-[2px_2px_0_#090c0a] sm:shadow-[3px_3px_0_#090c0a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0_#090c0a] transition-all duration-75 cursor-pointer flex items-center justify-center gap-1 touch-manipulation select-none"
+          className="numpad-btn py-1.5 sm:py-2 md:py-2.5 bg-[#090c0a] hover:bg-[#ffe36e]/15 active:bg-[#ffe36e]/25 border-2 border-[#ffe36e]/60 hover:border-[#ffe36e] active:border-[#ffe36e] text-[#ffe36e] font-mono font-black text-[11px] sm:text-xs md:text-sm tracking-wider uppercase shadow-[2px_2px_0_#090c0a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0_#090c0a] transition-all duration-75 cursor-pointer flex items-center justify-center gap-1 touch-manipulation select-none"
         >
           ⌫ DEL
         </button>

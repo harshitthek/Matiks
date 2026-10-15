@@ -1,4 +1,5 @@
 import React from 'react';
+import { WashiTape } from '../common/WashiTape.jsx';
 
 /**
  * 60fps Reflex Mode Equation Card.
@@ -38,15 +39,17 @@ export function EquationCard({
 
   return (
     <div
-      className={`cyber-card-arena p-3 sm:p-5 md:p-6 text-center relative transition-colors duration-150 flex flex-col justify-between w-full ${cardBorderClass}`}
+      className={`cyber-card-arena p-2.5 sm:p-3.5 md:p-4 text-center relative transition-colors duration-150 flex flex-col justify-between w-full ${cardBorderClass}`}
     >
+      {/* Taped paper detail */}
+      <WashiTape color="butter" rotation="-2deg" width="60px" className="-top-2.5 left-4 z-20 pointer-events-none" />
       {/* Top Question Category & Progress Header */}
-      <div className="flex items-center justify-between pb-1.5 sm:pb-2 mb-2 sm:mb-3 border-b border-[#2ee58f]/20 font-mono text-xs">
-        <span className={`px-2 py-0.5 border font-bold text-[10px] sm:text-[11px] ${badge.bg} ${badge.border} ${badge.text}`}>
+      <div className="flex items-center justify-between pb-1 sm:pb-1.5 mb-1.5 sm:mb-2 border-b border-[#2ee58f]/20 font-mono text-xs gap-2">
+        <span className={`px-2 py-0.5 border font-bold text-[10px] sm:text-[11px] shrink-0 ${badge.bg} ${badge.border} ${badge.text}`}>
           {badge.label}
         </span>
-        <span className="text-[#aab5ac] tracking-widest font-bold text-[10px] sm:text-xs">
-          QUESTION <strong className="text-[#e8ece3]">{String(questionNumber).padStart(2, '0')}</strong> / {totalQuestions}
+        <span className="text-[#aab5ac] tracking-widest font-bold text-[10px] sm:text-xs shrink-0">
+          <span className="hidden xs:inline">QUESTION </span><strong className="text-[#e8ece3]">{String(questionNumber).padStart(2, '0')}</strong> / {totalQuestions}
         </span>
       </div>
 
@@ -71,23 +74,23 @@ export function EquationCard({
       )}
 
       {/* Equation Display */}
-      <div className="my-2 sm:my-4 md:my-5">
-        <div className="flex flex-wrap sm:flex-nowrap items-center justify-center gap-2 sm:gap-3 md:gap-5 font-display font-extrabold text-2xl xs:text-3xl sm:text-5xl md:text-6xl text-[#e8ece3] tracking-tight max-w-full">
+      <div className="my-1 sm:my-2 md:my-3">
+        <div className="flex items-center justify-center gap-1.5 xs:gap-2 sm:gap-3 md:gap-4 font-display font-extrabold text-2xl xs:text-3xl sm:text-4xl md:text-5xl text-[#e8ece3] tracking-tight max-w-full">
           <span>{question.a}</span>
-          <span className="text-[#2ee58f] font-mono font-normal text-xl xs:text-2xl sm:text-4xl md:text-5xl">
+          <span className="text-[#2ee58f] font-mono font-normal text-xl xs:text-2xl sm:text-3xl md:text-4xl">
             {question.operation || question.operator || '+'}
           </span>
           <span>{question.b}</span>
-          <span className="text-[#aab5ac] font-mono font-normal text-xl xs:text-2xl sm:text-4xl md:text-5xl">=</span>
+          <span className="text-[#aab5ac] font-mono font-normal text-xl xs:text-2xl sm:text-3xl md:text-4xl">=</span>
 
           {/* User Input Answer Box */}
           <div
-            className={`w-[78px] xs:w-[90px] sm:w-[110px] md:w-[130px] h-[44px] xs:h-[48px] sm:h-[56px] md:h-[64px] shrink-0 bg-[#090c0a] border-2 border-[#2ee58f] flex items-center justify-center px-1.5 sm:px-2 shadow-[2px_2px_0_#2ee58f] sm:shadow-[3px_3px_0_#2ee58f] text-[#2ee58f] font-mono tracking-tight ${
+            className={`w-[75px] xs:w-[85px] sm:w-[105px] md:w-[120px] h-[40px] xs:h-[46px] sm:h-[50px] md:h-[56px] shrink-0 bg-[#090c0a] border-2 border-[#2ee58f] flex items-center justify-center px-1.5 sm:px-2 shadow-[2px_2px_0_#2ee58f] sm:shadow-[3px_3px_0_#2ee58f] text-[#2ee58f] font-mono tracking-tight ${
               currentInput.length >= 5
-                ? 'text-xs xs:text-sm sm:text-lg md:text-xl'
+                ? 'text-xs xs:text-sm sm:text-base md:text-lg'
                 : currentInput.length === 4
-                ? 'text-sm xs:text-base sm:text-2xl md:text-3xl'
-                : 'text-xl xs:text-2xl sm:text-4xl md:text-5xl'
+                ? 'text-sm xs:text-base sm:text-xl md:text-2xl'
+                : 'text-xl xs:text-2xl sm:text-3xl md:text-4xl'
             }`}
           >
             {currentInput ? (
@@ -100,7 +103,7 @@ export function EquationCard({
       </div>
 
       {/* Helper Prompt */}
-      <div className="font-mono text-[9px] sm:text-xs text-[#aab5ac] tracking-wider mt-1 sm:mt-2">
+      <div className="font-mono text-[9px] sm:text-xs text-[#aab5ac] tracking-wider mt-1">
         {isSubmitting ? (
           <span className="text-[#ffe36e] animate-pulse">VALIDATING LATENCY...</span>
         ) : hasAutoSubmit ? (

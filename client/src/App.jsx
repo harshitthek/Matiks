@@ -137,6 +137,17 @@ export function App() {
   }, []);
 
   const [teamSession, setTeamSession] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('arena') === 'mock' || params.get('preview') === 'arena') {
+        return {
+          teamCode: 'XT-54',
+          memberToken: 'tok_preview',
+          rollNumber: '24UFC001',
+          name: 'JB'
+        };
+      }
+    }
     try {
       const saved = localStorage.getItem(SESSION_STORAGE_KEY);
       if (!saved) return null;
@@ -160,6 +171,28 @@ export function App() {
     if (typeof window === 'undefined') return null;
     try {
       const params = new URLSearchParams(window.location.search);
+      if (params.get('arena') === 'mock' || params.get('preview') === 'arena') {
+        return {
+          sessionId: 'sess_preview',
+          teamCode: 'XT-54',
+          questionIndex: 0,
+          currentScore: 120,
+          streak: 2,
+          maxStreak: 2,
+          submissions: [],
+          isFinished: false,
+          isTimeOut: false,
+          isPaused: false,
+          startedAt: Date.now() - 15000,
+          durationSeconds: 120,
+          questions: [
+            { bucket: 'B1', a: 24, b: 45, operation: '+', answer: 69 },
+            { bucket: 'B2', a: 38, b: 27, operation: '+', answer: 65 },
+            { bucket: 'B3', a: 64, b: 53, operation: '+', answer: 117 },
+            { bucket: 'B4', a: 78, b: 59, operation: '+', answer: 137 }
+          ]
+        };
+      }
       if (params.get('arena') !== '1') {
         sessionStorage.removeItem(SPRINT_STORAGE_KEY);
         return null;
@@ -192,6 +225,7 @@ export function App() {
 
   useEffect(() => {
     sprintSessionRef.current = sprintSession;
+    if (sprintSession?.sessionId === 'sess_preview') return;
     try {
       if (sprintSession) {
         sessionStorage.setItem(SPRINT_STORAGE_KEY, JSON.stringify(sprintSession));
@@ -220,6 +254,7 @@ export function App() {
   // Ensure initial URL reflects restored team session (unless handling an OIDC callback)
   useEffect(() => {
     if (oidcCallbackPending || hasOidcCallbackInUrl()) return;
+    if (sprintSession?.sessionId === 'sess_preview' || teamSession?.memberToken === 'tok_preview') return;
     if (currentView === 'squad' && teamSession?.teamCode) {
       const targetUrl = buildSquadUrl(teamSession, sprintSession);
       if (window.location.pathname + window.location.search !== targetUrl) {
@@ -372,6 +407,7 @@ export function App() {
 
   // Sync session state to localStorage
   useEffect(() => {
+    if (teamSession?.memberToken === 'tok_preview') return;
     try {
       if (teamSession) {
         localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(teamSession));

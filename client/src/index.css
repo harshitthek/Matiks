@@ -542,58 +542,20 @@ textarea {
   }
 }
 
-/* Reactive Tactical Arena Stage */
+/* Clean Tactical Arena Stage */
 .arena-stage {
   background-color: var(--ink);
   background-image:
-    radial-gradient(circle at 50% 42%, var(--arena-glow, rgba(46, 229, 143, 0.08)) 0%, rgba(15, 20, 17, 0.5) 45%, var(--ink) 80%),
-    radial-gradient(rgba(232, 236, 227, 0.07) 1.25px, transparent 1.25px);
+    linear-gradient(180deg, rgba(20, 27, 22, 0.5) 0%, rgba(9, 12, 10, 0.95) 100%),
+    radial-gradient(rgba(232, 236, 227, 0.04) 1px, transparent 1px);
   background-size: 100% 100%, 24px 24px;
-  background-position: center center, 0 0;
   position: relative;
-}
-
-/* Blueprint Corner Registration Crosshairs */
-.arena-crosshair {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  pointer-events: none;
-  opacity: 0.35;
-  z-index: 2;
-}
-
-.arena-crosshair-tl {
-  top: 10px;
-  left: 10px;
-  border-top: 2px solid var(--signal);
-  border-left: 2px solid var(--signal);
-}
-
-.arena-crosshair-tr {
-  top: 10px;
-  right: 10px;
-  border-top: 2px solid var(--signal);
-  border-right: 2px solid var(--signal);
-}
-
-.arena-crosshair-bl {
-  bottom: 10px;
-  left: 10px;
-  border-bottom: 2px solid var(--signal);
-  border-left: 2px solid var(--signal);
-}
-
-.arena-crosshair-br {
-  bottom: 10px;
-  right: 10px;
-  border-bottom: 2px solid var(--signal);
-  border-right: 2px solid var(--signal);
 }
 
 .cyber-card-arena {
   background: var(--ink-2);
-  border: 2px solid rgba(46, 229, 143, 0.35);
-  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.6), inset 0 0 20px rgba(46, 229, 143, 0.03);
+  border: 2px solid rgba(46, 229, 143, 0.3);
+  box-shadow: 3px 3px 0 #090c0a;
   position: relative;
 }
+
