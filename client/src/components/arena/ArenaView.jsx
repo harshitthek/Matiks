@@ -666,6 +666,24 @@ export function ArenaView({
     onDismissExitPrompt?.();
   };
 
+  const bucketCounts = useMemo(() => {
+    if (!Array.isArray(questions) || questions.length === 0) {
+      return { B1: 3, B2: 4, B3: 4, B4: 4 };
+    }
+    const counts = { B1: 0, B2: 0, B3: 0, B4: 0 };
+    for (const q of questions) {
+      if (q && q.bucket && counts[q.bucket] !== undefined) {
+        counts[q.bucket]++;
+      }
+    }
+    return counts;
+  }, [questions]);
+
+  const onlineTeammatesCount = useMemo(() => {
+    if (!Array.isArray(teammates) || teammates.length === 0) return 1;
+    return teammates.filter((t) => t.connected !== false).length;
+  }, [teammates]);
+
   // If sprint is finished, render summary
   if (isFinished) {
     return (
@@ -684,31 +702,6 @@ export function ArenaView({
       />
     );
   }
-
-  const bucketCounts = useMemo(() => {
-    const counts = { B1: 0, B2: 0, B3: 0, B4: 0 };
-    if (Array.isArray(questions)) {
-      for (const q of questions) {
-        if (q && q.bucket && counts[q.bucket] !== undefined) {
-          counts[q.bucket]++;
-        }
-      }
-    }
-    return counts;
-  }, [questions]);
-
-  const onlineTeammatesCount = useMemo(() => {
-    if (!Array.isArray(teammates) || teammates.length === 0) return 1;
-    return teammates.filter((t) => t.connected !== false).length;
-  }, [teammates]);
-
-  const arenaGlow = remainingSeconds <= 15
-    ? 'rgba(255, 107, 94, 0.22)'
-    : remainingSeconds <= 45
-      ? 'rgba(245, 166, 35, 0.16)'
-      : streak >= 3
-        ? 'rgba(255, 227, 110, 0.18)'
-        : 'rgba(46, 229, 143, 0.10)';
 
   return (
     <div className="w-full max-w-6xl mx-auto h-full max-h-[100dvh] flex flex-col justify-between overflow-x-hidden overflow-y-auto px-2.5 sm:px-4 py-1.5 sm:py-2 select-none touch-manipulation overscroll-none arena-stage">
@@ -845,19 +838,19 @@ export function ArenaView({
             <div className="flex flex-col gap-1.5 font-mono text-[11px]">
               <div className="p-1.5 bg-[#090c0a] border border-[#ffe36e]/40 flex items-center justify-between">
                 <span className="font-bold text-[#ffe36e]">B1 // NO CARRY</span>
-                <span className="text-[10px] text-[#aab5ac]">{bucketCounts.B1 || 3} Qs</span>
+                <span className="text-[10px] text-[#aab5ac]">{bucketCounts.B1} Qs</span>
               </div>
               <div className="p-1.5 bg-[#090c0a] border border-[#2ee58f]/40 flex items-center justify-between">
                 <span className="font-bold text-[#2ee58f]">B2 // ONES CARRY</span>
-                <span className="text-[10px] text-[#aab5ac]">{bucketCounts.B2 || 4} Qs</span>
+                <span className="text-[10px] text-[#aab5ac]">{bucketCounts.B2} Qs</span>
               </div>
               <div className="p-1.5 bg-[#090c0a] border border-[#f5a623]/40 flex items-center justify-between">
                 <span className="font-bold text-[#f5a623]">B3 // TENS CARRY</span>
-                <span className="text-[10px] text-[#aab5ac]">{bucketCounts.B3 || 4} Qs</span>
+                <span className="text-[10px] text-[#aab5ac]">{bucketCounts.B3} Qs</span>
               </div>
               <div className="p-1.5 bg-[#090c0a] border border-[#ff6b5e]/40 flex items-center justify-between">
                 <span className="font-bold text-[#ff6b5e]">B4 // DOUBLE CARRY</span>
-                <span className="text-[10px] text-[#aab5ac]">{bucketCounts.B4 || 4} Qs</span>
+                <span className="text-[10px] text-[#aab5ac]">{bucketCounts.B4} Qs</span>
               </div>
             </div>
             <div className="mt-2.5 pt-2 border-t border-white/10 font-mono text-[10px] text-[#aab5ac] flex items-center justify-between">
