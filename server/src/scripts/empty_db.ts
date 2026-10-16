@@ -53,11 +53,13 @@ async function main() {
   const snapshotPath = path.resolve('.data/tournament-snapshot.json');
   if (fs.existsSync(snapshotPath)) {
     const emptySnapshot = {
-      rooms: {},
-      sessions: {},
-      leaderboard: [],
-      auditLogs: [],
-      clearedAt: new Date().toISOString()
+      version: 1,
+      savedAt: Date.now(),
+      roundOperatorMode: null,
+      rooms: [],
+      sessions: [],
+      rollToTeamMap: [],
+      auditLogs: []
     };
     fs.writeFileSync(snapshotPath, JSON.stringify(emptySnapshot, null, 2), 'utf8');
     console.log(`Reset snapshot file at: ${snapshotPath}`);
