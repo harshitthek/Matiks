@@ -14,7 +14,8 @@ import {
   readyToggleHandler,
   getTeamSnapshotHandler,
   leaveTeamHandler,
-  resetTeamSprintHandler
+  resetTeamSprintHandler,
+  lockRosterHandler
 } from './controllers/teamController.js';
 
 import {
@@ -51,7 +52,8 @@ import {
   reinstateTeamHandler,
   adjustScoreHandler,
   getRoundModeHandler,
-  setRoundModeHandler
+  setRoundModeHandler,
+  setEmergencyWalkInHandler
 } from './controllers/adminController.js';
 
 import {
@@ -187,6 +189,7 @@ export function createApp(): express.Application {
   app.post('/api/team/ready', readyToggleHandler);
   app.post('/api/team/leave', leaveTeamHandler);
   app.post('/api/team/reset', resetTeamSprintHandler);
+  app.post('/api/team/lock-roster', lockRosterHandler);
   app.get('/api/team/:teamCode', getTeamSnapshotHandler);
 
   // Inbound Sprint REST endpoints
@@ -209,6 +212,7 @@ export function createApp(): express.Application {
   app.post('/api/admin/broadcast', requireAdminAuth, flashBroadcastHandler);
   app.get('/api/admin/round-mode', requireAdminAuth, getRoundModeHandler);
   app.post('/api/admin/round-mode', requireAdminAuth, setRoundModeHandler);
+  app.post('/api/admin/emergency-walk-in', requireAdminAuth, setEmergencyWalkInHandler);
   app.get('/api/admin/audit-logs', requireAdminAuth, getAuditLogsHandler);
   app.get('/api/admin/telemetry', requireAdminAuth, getTelemetryHandler);
   app.get('/api/admin/rooms', requireAdminAuth, getAllRoomsHandler);

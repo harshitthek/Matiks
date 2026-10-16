@@ -35,6 +35,17 @@ export function LeaderboardRow({ entry }) {
             <span className="font-mono text-xs text-[#aab5ac] font-bold">
               #{entry.teamCode}
             </span>
+            {(entry.targetSize || entry.membersCount) && (
+              <span className="font-mono text-[9px] px-1 py-0.5 border border-white/20 bg-white/5 text-[#aab5ac] uppercase font-bold tracking-wider">
+                {(entry.targetSize || entry.membersCount) === 1
+                  ? 'SOLO'
+                  : (entry.targetSize || entry.membersCount) === 2
+                  ? 'DUO'
+                  : (entry.targetSize || entry.membersCount) === 3
+                  ? 'TRIO'
+                  : 'SQUAD'}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2 mt-0.5">

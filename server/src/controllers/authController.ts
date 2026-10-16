@@ -17,6 +17,7 @@ import {
   verifyAnySession
 } from '../services/auth/authProviderFactory.js';
 import { roomManager } from '../services/roomManager.js';
+import { windowManager } from '../services/windowManager.js';
 
 function extractBearerToken(req: Request): string | undefined {
   const authHeader = req.headers['authorization'];
@@ -83,7 +84,8 @@ export function getAuthConfigHandler(req: Request, res: Response): void {
     oidcIssuer: process.env.CLUB_OIDC_ISSUER_URL || 'https://oidc.fossclub.tech',
     authUrl,
     state,
-    roundOperatorMode: roomManager.getRoundOperatorModeOverride()
+    roundOperatorMode: roomManager.getRoundOperatorModeOverride(),
+    emergencyWalkIn: windowManager.isEmergencyWalkInEnabled()
   });
 }
 

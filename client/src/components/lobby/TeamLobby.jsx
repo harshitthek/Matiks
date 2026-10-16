@@ -4,7 +4,8 @@ import { WashiTape } from '../common/WashiTape.jsx';
 import { RadarDot } from '../common/RadarDot.jsx';
 import { FlowerSticker } from '../common/FlowerSticker.jsx';
 import { CountdownOverlay } from './CountdownOverlay.jsx';
-import { toggleReady, getTeamSnapshot, resetTeamSprint } from '../../services/api.js';
+import { InviteQrModal } from './InviteQrModal.jsx';
+import { toggleReady, getTeamSnapshot, resetTeamSprint, lockRoster } from '../../services/api.js';
 import { connectTeamStream } from '../../services/sse.js';
 
 /**
@@ -34,6 +35,7 @@ export function TeamLobby({
   const [error, setError] = useState(null);
   const [countdown, setCountdown] = useState(null); // { secondsRemaining, message }
   const [flashBanner, setFlashBanner] = useState(null);
+  const [showQrModal, setShowQrModal] = useState(false);
   const copyTimerRef = useRef(null);
   const linkTimerRef = useRef(null);
   const suppressedResumeRef = useRef(suppressedResumeSessionId);
@@ -324,6 +326,24 @@ export function TeamLobby({
   // Toggle ready status
   const currentMember = snapshot?.members?.find((m) => m.rollNumber === currentRoll);
   const isCurrentlyReady = currentMember?.isReady ?? false;
+  const isCaptain = Boolean(currentMember?.isCaptain);
+  const [lockRosterLoading, setLockRosterLoading] = useState(false);
+
+  const handleLockRoster = useCallback(async () => {
+    if (!isCaptain || lockRosterLoading) return;
+    setError(null);
+    setLockRosterLoading(true);
+    try {
+      const res = await lockRoster(teamCode, currentRoll, memberToken);
+      if (res?.snapshot) {
+        setSnapshot(res.snapshot);
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to lock squad roster.');
+    } finally {
+      setLockRosterLoading(false);
+    }
+  }, [isCaptain, lockRosterLoading, teamCode, currentRoll, memberToken]);
 
   const handleToggleReady = async () => {
     setReadyLoading(true);
@@ -529,6 +549,14 @@ export function TeamLobby({
             >
               {copiedLink ? 'LINK COPIED!' : 'INVITE LINK 🔗'}
             </button>
+            <button
+              type="button"
+              onClick={() => setShowQrModal(true)}
+              className="py-2 px-3 border-2 border-[#090c0a] bg-[#2ee58f] text-[#090c0a] font-mono font-bold text-xs uppercase tracking-wider shadow-[2px_2px_0_#090c0a] hover:translate-x-0.5 transition-transform cursor-pointer"
+              title="Show Squad Invite QR Code"
+            >
+              QR CODE 📱
+            </button>
           </div>
         </div>
 
@@ -580,8 +608,19 @@ export function TeamLobby({
         <WashiTape color="pink" rotation="2deg" className="-top-3 -left-4" />
 
         <div className="flex items-center justify-between pb-4 mb-4 border-b border-[#2ee58f]/20">
-          <h2 className="font-mono text-sm tracking-widest text-[#e8ece3] uppercase font-bold">
-            SQUAD ROSTER ({members.length} / {snapshot?.targetSize || 3} SQUAD CAPACITY)
+          <h2 className="font-mono text-sm tracking-widest text-[#e8ece3] uppercase font-bold flex items-center gap-2 flex-wrap">
+            <span>SQUAD ROSTER ({members.length} / {snapshot?.targetSize || 3})</span>
+            {snapshot?.targetSize && (
+              <span className="font-mono text-[10px] px-1.5 py-0.5 border border-[#2ee58f]/40 bg-[#2ee58f]/10 text-[#2ee58f] font-bold uppercase tracking-wider">
+                {snapshot.targetSize === 1
+                  ? 'SOLO'
+                  : snapshot.targetSize === 2
+                  ? 'DUO'
+                  : snapshot.targetSize === 3
+                  ? 'TRIO'
+                  : 'SQUAD'}
+              </span>
+            )}
           </h2>
           <span className="font-mono text-xs text-[#aab5ac]">
             STATUS: <strong className="text-[#2ee58f]">{roomStatus}</strong>
@@ -661,8 +700,17 @@ export function TeamLobby({
 
           {/* Missing Slots */}
           {snapshot && members.length < snapshot.targetSize && (
-            <div className="p-4 border-2 border-dashed border-[#2ee58f]/30 bg-[#090c0a]/40 text-center font-mono text-xs text-[#aab5ac]">
-              WAITING FOR {snapshot.targetSize - members.length} MORE TEAMMATE(S) TO JOIN WITH CODE <strong className="text-[#2ee58f]">#{teamCode}</strong>
+            <div className="p-4 border-2 border-dashed border-[#2ee58f]/30 bg-[#090c0a]/40 text-center font-mono text-xs text-[#aab5ac] flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div>
+                WAITING FOR {snapshot.targetSize - members.length} MORE TEAMMATE(S) TO JOIN WITH CODE <strong className="text-[#2ee58f]">#{teamCode}</strong>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQrModal(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#2ee58f] text-[#090c0a] font-mono font-bold text-xs uppercase shadow-[2px_2px_0_#090c0a] hover:translate-x-0.5 transition-transform cursor-pointer shrink-0"
+              >
+                📱 SHOW SQUAD QR
+              </button>
             </div>
           )}
         </div>
@@ -767,8 +815,31 @@ export function TeamLobby({
             </div>
           </div>
         ) : !isRosterFull ? (
-          <div className="p-4 border-2 border-[#f5a623] bg-[#f5a623]/15 text-[#f5a623] font-mono text-xs font-bold tracking-wider">
-            SQUAD INCOMPLETE: SHARE CODE #{teamCode} OR INVITE LINK WITH TEAMMATES TO FILL ROSTER ({members.length}/{snapshot.targetSize})
+          <div className="p-4 border-2 border-[#f5a623] bg-[#f5a623]/15 text-[#f5a623] font-mono text-xs font-bold tracking-wider flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div>
+              SQUAD INCOMPLETE: SHARE CODE #{teamCode} OR INVITE LINK WITH TEAMMATES TO FILL ROSTER ({members.length}/{snapshot.targetSize})
+            </div>
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setShowQrModal(true)}
+                className="px-2.5 py-1.5 bg-[#090c0a] text-[#2ee58f] border border-[#2ee58f] hover:bg-[#2ee58f] hover:text-[#090c0a] font-mono font-bold text-[11px] uppercase tracking-wider transition-colors cursor-pointer shadow-[2px_2px_0_#2ee58f]"
+              >
+                SHOW QR 📱
+              </button>
+              {isCaptain && members.length >= 1 && (
+                <button
+                  type="button"
+                  onClick={handleLockRoster}
+                  disabled={lockRosterLoading}
+                  className="px-3 py-1.5 bg-[#090c0a] text-[#ffe36e] border border-[#ffe36e] hover:bg-[#ffe36e] hover:text-[#090c0a] font-mono font-bold text-[11px] uppercase tracking-wider transition-colors shrink-0 cursor-pointer shadow-[2px_2px_0_#ffe36e] disabled:opacity-50"
+                >
+                  {lockRosterLoading
+                    ? 'LOCKING...'
+                    : `LOCK AT ${members.length} PLAYER${members.length > 1 ? 'S' : ''} 🔒`}
+                </button>
+              )}
+            </div>
           </div>
         ) : !isContestWindowOpen ? (
           <div className="p-4 border-2 border-[#f5a623] bg-[#f5a623]/15 text-[#f5a623] font-mono text-xs font-bold tracking-wider">
@@ -789,6 +860,14 @@ export function TeamLobby({
           </TactileButton>
         )}
       </div>
+
+      {showQrModal && (
+        <InviteQrModal
+          teamCode={teamCode}
+          teamName={snapshot?.teamName}
+          onClose={() => setShowQrModal(false)}
+        />
+      )}
     </div>
   );
 }

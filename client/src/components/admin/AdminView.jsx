@@ -40,7 +40,9 @@ import {
   adminReinstateTeam,
   adminAdjustScore,
   adminGetRoundMode,
-  adminSetRoundMode
+  adminSetRoundMode,
+  adminSetEmergencyWalkIn,
+  getAuthConfig
 } from '../../services/api.js';
 import { connectAdminStream } from '../../services/sse.js';
 
@@ -97,6 +99,7 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogou
   const [anomalies, setAnomalies] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [roundOperatorMode, setRoundOperatorMode] = useState(null);
+  const [emergencyWalkIn, setEmergencyWalkIn] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [selectedExcuseRoom, setSelectedExcuseRoom] = useState(null);
   const [inspectSessionId, setInspectSessionId] = useState(null);
@@ -195,7 +198,7 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogou
       // Storage unavailable
     }
     handleLogout();
-  }, [adminToken, handleLogout]);
+  }, [adminToken, handleLogout, onLogout]);
 
   // Keyboard shortcut listener for Ctrl+K / Cmd+K Omni-Search HUD
   useEffect(() => {
@@ -213,12 +216,13 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogou
   const refreshData = useCallback(async () => {
     if (!adminToken) return;
     try {
-      const [roomsRes, telemRes, logsRes, delayRes, modeRes] = await Promise.allSettled([
+      const [roomsRes, telemRes, logsRes, delayRes, modeRes, configRes] = await Promise.allSettled([
         getAdminRooms(adminToken),
         getAdminTelemetry(adminToken),
         getAdminAuditLogs(adminToken),
         adminGetStreamDelay(adminToken),
-        adminGetRoundMode(adminToken)
+        adminGetRoundMode(adminToken),
+        getAuthConfig()
       ]);
 
       const isAuthError = (res) =>
@@ -249,6 +253,9 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogou
             : modeRes.value?.operatorMode || modeRes.value?.mode || null;
         setRoundOperatorMode(nextMode);
       }
+      if (configRes.status === 'fulfilled' && typeof configRes.value?.emergencyWalkIn === 'boolean') {
+        setEmergencyWalkIn(configRes.value.emergencyWalkIn);
+      }
     } catch (err) {
       console.warn('[Admin] Data fetch error:', err);
     }
@@ -262,8 +269,9 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogou
         getAdminTelemetry(adminToken),
         getAdminAuditLogs(adminToken),
         adminGetStreamDelay(adminToken),
-        adminGetRoundMode(adminToken)
-      ]).then(([roomsRes, telemRes, logsRes, delayRes, modeRes]) => {
+        adminGetRoundMode(adminToken),
+        getAuthConfig()
+      ]).then(([roomsRes, telemRes, logsRes, delayRes, modeRes, configRes]) => {
         if (isCancelled) return;
         const isAuthError = (res) =>
           res.status === 'rejected' &&
@@ -293,12 +301,15 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogou
               : modeRes.value?.operatorMode || modeRes.value?.mode || null;
           setRoundOperatorMode(nextMode);
         }
+        if (configRes.status === 'fulfilled' && typeof configRes.value?.emergencyWalkIn === 'boolean') {
+          setEmergencyWalkIn(configRes.value.emergencyWalkIn);
+        }
       });
     }
     return () => {
       isCancelled = true;
     };
-  }, [adminToken, handleLogout]);
+  }, [adminToken, handleTokenAuthFailure]);
 
   // Connect to Admin SSE Stream
   useEffect(() => {
@@ -310,6 +321,9 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogou
       },
       onWindowStatus: (status) => {
         setWindowStatus(status);
+        if (typeof status?.emergencyWalkIn === 'boolean') {
+          setEmergencyWalkIn(status.emergencyWalkIn);
+        }
       },
       onRoomSnapshot: (snapshot) => {
         setRooms((prev) => {
@@ -575,6 +589,28 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogou
       });
     } catch (err) {
       setActionFeedback({ type: 'error', message: err?.message || 'Failed to set round operator mode.' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Handle Emergency Walk-In Bypass Toggle
+  const handleToggleEmergencyWalkIn = async (enabled) => {
+    setActionLoading('emergency-walk-in');
+    setActionFeedback(null);
+    try {
+      const res = await adminSetEmergencyWalkIn(enabled, adminToken);
+      const nextState = Boolean(res?.emergencyWalkIn ?? enabled);
+      setEmergencyWalkIn(nextState);
+      setActionFeedback({
+        type: 'success',
+        message: nextState
+          ? 'EMERGENCY WALK-IN ENABLED: Direct roll-number entry unlocked on student front panel.'
+          : 'EMERGENCY WALK-IN DISABLED: Strict USAR FOSS Club OIDC gate enforced on student front panel.'
+      });
+      refreshData();
+    } catch (err) {
+      setActionFeedback({ type: 'error', message: err?.message || 'Failed to toggle emergency walk-in.' });
     } finally {
       setActionLoading(null);
     }
@@ -848,32 +884,54 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogou
             </p>
           </div>
 
-          {/* Tournament Round Operator Mode Selector */}
-          <div className="border border-white/20 bg-[#090c0a] p-2.5 shrink-0">
-            <span className="font-mono text-[10px] text-[#aab5ac] uppercase font-bold tracking-wider block mb-1.5">
-              ROUND OPERATOR MODE:
-            </span>
-            <div className="flex gap-1.5 flex-wrap">
-              {[
-                { mode: null, label: 'SQUAD CHOICE' },
-                { mode: 'add', label: 'ADDITION (+)' },
-                { mode: 'sub', label: 'SUBTRACTION (−)' },
-                { mode: 'mixed', label: 'MIXED (±)' }
-              ].map(({ mode, label }) => (
-                <button
-                  key={mode || 'squad'}
-                  type="button"
-                  onClick={() => handleRoundModeChange(mode)}
-                  disabled={actionLoading === 'round-mode'}
-                  className={`font-mono text-[11px] px-2.5 py-1 border font-bold transition-all ${
-                    roundOperatorMode === mode
-                      ? 'border-[#ffe36e] bg-[#ffe36e] text-[#090c0a]'
-                      : 'border-white/10 bg-[#090c0a] text-[#aab5ac] hover:text-[#e8ece3]'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+            {/* Tournament Round Operator Mode Selector */}
+            <div className="border border-white/20 bg-[#090c0a] p-2.5 shrink-0">
+              <span className="font-mono text-[10px] text-[#aab5ac] uppercase font-bold tracking-wider block mb-1.5">
+                ROUND OPERATOR MODE:
+              </span>
+              <div className="flex gap-1.5 flex-wrap">
+                {[
+                  { mode: null, label: 'SQUAD CHOICE' },
+                  { mode: 'add', label: 'ADDITION (+)' },
+                  { mode: 'sub', label: 'SUBTRACTION (−)' },
+                  { mode: 'mixed', label: 'MIXED (±)' }
+                ].map(({ mode, label }) => (
+                  <button
+                    key={mode || 'squad'}
+                    type="button"
+                    onClick={() => handleRoundModeChange(mode)}
+                    disabled={actionLoading === 'round-mode'}
+                    className={`font-mono text-[11px] px-2.5 py-1 border font-bold transition-all cursor-pointer ${
+                      roundOperatorMode === mode
+                        ? 'border-[#ffe36e] bg-[#ffe36e] text-[#090c0a]'
+                        : 'border-white/10 bg-[#090c0a] text-[#aab5ac] hover:text-[#e8ece3]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Emergency Walk-In Bypass Switch */}
+            <div className="border border-white/20 bg-[#090c0a] p-2.5 shrink-0">
+              <span className="font-mono text-[10px] text-[#aab5ac] uppercase font-bold tracking-wider block mb-1.5">
+                EMERGENCY WALK-IN BYPASS:
+              </span>
+              <button
+                type="button"
+                onClick={() => handleToggleEmergencyWalkIn(!emergencyWalkIn)}
+                disabled={actionLoading === 'emergency-walk-in'}
+                className={`font-mono text-[11px] px-3 py-1 border font-bold transition-all cursor-pointer ${
+                  emergencyWalkIn
+                    ? 'border-[#ff6b5e] bg-[#ff6b5e] text-[#090c0a] shadow-[2px_2px_0_#090c0a] animate-pulse'
+                    : 'border-[#2ee58f]/40 bg-[#090c0a] text-[#2ee58f] hover:bg-[#2ee58f]/10'
+                }`}
+                title={emergencyWalkIn ? 'Click to disable emergency bypass and restore strict OIDC gate' : 'Click to enable emergency walk-in manual entry fallback'}
+              >
+                {emergencyWalkIn ? '⚠️ BYPASS ACTIVE (MANUAL ENTRY)' : '✓ OIDC GATE ENFORCED'}
+              </button>
             </div>
           </div>
         </div>

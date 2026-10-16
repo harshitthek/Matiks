@@ -21,17 +21,71 @@ function getInitialView() {
   return 'squad';
 }
 
+function savePendingInvite(code) {
+  if (!code || typeof window === 'undefined') return;
+  const normalized = code.trim().toUpperCase();
+  const payload = JSON.stringify({ code: normalized, expiresAt: Date.now() + 15 * 60 * 1000 });
+  try {
+    sessionStorage.setItem('matiks_pending_invite_code', payload);
+    localStorage.setItem('matiks_pending_invite_code', payload);
+  } catch {
+    // Storage unavailable
+  }
+}
+
+function clearPendingInvite() {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.removeItem('matiks_pending_invite_code');
+    localStorage.removeItem('matiks_pending_invite_code');
+  } catch {
+    // Storage unavailable
+  }
+}
+
+function readPendingInviteFromStorage(storage) {
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem('matiks_pending_invite_code');
+    if (!raw) return null;
+    if (raw.startsWith('{')) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.code && typeof parsed.expiresAt === 'number') {
+        if (Date.now() < parsed.expiresAt) {
+          return parsed.code.trim().toUpperCase();
+        }
+        storage.removeItem('matiks_pending_invite_code');
+        return null;
+      }
+    }
+    if (raw.trim()) {
+      return raw.trim().toUpperCase();
+    }
+  } catch {
+    // Storage unavailable
+  }
+  return null;
+}
+
 function getUrlInviteTeamCode() {
   if (typeof window === 'undefined') return '';
   const params = new URLSearchParams(window.location.search);
   const queryTeam = params.get('team');
   if (queryTeam && queryTeam.trim()) {
-    return queryTeam.trim().toUpperCase();
+    const code = queryTeam.trim().toUpperCase();
+    savePendingInvite(code);
+    return code;
   }
   const match = window.location.pathname.match(/^\/team\/([A-Za-z0-9-]+)/);
   if (match && match[1]) {
-    return match[1].toUpperCase();
+    const code = match[1].toUpperCase();
+    savePendingInvite(code);
+    return code;
   }
+  const sessionInvite = readPendingInviteFromStorage(window.sessionStorage);
+  if (sessionInvite) return sessionInvite;
+  const localInvite = readPendingInviteFromStorage(window.localStorage);
+  if (localInvite) return localInvite;
   return '';
 }
 
@@ -316,6 +370,7 @@ export function App() {
     isSprintFinishedRef.current = false;
     setIsSprintFinished(false);
     setInviteTeamCode('');
+    clearPendingInvite();
     window.history.replaceState({ view: 'squad', step: 'onboarding' }, '', '/');
   }, []);
 
@@ -436,6 +491,7 @@ export function App() {
     isSprintFinishedRef.current = false;
     setIsSprintFinished(false);
     setCurrentView('squad');
+    clearPendingInvite();
     const url = `/?team=${encodeURIComponent(sessionData.teamCode)}`;
     window.history.pushState(
       { view: 'squad', step: 'lobby', teamCode: sessionData.teamCode },

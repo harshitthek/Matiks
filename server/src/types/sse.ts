@@ -131,6 +131,7 @@ export interface LeaderboardEntry {
   teamAverageScore: number;
   membersCount: number;
   activeMembersCount: number;
+  targetSize?: number;
   averageTimeSeconds: number;
   memberBreakdown: MemberLeaderboardSummary[];
   status: 'WAITING' | 'IN_SPRINT' | 'FINISHED';
@@ -145,6 +146,7 @@ export interface ContestWindowConfig {
   durationMinutes: number;
   announcementTicker?: string;
   operatorMode?: OperatorMode;
+  emergencyWalkIn?: boolean;
 }
 
 export type AuditAction =
@@ -161,6 +163,7 @@ export type AuditAction =
   | 'ROUND_MODE_CHANGE'
   | 'FLASH_ANNOUNCEMENT'
   | 'WINDOW_TOGGLE'
+  | 'EMERGENCY_WALK_IN_TOGGLE'
   | 'REATTEMPT_GRANTED'
   | 'ADMIN_SIMULATE_TEAMS'
   | 'ADMIN_CLEAR_SIMULATED_TEAMS';
@@ -245,6 +248,7 @@ export interface WindowStatusEvent {
   closesAt: number;
   serverTime: number;
   announcementTicker?: string;
+  emergencyWalkIn?: boolean;
 }
 
 export interface AdminTelemetryEvent {

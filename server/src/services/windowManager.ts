@@ -12,6 +12,7 @@ import { leaderboardManager } from './leaderboardManager.js';
 export class WindowManager {
   private config: ContestWindowConfig;
   private onOpenCallbacks: Array<() => void> = [];
+  private emergencyWalkInEnabled: boolean = false;
 
   constructor(initialMinutes = 120) {
     const now = Date.now();
@@ -20,7 +21,8 @@ export class WindowManager {
       opensAt: now,
       closesAt: now + initialMinutes * 60 * 1000,
       durationMinutes: initialMinutes,
-      announcementTicker: '⚡ Welcome to Matiks Hackathon Math Sprint! Assemble your teams and lock READY.'
+      announcementTicker: '⚡ Welcome to Matiks Hackathon Math Sprint! Assemble your teams and lock READY.',
+      emergencyWalkIn: false
     };
   }
 
@@ -47,7 +49,24 @@ export class WindowManager {
    * Returns current window configuration.
    */
   public getConfig(): ContestWindowConfig {
-    return { ...this.config };
+    return { ...this.config, emergencyWalkIn: this.emergencyWalkInEnabled };
+  }
+
+  /**
+   * Returns whether emergency walk-in bypass is enabled.
+   */
+  public isEmergencyWalkInEnabled(): boolean {
+    return this.emergencyWalkInEnabled;
+  }
+
+  /**
+   * Toggles emergency walk-in bypass mode.
+   */
+  public setEmergencyWalkIn(enabled: boolean): boolean {
+    this.emergencyWalkInEnabled = enabled;
+    this.config.emergencyWalkIn = enabled;
+    this.broadcastStatus();
+    return this.emergencyWalkInEnabled;
   }
 
   /**
@@ -60,7 +79,8 @@ export class WindowManager {
       opensAt: now,
       closesAt: now + durationMinutes * 60 * 1000,
       durationMinutes,
-      announcementTicker: ticker ?? this.config.announcementTicker
+      announcementTicker: ticker ?? this.config.announcementTicker,
+      emergencyWalkIn: this.emergencyWalkInEnabled
     };
 
     leaderboardManager.setPostCloseLive(false);
@@ -102,7 +122,8 @@ export class WindowManager {
       opensAt: this.config.opensAt,
       closesAt: this.config.closesAt,
       serverTime: Date.now(),
-      announcementTicker: this.config.announcementTicker
+      announcementTicker: this.config.announcementTicker,
+      emergencyWalkIn: this.emergencyWalkInEnabled
     };
     sseHub.broadcast('leaderboard', 'window_status', eventPayload);
     sseHub.broadcast('admin', 'window_status', eventPayload);

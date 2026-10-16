@@ -76,8 +76,10 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
       await api.adminGetSessionReplays('adm_tok');
       await api.adminGetSessionReplay('sess_123', 'adm_tok');
       await api.exportPlayerAuditsCsv('adm_tok');
+      await api.lockRoster('CY-01', 'CS001', 'tok_alice');
+      await api.adminSetEmergencyWalkIn(true, 'adm_tok');
 
-      assert.equal(capturedCalls.length, 29);
+      assert.equal(capturedCalls.length, 31);
       for (const call of capturedCalls) {
         assert.equal(
           call.options.headers['ngrok-skip-browser-warning'],

@@ -8,7 +8,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type {
   TeamRoom,
   TeamMember,
@@ -105,6 +105,16 @@ export class RoomManager {
     void databaseService.recordAudit(auditRecord);
   }
 
+  public logSystemAudit(record: Omit<AuditRecord, 'id' | 'timestamp'>): AuditRecord {
+    const auditRecord: AuditRecord = {
+      id: randomUUID(),
+      timestamp: Date.now(),
+      ...record
+    };
+    this.logAudit(auditRecord);
+    return auditRecord;
+  }
+
   /**
    * Generates a concise, memorable team code (e.g. "ZG-99").
    */
@@ -138,8 +148,8 @@ export class RoomManager {
     isClubMember?: boolean,
     operatorMode?: OperatorMode
   ): { room: TeamRoom; teamCode: string; memberToken: string } {
-    if (!Number.isInteger(targetSize) || targetSize < 2 || targetSize > 4) {
-      throw new Error('Target team size must be an integer between 2 and 4 members.');
+    if (!Number.isInteger(targetSize) || targetSize < 1 || targetSize > 4) {
+      throw new Error('Target team size must be an integer between 1 and 4 members.');
     }
 
     const cleanRoll = captainRoll.trim().toUpperCase();
@@ -171,7 +181,7 @@ export class RoomManager {
       teamName: teamName.trim(),
       targetSize,
       members,
-      status: 'LOBBY',
+      status: targetSize === 1 ? 'AWAITING_READY' : 'LOBBY',
       isPaused: false,
       createdAt: Date.now(),
       operatorMode: this.roundOperatorMode ?? operatorMode ?? 'add'
@@ -409,6 +419,62 @@ export class RoomManager {
     room.operatorMode = this.roundOperatorMode ?? room.operatorMode ?? 'add';
 
     this.broadcastSnapshot(room);
+    this.syncLeaderboard(room);
+    void databaseService.syncTeam(room);
+    return room;
+  }
+
+  /**
+   * Adjusts the target squad size down to the currently joined member count,
+   * transitioning an underfilled lobby into AWAITING_READY so the squad can start.
+   */
+  public lockRosterAtCurrentCount(
+    teamCode: string,
+    rollNumber: string,
+    memberToken?: string
+  ): TeamRoom {
+    const cleanCode = teamCode.trim().toUpperCase();
+    const room = this.rooms.get(cleanCode);
+    if (!room) {
+      throw new Error(`Team ${cleanCode} not found.`);
+    }
+
+    const cleanRoll = rollNumber.trim().toUpperCase();
+    const member = room.members.get(cleanRoll);
+    if (!member) {
+      throw new Error(`Member ${cleanRoll} not found in team ${cleanCode}.`);
+    }
+
+    if (!member.isCaptain) {
+      throw new Error('Only the squad captain can lock the roster size.');
+    }
+
+    if (member.token && (!memberToken || member.token !== memberToken)) {
+      throw new Error('Unauthorized: Valid member token is required to lock roster.');
+    }
+
+    if (room.status !== 'LOBBY') {
+      throw new Error(`Cannot adjust roster size while room is in ${room.status} status.`);
+    }
+
+    const currentSize = room.members.size;
+    if (currentSize < 1 || currentSize >= room.targetSize) {
+      throw new Error(`Roster already has ${currentSize} members which matches or exceeds target size (${room.targetSize}).`);
+    }
+
+    room.targetSize = currentSize;
+    room.status = 'AWAITING_READY';
+
+    const activeMembers = Array.from(room.members.values()).filter(m => !m.isExcused);
+    const readyCount = activeMembers.filter(m => m.isReady).length;
+    const allReady = activeMembers.length > 0 && readyCount === activeMembers.length;
+
+    if (allReady && windowManager.isOpen()) {
+      this.startCountdown(room);
+    } else {
+      this.broadcastSnapshot(room);
+    }
+
     this.syncLeaderboard(room);
     void databaseService.syncTeam(room);
     return room;
@@ -1653,6 +1719,7 @@ export class RoomManager {
       teamAverageScore: averageScore,
       membersCount: room.members.size,
       activeMembersCount: activeCount,
+      targetSize: room.targetSize,
       averageTimeSeconds,
       memberBreakdown,
       status,

@@ -568,3 +568,34 @@ export function setRoundModeHandler(req: Request, res: Response): void {
   }
 }
 
+export function setEmergencyWalkInHandler(req: Request, res: Response): void {
+  try {
+    const { enabled } = req.body || {};
+    if (typeof enabled !== 'boolean') {
+      res.status(400).json({ error: 'Property "enabled" must be a boolean (true or false).' });
+      return;
+    }
+
+    const adminId = req.adminUser?.organizerName || (req.headers['x-admin-id'] as string) || 'admin_organizer';
+    const status = windowManager.setEmergencyWalkIn(enabled);
+
+    roomManager.logSystemAudit({
+      action: 'EMERGENCY_WALK_IN_TOGGLE',
+      teamCode: 'SYSTEM',
+      adminId,
+      reason: enabled
+        ? 'Organizer enabled emergency walk-in entry bypass'
+        : 'Organizer disabled emergency walk-in entry bypass (enforcing OIDC)',
+      details: { enabled }
+    });
+
+    res.status(200).json({
+      success: true,
+      emergencyWalkIn: status
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to update emergency walk-in status';
+    res.status(400).json({ error: message });
+  }
+}
+

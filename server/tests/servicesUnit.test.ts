@@ -279,6 +279,16 @@ describe('Matiks Hackathon — Core Services Unit Test Suite', () => {
       (wm as any).config.closesAt = Date.now() - 1000;
       assert.equal(wm.isOpen(), false);
       assert.equal(wm.getConfig().isOpen, false);
+
+      // Verify emergency walk-in toggle & getter
+      assert.equal(wm.isEmergencyWalkInEnabled(), false);
+      assert.equal(wm.getConfig().emergencyWalkIn, false);
+      wm.setEmergencyWalkIn(true);
+      assert.equal(wm.isEmergencyWalkInEnabled(), true);
+      assert.equal(wm.getConfig().emergencyWalkIn, true);
+      wm.setEmergencyWalkIn(false);
+      assert.equal(wm.isEmergencyWalkInEnabled(), false);
+      assert.equal(wm.getConfig().emergencyWalkIn, false);
     });
   });
 

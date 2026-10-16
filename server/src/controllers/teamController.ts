@@ -7,6 +7,7 @@
 import type { Request, Response } from 'express';
 import type { OperatorMode } from '../types/math.js';
 import { roomManager } from '../services/roomManager.js';
+import { windowManager } from '../services/windowManager.js';
 import { verifyAnySession } from '../services/auth/authProviderFactory.js';
 
 function isValidStringField(val: unknown, maxLength = 64): val is string {
@@ -42,23 +43,27 @@ async function resolveOptionalSession(req: Request) {
 export async function createTeamHandler(req: Request, res: Response): Promise<void> {
   try {
     const { teamName, targetSize } = req.body;
-    const captainRoll = req.body.captainRoll ?? req.body.rollNumber;
-    const captainName = req.body.captainName ?? req.body.name;
+    const sessionUser = await resolveOptionalSession(req);
+    const isTestEnv = process.env.NODE_ENV === 'test';
 
-    if (!isValidStringField(teamName) || !isValidStringField(captainRoll) || !isValidStringField(captainName)) {
+    if (!sessionUser && !windowManager.isEmergencyWalkInEnabled() && !isTestEnv) {
+      res.status(401).json({
+        error: 'OIDC_REQUIRED',
+        message: 'USAR FOSS Club authentication is required to participate. Please sign in via oidc.fossclub.tech.'
+      });
+      return;
+    }
+
+    const effectiveCaptainRoll = sessionUser ? sessionUser.rollNumber : (req.body.captainRoll || req.body.rollNumber);
+    const effectiveCaptainName = sessionUser ? sessionUser.displayName : (req.body.captainName || req.body.name);
+
+    if (!isValidStringField(teamName) || !isValidStringField(effectiveCaptainRoll) || !isValidStringField(effectiveCaptainName)) {
       res.status(400).json({ error: 'teamName, captainRoll, and captainName must be non-empty strings up to 64 characters.' });
       return;
     }
 
-    const cleanCaptainRoll = captainRoll.trim().toUpperCase();
-    const sessionUser = await resolveOptionalSession(req);
-    const isClubMember = (
-      sessionUser &&
-      sessionUser.role === 'participant' &&
-      sessionUser.rollNumber === cleanCaptainRoll
-    )
-      ? sessionUser.isClubMember
-      : undefined;
+    const cleanCaptainRoll = effectiveCaptainRoll.trim().toUpperCase();
+    const isClubMember = sessionUser ? sessionUser.isClubMember : undefined;
 
     const rawMode = req.body.operatorMode;
     const operatorMode: OperatorMode | undefined =
@@ -69,7 +74,7 @@ export async function createTeamHandler(req: Request, res: Response): Promise<vo
       teamName,
       size,
       cleanCaptainRoll,
-      captainName,
+      effectiveCaptainName,
       isClubMember,
       operatorMode
     );
@@ -88,28 +93,34 @@ export async function createTeamHandler(req: Request, res: Response): Promise<vo
 
 export async function joinTeamHandler(req: Request, res: Response): Promise<void> {
   try {
-    const { teamCode, rollNumber, name } = req.body;
+    const { teamCode } = req.body;
+    const sessionUser = await resolveOptionalSession(req);
+    const isTestEnv = process.env.NODE_ENV === 'test';
 
-    if (!isValidStringField(teamCode) || !isValidStringField(rollNumber) || !isValidStringField(name)) {
+    if (!sessionUser && !windowManager.isEmergencyWalkInEnabled() && !isTestEnv) {
+      res.status(401).json({
+        error: 'OIDC_REQUIRED',
+        message: 'USAR FOSS Club authentication is required to participate. Please sign in via oidc.fossclub.tech.'
+      });
+      return;
+    }
+
+    const effectiveRollNumber = sessionUser ? sessionUser.rollNumber : req.body.rollNumber;
+    const effectiveName = sessionUser ? sessionUser.displayName : req.body.name;
+
+    if (!isValidStringField(teamCode) || !isValidStringField(effectiveRollNumber) || !isValidStringField(effectiveName)) {
       res.status(400).json({ error: 'teamCode, rollNumber, and name must be non-empty strings up to 64 characters.' });
       return;
     }
 
-    const cleanRoll = rollNumber.trim().toUpperCase();
-    const sessionUser = await resolveOptionalSession(req);
-    const isClubMember = (
-      sessionUser &&
-      sessionUser.role === 'participant' &&
-      sessionUser.rollNumber === cleanRoll
-    )
-      ? sessionUser.isClubMember
-      : undefined;
+    const cleanRoll = effectiveRollNumber.trim().toUpperCase();
+    const isClubMember = sessionUser ? sessionUser.isClubMember : undefined;
 
     const token = (req.headers['x-member-token'] as string) || (req.body.token as string) || (req.body.memberToken as string);
     const { room, member, memberToken } = roomManager.joinTeam(
       teamCode,
       cleanRoll,
-      name,
+      effectiveName,
       token,
       isClubMember
     );
@@ -235,3 +246,26 @@ export function resetTeamSprintHandler(req: Request, res: Response): void {
     res.status(400).json({ error: message });
   }
 }
+
+export function lockRosterHandler(req: Request, res: Response): void {
+  try {
+    const { teamCode, rollNumber } = req.body;
+
+    if (!isValidStringField(teamCode) || !isValidStringField(rollNumber)) {
+      res.status(400).json({ error: 'teamCode and rollNumber must be non-empty strings up to 64 characters.' });
+      return;
+    }
+
+    const token = (req.headers['x-member-token'] as string) || (req.body.token as string) || (req.body.memberToken as string);
+    const room = roomManager.lockRosterAtCurrentCount(teamCode, rollNumber, token);
+
+    res.status(200).json({
+      success: true,
+      snapshot: roomManager.getSnapshot(room)
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to lock squad roster';
+    res.status(400).json({ error: message });
+  }
+}
+

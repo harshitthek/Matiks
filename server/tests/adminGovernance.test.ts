@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { adminAuthService } from '../src/services/adminAuthService.js';
 import { roomManager } from '../src/services/roomManager.js';
 import { leaderboardManager } from '../src/services/leaderboardManager.js';
-import { sseHub } from '../src/services/sseHub.js';
+import { windowManager } from '../src/services/windowManager.js';
 
 describe('Admin Security & Governance Engine Suite', () => {
   beforeEach(() => {
@@ -256,4 +256,33 @@ describe('Admin Security & Governance Engine Suite', () => {
       assert.equal(roomManager.getRoundOperatorMode(), 'add');
     });
   });
+
+  describe('6. Emergency Walk-In Entry Bypass Configuration', () => {
+    test('toggles emergency walk-in bypass and appends audit log record', () => {
+      windowManager.setEmergencyWalkIn(false);
+      assert.equal(windowManager.isEmergencyWalkInEnabled(), false);
+
+      const enabled = windowManager.setEmergencyWalkIn(true);
+      assert.equal(enabled, true);
+      assert.equal(windowManager.isEmergencyWalkInEnabled(), true);
+
+      roomManager.logSystemAudit({
+        action: 'EMERGENCY_WALK_IN_TOGGLE',
+        teamCode: 'SYSTEM',
+        adminId: 'admin_organizer',
+        reason: 'Organizer enabled emergency walk-in entry bypass',
+        details: { enabled: true }
+      });
+
+      const auditLogs = roomManager.getAuditLogs();
+      const lastAudit = auditLogs[auditLogs.length - 1];
+      assert.equal(lastAudit?.action, 'EMERGENCY_WALK_IN_TOGGLE');
+      assert.equal(lastAudit?.teamCode, 'SYSTEM');
+
+      // Reset back
+      windowManager.setEmergencyWalkIn(false);
+      assert.equal(windowManager.isEmergencyWalkInEnabled(), false);
+    });
+  });
 });
+

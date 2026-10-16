@@ -112,6 +112,21 @@ export async function resetTeamSprint(teamCode, rollNumber, token) {
 }
 
 /**
+ * Locks the squad roster at the current member count (captain only).
+ */
+export async function lockRoster(teamCode, rollNumber, token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['x-member-token'] = token;
+  }
+  return request('/team/lock-roster', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ teamCode, rollNumber, token })
+  });
+}
+
+/**
  * Toggles a member's READY status lock.
  */
 export async function toggleReady(teamCode, rollNumber, isReady, token) {
@@ -629,6 +644,21 @@ export async function adminSetRoundMode(mode, adminToken) {
       ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
     },
     body: JSON.stringify({ operatorMode: mode })
+  });
+}
+
+/**
+ * Admin: Toggle emergency walk-in entry bypass (when OIDC service is inaccessible).
+ */
+export async function adminSetEmergencyWalkIn(enabled, adminToken) {
+  return request('/admin/emergency-walk-in', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    },
+    body: JSON.stringify({ enabled })
   });
 }
 

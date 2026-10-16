@@ -50,8 +50,8 @@ describe('Matiks Hackathon — Phase 2: State Machine & Realtime Engine', () => 
     );
 
     // Invalid team sizes
-    assert.throws(() => roomManager.createTeam('Bad Size', 1, 'EC21001', 'Solo'), /between 2 and 4/);
-    assert.throws(() => roomManager.createTeam('Bad Size', 5, 'EC21001', 'Army'), /between 2 and 4/);
+    assert.throws(() => roomManager.createTeam('Bad Size', 0, 'EC21001', 'Zero'), /between 1 and 4/);
+    assert.throws(() => roomManager.createTeam('Bad Size', 5, 'EC21001', 'Army'), /between 1 and 4/);
   });
 
   test('2. Member Join, Capacity Gate & Reconnection Handling', () => {
@@ -408,5 +408,57 @@ describe('Matiks Hackathon — Phase 2: State Machine & Realtime Engine', () => 
     // Room must now automatically transition to COUNTDOWN!
     const room = roomManager.getRoom(teamCode)!;
     assert.equal(room.status, 'COUNTDOWN');
+  });
+
+  test('12. Solo Team (targetSize 1) Auto-Awaiting Ready & Immediate Countdown', () => {
+    windowManager.openWindow(120);
+
+    const { room, teamCode, memberToken } = roomManager.createTeam('SoloWolf', 1, 'SOLO99', 'Alex Solo');
+    assert.equal(room.targetSize, 1);
+    assert.equal(room.members.size, 1);
+    assert.equal(room.status, 'AWAITING_READY'); // Instantly full!
+
+    const readyRes = roomManager.toggleReady(teamCode, 'SOLO99', true, memberToken);
+    assert.equal(readyRes.allReady, true);
+
+    const roomAfterReady = roomManager.getRoom(teamCode)!;
+    assert.equal(roomAfterReady.status, 'COUNTDOWN');
+  });
+
+  test('13. Captain lockRosterAtCurrentCount Adjusts Target Size & Moves to AWAITING_READY', () => {
+    const { room, teamCode, memberToken: captToken } = roomManager.createTeam('QuadSquad', 4, 'QUAD01', 'Captain Quad');
+    assert.equal(room.targetSize, 4);
+    assert.equal(room.status, 'LOBBY');
+
+    const { memberToken: m2Token } = roomManager.joinTeam(teamCode, 'QUAD02', 'Member Two');
+    assert.equal(room.members.size, 2);
+    assert.equal(room.status, 'LOBBY');
+
+    // Non-captain cannot lock roster
+    assert.throws(
+      () => roomManager.lockRosterAtCurrentCount(teamCode, 'QUAD02', m2Token),
+      /Only the squad captain/
+    );
+
+    // Captain locks roster at current count (2 players)
+    const lockedRoom = roomManager.lockRosterAtCurrentCount(teamCode, 'QUAD01', captToken);
+    assert.equal(lockedRoom.targetSize, 2);
+    assert.equal(lockedRoom.status, 'AWAITING_READY');
+
+    // Cannot lock again if already at target size or in AWAITING_READY
+    assert.throws(
+      () => roomManager.lockRosterAtCurrentCount(teamCode, 'QUAD01', captToken),
+      /Cannot adjust roster size while room is in AWAITING_READY status/
+    );
+
+    // If all current members were already marked ready, locking immediately starts countdown
+    const { room: r2, teamCode: tc2, memberToken: cToken2 } = roomManager.createTeam('FastSquad', 3, 'FS01', 'Captain Fast');
+    const { memberToken: mToken2 } = roomManager.joinTeam(tc2, 'FS02', 'Member Fast');
+    roomManager.toggleReady(tc2, 'FS01', true, cToken2);
+    roomManager.toggleReady(tc2, 'FS02', true, mToken2);
+    assert.equal(r2.status, 'LOBBY'); // Waiting for 3rd member
+    const autoStartedRoom = roomManager.lockRosterAtCurrentCount(tc2, 'FS01', cToken2);
+    assert.equal(autoStartedRoom.targetSize, 2);
+    assert.equal(autoStartedRoom.status, 'COUNTDOWN');
   });
 });

@@ -560,7 +560,7 @@ export function ArenaView({
         void submitAnswerValue(next);
       }
     },
-    [isFinished, isPaused, questions, requestFullscreenSafe, submitAnswerValue]
+    [isFinished, isPaused, questions, submitAnswerValue]
   );
 
   // Sync handleDigit ref to avoid circular useCallback dependencies during buffered replay
