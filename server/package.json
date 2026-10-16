@@ -20,6 +20,7 @@
     "dev": "tsx watch src/index.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "db:empty": "tsx src/scripts/empty_db.ts",
     "postinstall": "prisma generate"
   },
   "keywords": [

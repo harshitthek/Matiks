@@ -17,7 +17,8 @@
     "test:auth": "npm --prefix server run test:auth",
     "test:load": "npm --prefix server run test:load",
     "test:chaos": "npm --prefix server run test:chaos",
-    "lint": "npm --prefix client run lint"
+    "lint": "npm --prefix client run lint",
+    "db:empty": "npm --prefix server run db:empty"
   },
   "keywords": [
     "speed-math",
