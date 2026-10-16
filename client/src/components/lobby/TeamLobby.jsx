@@ -396,7 +396,7 @@ export function TeamLobby({
   const activeMembers = members.filter((m) => !m.isExcused);
   const readyCount = activeMembers.filter((m) => m.isReady).length;
   const isRosterFull = snapshot ? members.length >= snapshot.targetSize : false;
-  const isContestWindowOpen = snapshot?.contestWindow?.isOpen ?? true;
+  const isContestWindowOpen = snapshot?.contestWindow?.isOpen ?? false;
   const roomStatus = snapshot?.status || 'LOBBY';
   const isRoundFinished = roomStatus === 'FINISHED' || roomStatus === 'COMPLETED';
 

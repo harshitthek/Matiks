@@ -12,16 +12,19 @@ import { leaderboardManager } from './leaderboardManager.js';
 export class WindowManager {
   private config: ContestWindowConfig;
   private onOpenCallbacks: Array<() => void> = [];
+  private onCloseCallbacks: Array<() => void> = [];
   private emergencyWalkInEnabled: boolean = false;
 
-  constructor(initialMinutes = 120) {
+  constructor(defaultOpen = false, initialMinutes = 120) {
     const now = Date.now();
     this.config = {
-      isOpen: true, // Default open for hackathon operation
-      opensAt: now,
-      closesAt: now + initialMinutes * 60 * 1000,
-      durationMinutes: initialMinutes,
-      announcementTicker: '⚡ Welcome to Matiks Hackathon Math Sprint! Assemble your teams and lock READY.',
+      isOpen: defaultOpen,
+      opensAt: defaultOpen ? now : 0,
+      closesAt: defaultOpen ? now + initialMinutes * 60 * 1000 : 0,
+      durationMinutes: defaultOpen ? initialMinutes : 0,
+      announcementTicker: defaultOpen
+        ? '⚡ Welcome to Matiks Hackathon Math Sprint! Assemble your teams and lock READY.'
+        : '⚡ Contest window is currently closed. Awaiting organizer to open competition window.',
       emergencyWalkIn: false
     };
   }
@@ -31,6 +34,13 @@ export class WindowManager {
    */
   public onOpen(cb: () => void): void {
     this.onOpenCallbacks.push(cb);
+  }
+
+  /**
+   * Registers a callback triggered whenever the contest window is closed.
+   */
+  public onClose(cb: () => void): void {
+    this.onCloseCallbacks.push(cb);
   }
 
   /**
@@ -74,12 +84,16 @@ export class WindowManager {
    */
   public openWindow(durationMinutes = 120, ticker?: string): ContestWindowConfig {
     const now = Date.now();
+    const defaultOpenTicker = '⚡ Welcome to Matiks Hackathon Math Sprint! Assemble your teams and lock READY.';
+    const currentTicker = this.config.announcementTicker || '';
+    const effectiveTicker = ticker ?? (currentTicker.includes('closed') ? defaultOpenTicker : (this.config.announcementTicker ?? defaultOpenTicker));
+
     this.config = {
       isOpen: true,
       opensAt: now,
       closesAt: now + durationMinutes * 60 * 1000,
       durationMinutes,
-      announcementTicker: ticker ?? this.config.announcementTicker,
+      announcementTicker: effectiveTicker,
       emergencyWalkIn: this.emergencyWalkInEnabled
     };
 
@@ -99,9 +113,24 @@ export class WindowManager {
    * Closes the competition window immediately.
    */
   public closeWindow(): ContestWindowConfig {
+    const wasOpen = this.config.isOpen;
     this.config.isOpen = false;
+    const defaultClosedTicker = '⚡ Contest window is currently closed. Awaiting organizer to open competition window.';
+    const currentTicker = this.config.announcementTicker || '';
+    if (!currentTicker || currentTicker.includes('Welcome') || currentTicker.includes('READY')) {
+      this.config.announcementTicker = defaultClosedTicker;
+    }
     this.broadcastStatus();
     leaderboardManager.setPostCloseLive(true);
+    if (wasOpen) {
+      for (const cb of this.onCloseCallbacks) {
+        try {
+          cb();
+        } catch {
+          // Ignore listener error
+        }
+      }
+    }
     return this.getConfig();
   }
 
@@ -130,5 +159,6 @@ export class WindowManager {
   }
 }
 
-// Singleton Window Manager
-export const windowManager = new WindowManager();
+// Singleton Window Manager (defaults to closed on boot; requires organizer to open window)
+export const windowManager = new WindowManager(false);
+

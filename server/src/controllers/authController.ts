@@ -85,7 +85,9 @@ export function getAuthConfigHandler(req: Request, res: Response): void {
     authUrl,
     state,
     roundOperatorMode: roomManager.getRoundOperatorModeOverride(),
-    emergencyWalkIn: windowManager.isEmergencyWalkInEnabled()
+    emergencyWalkIn: windowManager.isEmergencyWalkInEnabled(),
+    windowOpen: windowManager.isOpen(),
+    contestWindow: windowManager.getConfig()
   });
 }
 

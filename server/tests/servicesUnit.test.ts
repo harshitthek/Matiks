@@ -251,15 +251,24 @@ describe('Matiks Hackathon — Core Services Unit Test Suite', () => {
   });
 
   describe('2. WindowManager Lifecycle, Expiration & Callback Isolation', () => {
-    test('manages window open/close state, auto-expires past closesAt, and isolates throwing onOpen callbacks', () => {
-      const wm = new WindowManager(60);
+    test('initializes closed by default and manages window open/close state, auto-expires past closesAt, and isolates callbacks', () => {
+      const wm = new WindowManager();
+      assert.equal(wm.isOpen(), false);
+
+      wm.openWindow(60);
       assert.equal(wm.isOpen(), true);
 
       wm.setTicker('Custom Hackathon Announcement');
       assert.equal(wm.getConfig().announcementTicker, 'Custom Hackathon Announcement');
 
+      let closeCallbackCalled = false;
+      wm.onClose(() => {
+        closeCallbackCalled = true;
+      });
+
       wm.closeWindow();
       assert.equal(wm.isOpen(), false);
+      assert.equal(closeCallbackCalled, true);
 
       let secondCallbackCalled = false;
       wm.onOpen(() => {

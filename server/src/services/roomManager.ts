@@ -2050,10 +2050,11 @@ export class RoomManager {
 
   /**
    * Scans for rooms in AWAITING_READY with all members ready and starts countdown
-   * when contest window is opened by administrator.
+   * when contest window is opened by administrator, broadcasting fresh snapshots to all rooms.
    */
   public onWindowOpened(): void {
     for (const room of this.rooms.values()) {
+      this.broadcastSnapshot(room);
       if (room.status === 'AWAITING_READY') {
         const activeMembers = Array.from(room.members.values()).filter(m => !m.isExcused);
         const readyCount = activeMembers.filter(m => m.isReady).length;
@@ -2063,6 +2064,20 @@ export class RoomManager {
           this.startCountdown(room);
         }
       }
+    }
+  }
+
+  /**
+   * Broadcasts updated snapshots to all rooms and resets any active countdowns
+   * when contest window is closed by administrator.
+   */
+  public onWindowClosed(): void {
+    for (const room of this.rooms.values()) {
+      if (room.status === 'COUNTDOWN') {
+        this.clearRoomTimers(room.teamCode);
+        room.status = 'AWAITING_READY';
+      }
+      this.broadcastSnapshot(room);
     }
   }
 
@@ -2382,3 +2397,5 @@ export class RoomManager {
 // Singleton Room Manager
 export const roomManager = new RoomManager();
 windowManager.onOpen(() => roomManager.onWindowOpened());
+windowManager.onClose(() => roomManager.onWindowClosed());
+

@@ -12,6 +12,7 @@ import {
   getAuthUser,
   exchangeOidcCode
 } from '../../services/api.js';
+import { connectLeaderboardStream } from '../../services/sse.js';
 
 const OIDC_SESSION_KEY = 'matiks_oidc_session';
 const OIDC_DRAFT_KEY = 'matiks_oidc_draft';
@@ -106,10 +107,7 @@ function loadInitialState(initialTeamCode) {
   const initialSize = [1, 2, 3, 4].includes(draft?.targetSize) ? draft.targetSize : 3;
   const initialRoll = (draft?.rollNumber || savedSession?.user?.rollNumber || '').toUpperCase();
   const initialName = draft?.name || savedSession?.user?.displayName || '';
-  const initialOperatorMode =
-    draft?.operatorMode === 'sub' || draft?.operatorMode === 'mixed'
-      ? draft.operatorMode
-      : 'add';
+  const initialOperatorMode = 'add';
 
   if (initialCode) {
     persistInviteCode(initialCode);
@@ -142,8 +140,9 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
   const [targetSize, setTargetSize] = useState(init.initialSize);
   const [rollNumber, setRollNumber] = useState(init.initialRoll);
   const [name, setName] = useState(init.initialName);
-  const [operatorMode, setOperatorMode] = useState(init.initialOperatorMode); // 'add' | 'sub' | 'mixed'
+  const [operatorMode, setOperatorMode] = useState(init.initialOperatorMode); // Defaults to 'add'
   const [lockedRoundMode, setLockedRoundMode] = useState(null);
+  const [windowOpen, setWindowOpen] = useState(false);
   const [emergencyWalkIn, setEmergencyWalkIn] = useState(false);
   const [showEmergencyWalkInForm, setShowEmergencyWalkInForm] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -152,6 +151,7 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
   const [existingTeamMatch, setExistingTeamMatch] = useState(null);
   const [oidcSession, setOidcSession] = useState(init.savedSession);
   const onOidcCallbackCompleteRef = useRef(onOidcCallbackComplete);
+  const hasStreamUpdateRef = useRef(false);
 
   useEffect(() => {
     onOidcCallbackCompleteRef.current = onOidcCallbackComplete;
@@ -165,12 +165,20 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
         if (typeof cfg?.emergencyWalkIn === 'boolean') {
           setEmergencyWalkIn(cfg.emergencyWalkIn);
         }
+        if (!hasStreamUpdateRef.current) {
+          if (typeof cfg?.windowOpen === 'boolean') {
+            setWindowOpen(cfg.windowOpen);
+          } else if (typeof cfg?.contestWindow?.isOpen === 'boolean') {
+            setWindowOpen(cfg.contestWindow.isOpen);
+          }
+        }
         const override = cfg?.roundOperatorMode;
         if (override === 'add' || override === 'sub' || override === 'mixed') {
           setLockedRoundMode(override);
           setOperatorMode(override);
         } else {
           setLockedRoundMode(null);
+          setOperatorMode('add');
         }
       })
       .catch(() => {
@@ -178,6 +186,20 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
       });
     return () => {
       active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const stream = connectLeaderboardStream({
+      onWindowStatus: (status) => {
+        hasStreamUpdateRef.current = true;
+        if (typeof status?.isOpen === 'boolean') {
+          setWindowOpen(status.isOpen);
+        }
+      }
+    });
+    return () => {
+      stream?.close?.();
     };
   }, []);
 
@@ -545,6 +567,31 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
               </div>
             )}
 
+            {/* Contest Window Status Banner */}
+            <div
+              className={`p-3 border-2 font-mono text-xs flex items-center justify-between gap-2 transition-all ${
+                windowOpen
+                  ? 'border-[#2ee58f]/40 bg-[#2ee58f]/10 text-[#2ee58f]'
+                  : 'border-[#f5a623] bg-[#f5a623]/10 text-[#f5a623]'
+              }`}
+            >
+              <div className="flex items-center gap-2 font-bold tracking-wider uppercase">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    windowOpen ? 'bg-[#2ee58f] animate-pulse' : 'bg-[#f5a623]'
+                  }`}
+                />
+                <span>
+                  {windowOpen
+                    ? 'CONTEST WINDOW OPEN // READY TO RACE'
+                    : 'CONTEST WINDOW CLOSED // AWAITING ORGANIZER'}
+                </span>
+              </div>
+              <span className="text-[11px] text-[#aab5ac] hidden sm:inline">
+                {windowOpen ? 'Sprint round active' : 'Waiting for organizer to open sprint'}
+              </span>
+            </div>
+
             {/* Organizer Emergency Walk-In Ribbon (Phase 4 Safety Valve) */}
             {emergencyWalkIn && (
               <div className="border-2 border-[#f5a623] bg-[#f5a623]/15 p-3 flex flex-wrap items-center justify-between gap-2.5">
@@ -883,6 +930,31 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
               </div>
             </div>
 
+            {/* Contest Window Status Banner */}
+            <div
+              className={`p-3 border-2 font-mono text-xs flex items-center justify-between gap-2 transition-all ${
+                windowOpen
+                  ? 'border-[#2ee58f]/40 bg-[#2ee58f]/10 text-[#2ee58f]'
+                  : 'border-[#f5a623] bg-[#f5a623]/10 text-[#f5a623]'
+              }`}
+            >
+              <div className="flex items-center gap-2 font-bold tracking-wider uppercase">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    windowOpen ? 'bg-[#2ee58f] animate-pulse' : 'bg-[#f5a623]'
+                  }`}
+                />
+                <span>
+                  {windowOpen
+                    ? 'CONTEST WINDOW OPEN // READY TO RACE'
+                    : 'CONTEST WINDOW CLOSED // AWAITING ORGANIZER'}
+                </span>
+              </div>
+              <span className="text-[11px] text-[#aab5ac] hidden sm:inline">
+                {windowOpen ? 'Sprint round active' : 'Waiting for organizer to open sprint'}
+              </span>
+            </div>
+
             {/* Mode Switcher Tabs */}
             <div className="flex gap-3">
               <button
@@ -993,42 +1065,6 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
                     </p>
                   </div>
 
-                  <div>
-                    <label className="block font-mono text-xs uppercase tracking-wider text-[#e8ece3] mb-1.5 font-bold">
-                      Arithmetic Mode{' '}
-                      {lockedRoundMode && (
-                        <span className="text-[10px] text-[#ffe36e] ml-1">
-                          (LOCKED BY ORGANIZER)
-                        </span>
-                      )}
-                    </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { id: 'add', label: '+ ADD', title: 'Addition (15 questions)' },
-                        { id: 'sub', label: '- SUB', title: 'Subtraction (15 questions)' },
-                        { id: 'mixed', label: '± MIXED', title: 'Mixed (8 Add + 7 Sub)' }
-                      ].map((m) => {
-                        const effectiveMode = lockedRoundMode || operatorMode;
-                        return (
-                          <button
-                            key={m.id}
-                            type="button"
-                            disabled={Boolean(lockedRoundMode)}
-                            onClick={() => !lockedRoundMode && setOperatorMode(m.id)}
-                            className={`py-2 px-2 border-2 font-mono text-xs tracking-wider uppercase font-bold transition-all ${
-                              effectiveMode === m.id
-                                ? 'border-[#090c0a] bg-[#2ee58f] text-[#090c0a] shadow-[3px_3px_0_#090c0a]'
-                                : 'border-[#aab5ac]/30 bg-[#090c0a] text-[#aab5ac]'
-                            } ${lockedRoundMode ? 'opacity-75 cursor-not-allowed' : 'cursor-pointer'}`}
-                            title={m.title}
-                          >
-                            {m.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
                   {/* Authoritative Identity Indicator */}
                   <div className="border border-[#2ee58f]/30 bg-[#2ee58f]/10 p-3 flex items-center justify-between text-xs font-mono">
                     <span className="text-[#aab5ac] uppercase font-bold">CREATING AS CAPTAIN:</span>
@@ -1119,14 +1155,12 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
             • <strong>Squad Synchronization:</strong> All teammates must toggle "READY" before the 3-2-1 countdown unlocks.<br />
             • <strong>Individual Execution:</strong> Each member solves 15 questions independently on their own screen within 120 seconds.<br />
             • <strong>Team Scoring:</strong> Final squad leaderboard ranking is computed from the mathematical mean of all member scores.<br />
-            {mode === 'join' ? (
-              <>• <strong>Calibrated Taxonomy:</strong> 15 calibrated arithmetic problems matched to your squad's chosen round mode.<br /></>
-            ) : (lockedRoundMode || operatorMode) === 'sub' ? (
+            {lockedRoundMode === 'sub' ? (
               <>• <strong>Borrow Taxonomy:</strong> 15 calibrated subtraction problems across Clean Subtraction and Regroup Borrowing.<br /></>
-            ) : (lockedRoundMode || operatorMode) === 'mixed' ? (
+            ) : lockedRoundMode === 'mixed' ? (
               <>• <strong>Mixed Taxonomy:</strong> 15 calibrated problems (8 Addition with Carry Taxonomy + 7 Subtraction with Regrouping).<br /></>
             ) : (
-              <>• <strong>Carry Taxonomy:</strong> Exactly 3 No Carry, 4 Ones Carry, 4 Century Carry, and 4 Double Carry problems.<br /></>
+              <>• <strong>Carry Taxonomy:</strong> Exactly 3 No Carry, 4 Ones Carry, 4 Century Carry, and 4 Double Carry 2-digit addition problems.<br /></>
             )}
           </p>
         </div>
