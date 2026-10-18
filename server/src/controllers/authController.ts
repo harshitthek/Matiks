@@ -18,6 +18,10 @@ import {
 } from '../services/auth/authProviderFactory.js';
 import { roomManager } from '../services/roomManager.js';
 import { windowManager } from '../services/windowManager.js';
+import { isAllowedClientOrigin, getAllowedOrigins } from '../config/corsOrigins.js';
+
+
+
 
 function extractBearerToken(req: Request): string | undefined {
   const authHeader = req.headers['authorization'];
@@ -45,6 +49,17 @@ function extractCookie(req: Request, name: string): string | null {
   }
 }
 
+
+const stateClientOrigins = new Map<string, { origin: string; expiresAt: number }>();
+
+function pruneExpiredStateOrigins(now: number): void {
+  for (const [k, v] of stateClientOrigins.entries()) {
+    if (now > v.expiresAt) {
+      stateClientOrigins.delete(k);
+    }
+  }
+}
+
 export function getAuthConfigHandler(req: Request, res: Response): void {
   const primaryProvider = getAuthProvider();
   const forceOidc = req.query['oidc'] === 'true' || req.query['oidc'] === '1';
@@ -57,8 +72,20 @@ export function getAuthConfigHandler(req: Request, res: Response): void {
 
   const existingStateCookie = extractCookie(req, 'matiks_oidc_state');
 
+  const candidateOrigin =
+    (typeof req.headers.origin === 'string' && req.headers.origin.trim().replace(/\/+$/, '')) ||
+    (typeof req.headers.referer === 'string' && (() => {
+      try {
+        return new URL(req.headers.referer).origin.replace(/\/+$/, '');
+      } catch {
+        return null;
+      }
+    })()) || undefined;
+
+  const trustedOrigin = candidateOrigin && isAllowedClientOrigin(candidateOrigin) ? candidateOrigin : undefined;
+
   if (urlProvider.getAuthUrl) {
-    authUrl = urlProvider.getAuthUrl(existingStateCookie || undefined);
+    authUrl = urlProvider.getAuthUrl(existingStateCookie || undefined, trustedOrigin);
     if (authUrl) {
       try {
         const parsed = new URL(authUrl);
@@ -77,6 +104,16 @@ export function getAuthConfigHandler(req: Request, res: Response): void {
       `matiks_oidc_state=${encodeURIComponent(state)}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=600${isSecure ? '; Secure; Partitioned' : ''}`
     );
   }
+
+  const embeddedOrigin = state && urlProvider.extractOriginFromState ? urlProvider.extractOriginFromState(state) : null;
+  if (state && trustedOrigin && embeddedOrigin !== trustedOrigin) {
+    const now = Date.now();
+    pruneExpiredStateOrigins(now);
+    if (stateClientOrigins.size < 5000) {
+      stateClientOrigins.set(state, { origin: trustedOrigin, expiresAt: now + 10 * 60 * 1000 });
+    }
+  }
+
 
   res.status(200).json({
     mode: primaryProvider.providerName === 'club_oidc' ? 'club_oidc' : 'local',
@@ -196,6 +233,7 @@ export async function exchangeOidcCodeHandler(req: Request, res: Response): Prom
       : (headerState && headerState === state)
         ? headerState
         : (cookieState || headerState);
+
     const primaryProvider = getAuthProvider();
     const provider = (!primaryProvider.exchangeCode && clientStateCookie)
       ? getClubOidcProvider()
@@ -286,23 +324,96 @@ export async function verifyMembershipHandler(req: Request, res: Response): Prom
   }
 }
 
-function resolveClientBaseUrl(): string {
+function resolveClientBaseUrl(req?: Request): string {
   const explicitOrigin = process.env.CLIENT_ORIGIN?.trim();
   if (explicitOrigin) {
     return explicitOrigin.replace(/\/+$/, '');
   }
+
+  // Validate request origin against trusted allowlist if present
+  if (req?.headers.origin && typeof req.headers.origin === 'string') {
+    const origin = req.headers.origin.trim().replace(/\/+$/, '');
+    if (isAllowedClientOrigin(origin)) {
+      return origin;
+    }
+  }
+
+  // Validate request referer against trusted allowlist if present
+  if (req?.headers.referer && typeof req.headers.referer === 'string') {
+    try {
+      const parsed = new URL(req.headers.referer);
+      const origin = parsed.origin.replace(/\/+$/, '');
+      if (isAllowedClientOrigin(origin)) {
+        return origin;
+      }
+    } catch {
+      // Ignore malformed referer
+    }
+  }
+
+  const firstCorsOrigin = (process.env.CORS_ORIGINS?.trim() ? getAllowedOrigins({ forRedirect: true }) : [])
+    .find(s => s.startsWith('https://') || (process.env.NODE_ENV !== 'production' && s.startsWith('http://')));
+  if (firstCorsOrigin) {
+    return firstCorsOrigin.replace(/\/+$/, '');
+  }
+
+
   if (process.env.NODE_ENV === 'production') {
     throw new Error('CLIENT_ORIGIN environment variable is required in production.');
   }
-  const firstCorsOrigin = (process.env.CORS_ORIGINS || 'http://localhost:5173')
-    .split(',')[0]
-    ?.trim();
-  return (firstCorsOrigin || 'http://localhost:5173').replace(/\/+$/, '');
+  return 'http://localhost:5173';
 }
 
 export function redirectOidcCallbackHandler(req: Request, res: Response): void {
   try {
-    const clientBaseUrl = resolveClientBaseUrl();
+    const rawState = req.query['state'];
+    const state = typeof rawState === 'string' ? rawState.trim() : undefined;
+    let boundOrigin: string | undefined;
+
+    // 1. Recover bound origin directly from authenticated state (stateless, tamper-proof, multi-worker safe)
+    if (state) {
+      const primaryProvider = getAuthProvider();
+      const oidcProvider = primaryProvider.providerName === 'club_oidc'
+        ? primaryProvider
+        : getClubOidcProvider();
+
+      if (oidcProvider.extractOriginFromState) {
+        const originFromState = oidcProvider.extractOriginFromState(state);
+        if (originFromState && isAllowedClientOrigin(originFromState)) {
+          boundOrigin = originFromState;
+        }
+      }
+
+      // 2. In-memory fallback if state was generated without embedded origin
+      if (!boundOrigin && stateClientOrigins.has(state)) {
+        const record = stateClientOrigins.get(state);
+        stateClientOrigins.delete(state);
+        if (record && Date.now() <= record.expiresAt && isAllowedClientOrigin(record.origin)) {
+          boundOrigin = record.origin;
+        }
+      }
+    }
+
+    // 3. Handle query origin parameter:
+    // The state-bound origin is authoritative; query origin cannot override it.
+    // If query origin contradicts the state-bound origin, reject immediately to prevent redirect diversion.
+    const rawQueryOrigin = req.query['origin'];
+    if (typeof rawQueryOrigin === 'string') {
+      const queryOrigin = rawQueryOrigin.trim().replace(/\/+$/, '');
+      if (isAllowedClientOrigin(queryOrigin)) {
+        if (!boundOrigin) {
+          boundOrigin = queryOrigin;
+        } else if (boundOrigin !== queryOrigin) {
+          res.status(400).json({
+            error: 'ORIGIN_MISMATCH',
+            message: 'Query origin does not match state-bound origin.'
+          });
+          return;
+        }
+      }
+    }
+
+    const clientBaseUrl = boundOrigin || resolveClientBaseUrl(req);
     const params = new URLSearchParams();
     for (const key of ['code', 'state', 'error', 'error_description']) {
       const val = req.query[key];
@@ -317,3 +428,5 @@ export function redirectOidcCallbackHandler(req: Request, res: Response): void {
     res.status(500).json({ error: 'SERVER_CONFIG_ERROR', message });
   }
 }
+
+

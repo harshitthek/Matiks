@@ -75,6 +75,8 @@ import {
 import { requireAdminAuth, requireMetricsAuth } from './middleware/auth.js';
 import { requestLoggingMiddleware } from './config/logger.js';
 import { metrics, metricsMiddleware } from './services/metrics.js';
+import { isAllowedClientOrigin } from './config/corsOrigins.js';
+
 
 const PRIVATE_LAN_ORIGIN_REGEX =
   /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/;
@@ -131,21 +133,18 @@ export function createApp(): express.Application {
   app.use(requestLoggingMiddleware);
   app.use(metricsMiddleware);
 
-  // CORS configuration with explicit trusted origins allowlist + nearby LAN support in dev
-  const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,https://matiks.fossclub.tech,https://fossclub.tech,https://www.fossclub.tech')
-    .split(',')
-    .map(s => s.trim());
-
+  // CORS configuration using centralized allowlist and origin verification
   app.use(
     cors({
       origin: (origin, callback) => {
         const allowLan =
           process.env.NODE_ENV !== 'production' &&
           (process.env.NODE_ENV === 'development' || process.env.ALLOW_LAN_ORIGINS === 'true');
+
         if (
           !origin ||
-          allowedOrigins.includes(origin) ||
           process.env.NODE_ENV === 'test' ||
+          isAllowedClientOrigin(origin, { forRedirect: false }) ||
           (allowLan && PRIVATE_LAN_ORIGIN_REGEX.test(origin))
         ) {
           callback(null, true);
@@ -156,6 +155,7 @@ export function createApp(): express.Application {
       credentials: true
     })
   );
+
   app.use(express.json());
 
   // Health check

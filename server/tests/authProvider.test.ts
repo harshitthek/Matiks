@@ -17,9 +17,11 @@ import { LocalHackathonAuthProvider } from '../src/services/auth/localAuthProvid
 import { ClubOidcAuthProvider } from '../src/services/auth/clubOidcAuthProvider.js';
 import {
   getAuthProvider,
+  getClubOidcProvider,
   setAuthProvider,
   resetAuthProviderInstances
 } from '../src/services/auth/authProviderFactory.js';
+
 import { createApp } from '../src/app.js';
 import { getAdminSecret } from '../src/config/env.js';
 
@@ -182,7 +184,24 @@ describe('Matiks Hackathon — Phase 7: Pluggable Auth & Club OIDC Adapter', () 
 
       // 5. Unrecognized or invalid format states fail
       assert.equal(provider.validateState('random_unsigned_string'), false);
+
+      // 6. Embedded client origin signing and verification
+      const stateWithOrigin = provider.generateSignedState(Date.now(), 'https://matiks-usarfoss.vercel.app');
+      assert.equal(stateWithOrigin.split('.').length, 3);
+      assert.equal(provider.extractOriginFromState(stateWithOrigin), 'https://matiks-usarfoss.vercel.app');
+      assert.equal(provider.validateState(stateWithOrigin), true);
+
+      // 7. Tampered origin in state fails extraction
+      const parts = stateWithOrigin.split('.');
+      const tamperedOriginState = `${parts[0]}tamper.${parts[1]}.${parts[2]}`;
+      assert.equal(provider.extractOriginFromState(tamperedOriginState), null);
+
+      // 8. State without embedded origin returns null for extractOriginFromState
+      const plainState = provider.generateSignedState(Date.now());
+      assert.equal(provider.extractOriginFromState(plainState), null);
     });
+
+
 
     test('Verifies RS256 id_token via /jwks, enforces S256 PKCE at /token, and maps /me claims', async () => {
       const { generateKeyPairSync, createSign, createHash } = await import('node:crypto');
@@ -1014,6 +1033,51 @@ describe('Matiks Hackathon — Phase 7: Pluggable Auth & Club OIDC Adapter', () 
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
     });
+
+    test('GET /api/auth/callback/fossclub redirects to state-bound origin and enforces origin match', async () => {
+      const app = createApp();
+      const server = http.createServer(app);
+      await new Promise<void>((resolve) => server.listen(0, resolve));
+      const port = (server.address() as AddressInfo).port;
+      const baseUrl = `http://127.0.0.1:${port}`;
+
+      try {
+        const oidcProvider = getClubOidcProvider();
+        const clientOrigin = 'https://matiks-usarfoss.vercel.app';
+        const authUrl = oidcProvider.getAuthUrl(undefined, clientOrigin);
+        const state = new URL(authUrl).searchParams.get('state')!;
+
+        // 1. Redirects 302 directly to state-bound origin without needing in-memory state
+        const res = await fetch(`${baseUrl}/api/auth/callback/fossclub?code=mock_code_123&state=${encodeURIComponent(state)}`, {
+          redirect: 'manual'
+        });
+        assert.equal(res.status, 302);
+        const location = res.headers.get('location');
+        assert.ok(location);
+        const redirectedUrl = new URL(location);
+        assert.equal(redirectedUrl.origin, clientOrigin);
+        assert.equal(redirectedUrl.searchParams.get('code'), 'mock_code_123');
+        assert.equal(redirectedUrl.searchParams.get('state'), state);
+
+
+        // 2. Query origin matching state-bound origin succeeds
+        const matchRes = await fetch(`${baseUrl}/api/auth/callback/fossclub?code=mock_code_123&state=${encodeURIComponent(state)}&origin=${encodeURIComponent(clientOrigin)}`, {
+          redirect: 'manual'
+        });
+        assert.equal(matchRes.status, 302);
+
+        // 3. Origin mismatch rejects with 400 ORIGIN_MISMATCH to protect against diversion
+        const mismatchRes = await fetch(`${baseUrl}/api/auth/callback/fossclub?code=mock_code_123&state=${encodeURIComponent(state)}&origin=${encodeURIComponent('https://matiks.fossclub.tech')}`, {
+          redirect: 'manual'
+        });
+        assert.equal(mismatchRes.status, 400);
+        const mismatchBody = await mismatchRes.json();
+        assert.equal(mismatchBody.error, 'ORIGIN_MISMATCH');
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
   });
 });
+
 

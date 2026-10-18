@@ -7,6 +7,7 @@ import { ArenaView } from './components/arena/ArenaView.jsx';
 import { LeaderboardView } from './components/leaderboard/LeaderboardView.jsx';
 import { AdminView } from './components/admin/AdminView.jsx';
 import { NotFoundView } from './components/common/NotFoundView.jsx';
+import { ErrorBoundary } from './components/common/ErrorBoundary.jsx';
 import { leaveTeam, resetTeamSprint, getAuthMe } from './services/api.js';
 import { soundFx } from './services/soundFx.js';
 
@@ -699,113 +700,126 @@ export function App() {
 
       {/* Main View Body */}
       <main className={isInActiveArena ? 'flex-1 flex flex-col h-full max-h-full overflow-hidden p-0' : 'flex-1 flex flex-col justify-center py-4 sm:py-6'}>
-        {currentView === 'leaderboard' && (
-          <LeaderboardView onReturnToLobby={() => navigateTo('squad')} />
+        {/* Transient views (Leaderboard, Admin) with key={currentView} so view errors reset on navigation */}
+        {currentView !== 'squad' && (
+          <ErrorBoundary key={currentView}>
+            {currentView === 'leaderboard' && (
+              <LeaderboardView onReturnToLobby={() => navigateTo('squad')} />
+            )}
+
+            {currentView === 'admin' && (
+              isUserAdmin ? (
+                <AdminView
+                  onReturnToLobby={() => navigateTo('squad')}
+                  onViewLeaderboard={() => navigateTo('leaderboard')}
+                  onLogin={() => setHasAdminSession(true)}
+                  onLogout={() => {
+                    setHasAdminSession(false);
+                    try {
+                      const rawOidc = localStorage.getItem('matiks_oidc_session');
+                      if (rawOidc) {
+                        const parsed = JSON.parse(rawOidc);
+                        setCurrentUser(parsed?.user || null);
+                      } else {
+                        setCurrentUser(null);
+                      }
+                    } catch {
+                      setCurrentUser(null);
+                    }
+                  }}
+                />
+              ) : (
+                <NotFoundView onReturnToLobby={() => navigateTo('squad')} />
+              )
+            )}
+          </ErrorBoundary>
         )}
 
-        {currentView === 'admin' && (
-          isUserAdmin ? (
-            <AdminView
-              onReturnToLobby={() => navigateTo('squad')}
-              onViewLeaderboard={() => navigateTo('leaderboard')}
-              onLogin={() => setHasAdminSession(true)}
-              onLogout={() => {
-                setHasAdminSession(false);
-                try {
-                  const rawOidc = localStorage.getItem('matiks_oidc_session');
-                  if (rawOidc) {
-                    const parsed = JSON.parse(rawOidc);
-                    setCurrentUser(parsed?.user || null);
-                  } else {
-                    setCurrentUser(null);
-                  }
-                } catch {
-                  setCurrentUser(null);
-                }
-              }}
-            />
-          ) : (
-            <NotFoundView onReturnToLobby={() => navigateTo('squad')} />
-          )
-        )}
-
+        {/* Squad container is kept permanently mounted and hidden with .hidden when viewing other tabs,
+            so ArenaView, SSE connections, and in-flight OIDC exchanges are preserved.
+            ErrorBoundary is placed inside so errors occurring while hidden stay hidden until tab is focused */}
         <div className={currentView === 'squad' ? (isInActiveArena ? 'w-full h-full flex flex-col min-h-0' : 'w-full') : 'hidden'}>
-          {sprintSession ? (
-            <ArenaView
-              key={sprintSession.sessionId}
-              sessionId={sprintSession.sessionId}
-              questions={sprintSession.questions}
-              initialQuestionIndex={sprintSession.questionIndex || 0}
-              initialScore={sprintSession.currentScore || 0}
-              initialStreak={sprintSession.streak || 0}
-              initialMaxStreak={sprintSession.maxStreak || sprintSession.streak || 0}
-              initialSubmissions={sprintSession.submissions || []}
-              initialIsFinished={Boolean(sprintSession.isFinished)}
-              initialIsTimeOut={Boolean(sprintSession.isTimeOut)}
-              startedAt={sprintSession.startedAt}
-              durationSeconds={sprintSession.durationSeconds || 120}
-              initialIsPaused={Boolean(sprintSession.isPaused)}
-              isActiveView={currentView === 'squad'}
-              teamCode={teamSession?.teamCode}
-              memberToken={teamSession?.memberToken}
-              currentRoll={teamSession?.rollNumber}
-              currentName={teamSession?.name}
-              exitPromptRequested={arenaExitPrompt}
-              isAudioMuted={isAudioMuted}
-              onToggleAudioMute={handleToggleAudio}
-              onDismissExitPrompt={() => {
-                arenaExitPromptRef.current = false;
-                setArenaExitPrompt(false);
-              }}
-              onSprintFinishedChange={(finished) => {
-                isSprintFinishedRef.current = finished;
-                setIsSprintFinished(finished);
-              }}
-              onStateSync={handleSprintStateSync}
-              onReturnToLobby={handleReturnToLobbyFromSprint}
-              onPlayAgain={handlePlayAgainFromSummary}
-              onViewLeaderboard={() => navigateTo('leaderboard')}
-            />
-          ) : teamSession && !oidcCallbackPending ? (
-            /* Active Squad Lobby */
-            <TeamLobby
-              teamCode={teamSession.teamCode}
-              memberToken={teamSession.memberToken}
-              currentRoll={teamSession.rollNumber}
-              suppressedResumeSessionId={suppressedResumeSessionId}
-              leavePromptRequested={lobbyLeavePrompt}
-              onDismissLeavePrompt={() => {
-                lobbyLeavePromptRef.current = false;
-                setLobbyLeavePrompt(false);
-              }}
-              onStartSprint={handleStartSprint}
-              onLeaveTeam={handleLeaveTeam}
-              onViewLeaderboard={() => navigateTo('leaderboard')}
-            />
-          ) : (
-            /* Squad Onboarding */
-            <TeamOnboarding
-              key={inviteTeamCode}
-              initialTeamCode={inviteTeamCode}
-              onJoinedTeam={handleJoinedTeam}
-              onNavigateToAdmin={() => navigateTo('admin')}
-              onOidcCallbackComplete={(oidcUser) => {
-                setOidcCallbackPending(false);
-                if (oidcUser) {
-                  setCurrentUser(oidcUser);
-                }
-                if (
-                  oidcUser?.rollNumber &&
-                  teamSessionRef.current?.rollNumber &&
-                  oidcUser.rollNumber.toUpperCase() !== teamSessionRef.current.rollNumber.toUpperCase()
-                ) {
-                  void handleLeaveTeam({ forceLocal: true });
-                }
-              }}
-            />
-          )}
+          <ErrorBoundary key={`${sprintSession?.sessionId ?? 'none'}|${teamSession?.teamCode ?? 'none'}`}>
+
+
+            {sprintSession ? (
+              <ArenaView
+                key={sprintSession.sessionId}
+                sessionId={sprintSession.sessionId}
+                questions={sprintSession.questions}
+                initialQuestionIndex={sprintSession.questionIndex || 0}
+                initialScore={sprintSession.currentScore || 0}
+                initialStreak={sprintSession.streak || 0}
+                initialMaxStreak={sprintSession.maxStreak || sprintSession.streak || 0}
+                initialSubmissions={sprintSession.submissions || []}
+                initialIsFinished={Boolean(sprintSession.isFinished)}
+                initialIsTimeOut={Boolean(sprintSession.isTimeOut)}
+                startedAt={sprintSession.startedAt}
+                durationSeconds={sprintSession.durationSeconds || 120}
+                initialIsPaused={Boolean(sprintSession.isPaused)}
+                isActiveView={currentView === 'squad'}
+                teamCode={teamSession?.teamCode}
+                memberToken={teamSession?.memberToken}
+                currentRoll={teamSession?.rollNumber}
+                currentName={teamSession?.name}
+                exitPromptRequested={arenaExitPrompt}
+                isAudioMuted={isAudioMuted}
+                onToggleAudioMute={handleToggleAudio}
+                onDismissExitPrompt={() => {
+                  arenaExitPromptRef.current = false;
+                  setArenaExitPrompt(false);
+                }}
+                onSprintFinishedChange={(finished) => {
+                  isSprintFinishedRef.current = finished;
+                  setIsSprintFinished(finished);
+                }}
+                onStateSync={handleSprintStateSync}
+                onReturnToLobby={handleReturnToLobbyFromSprint}
+                onPlayAgain={handlePlayAgainFromSummary}
+                onViewLeaderboard={() => navigateTo('leaderboard')}
+              />
+            ) : teamSession && !oidcCallbackPending ? (
+              /* Active Squad Lobby */
+              <TeamLobby
+                teamCode={teamSession.teamCode}
+                memberToken={teamSession.memberToken}
+                currentRoll={teamSession.rollNumber}
+                suppressedResumeSessionId={suppressedResumeSessionId}
+                leavePromptRequested={lobbyLeavePrompt}
+                onDismissLeavePrompt={() => {
+                  lobbyLeavePromptRef.current = false;
+                  setLobbyLeavePrompt(false);
+                }}
+                onStartSprint={handleStartSprint}
+                onLeaveTeam={handleLeaveTeam}
+                onViewLeaderboard={() => navigateTo('leaderboard')}
+              />
+            ) : (
+              /* Squad Onboarding */
+              <TeamOnboarding
+                key={inviteTeamCode}
+                initialTeamCode={inviteTeamCode}
+                onJoinedTeam={handleJoinedTeam}
+                onNavigateToAdmin={() => navigateTo('admin')}
+                onOidcCallbackComplete={(oidcUser) => {
+                  setOidcCallbackPending(false);
+                  if (oidcUser) {
+                    setCurrentUser(oidcUser);
+                  }
+                  if (
+                    oidcUser?.rollNumber &&
+                    teamSessionRef.current?.rollNumber &&
+                    oidcUser.rollNumber.toUpperCase() !== teamSessionRef.current.rollNumber.toUpperCase()
+                  ) {
+                    void handleLeaveTeam({ forceLocal: true });
+                  }
+                }}
+              />
+            )}
+          </ErrorBoundary>
         </div>
       </main>
+
 
       {/* Neo-brutalist FOSS Forge & UFC Community Footer (hidden during active sprint) */}
       {!isInActiveArena && (

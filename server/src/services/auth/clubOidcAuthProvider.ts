@@ -205,27 +205,47 @@ export class ClubOidcAuthProvider implements IAuthProvider {
   }
 
   /**
+   * Generates a tamper-proof HMAC-SHA256 signed state payload with optional encoded client origin.
+   */
+  public generateSignedState(now: number = Date.now(), clientOrigin?: string): string {
+    const randomNonce = randomBytes(16).toString('hex');
+    const originTag = (clientOrigin && typeof clientOrigin === 'string')
+      ? `~${Buffer.from(clientOrigin.trim().replace(/\/+$/, '')).toString('base64url')}`
+      : '';
+    const nonce = `${randomNonce}${originTag}`;
+    const timestamp = now.toString(36);
+    const payload = `${nonce}.${timestamp}`;
+    const sig = createHmac('sha256', this.signingPepper).update(payload).digest('hex');
+    return `${payload}.${sig}`;
+  }
+
+  /**
    * Generates the OIDC authorization URL for redirecting players to oidc.fossclub.tech/auth.
    * Includes mandatory S256 PKCE code_challenge, nonce, and HMAC-signed state.
+   * If clientOrigin is provided, it is securely signed into the state payload so it
+   * can be statelessly recovered on callback across multiple server workers or restarts.
    */
-  public getAuthUrl(state?: string): string {
+  public getAuthUrl(state?: string, clientOrigin?: string): string {
     const now = Date.now();
     this.pruneExpiredStates(now);
 
     let s: string;
     if (state && this.isStateValid(state, now)) {
-      s = state;
+      const existingOrigin = this.extractOriginFromState(state, now);
+      const normalizedClientOrigin = clientOrigin?.trim().replace(/\/+$/, '');
+      if (normalizedClientOrigin && existingOrigin !== normalizedClientOrigin) {
+        s = this.generateSignedState(now, clientOrigin);
+      } else {
+        s = state;
+      }
+
     } else if (state && process.env.NODE_ENV === 'test') {
       s = state;
       if (this.validStates.size < 1000) {
         this.validStates.set(s, now + this.stateTtlMs);
       }
     } else {
-      const nonce = randomBytes(16).toString('hex');
-      const timestamp = now.toString(36);
-      const payload = `${nonce}.${timestamp}`;
-      const sig = createHmac('sha256', this.signingPepper).update(payload).digest('hex');
-      s = `${payload}.${sig}`;
+      s = this.generateSignedState(now, clientOrigin);
     }
 
     this.lastIssuedState = s;
@@ -244,6 +264,43 @@ export class ClubOidcAuthProvider implements IAuthProvider {
       code_challenge_method: 'S256'
     });
     return `${this.issuerUrl}/auth?${params.toString()}`;
+  }
+
+  /**
+   * Statelessly extracts and cryptographically verifies the client origin bound into the state.
+   * Does NOT consume the state so that the subsequent code exchange remains valid.
+   */
+  public extractOriginFromState(state: string, now: number = Date.now()): string | null {
+    if (!state || typeof state !== 'string') return null;
+    const parts = state.split('.');
+    if (parts.length !== 3) return null;
+    const [nonce, timestampStr, sig] = parts;
+    if (!nonce || !timestampStr || !sig) return null;
+    if (!/^[0-9a-f]{64}$/i.test(sig)) return null;
+
+    const payload = `${nonce}.${timestampStr}`;
+    const expectedSig = createHmac('sha256', this.signingPepper).update(payload).digest('hex');
+
+    const sigBuf = Buffer.from(sig, 'hex');
+    const expectedBuf = Buffer.from(expectedSig, 'hex');
+    if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) {
+      return null;
+    }
+
+    const timestamp = parseInt(timestampStr, 36);
+    if (Number.isNaN(timestamp) || now < timestamp || now - timestamp > this.stateTtlMs) {
+      return null;
+    }
+
+    const tildeIdx = nonce.indexOf('~');
+    if (tildeIdx === -1) return null;
+    const encodedOrigin = nonce.slice(tildeIdx + 1);
+    try {
+      const decoded = Buffer.from(encodedOrigin, 'base64url').toString('utf8');
+      return decoded.replace(/\/+$/, '') || null;
+    } catch {
+      return null;
+    }
   }
 
   /**

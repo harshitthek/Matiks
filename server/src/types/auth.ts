@@ -63,7 +63,12 @@ export interface IAuthProvider {
   /**
    * Optional: Returns authorization URL for OAuth2 / OIDC code flow.
    */
-  getAuthUrl?(state?: string): string;
+  getAuthUrl?(state?: string, clientOrigin?: string): string;
+
+  /**
+   * Optional: Extracts and verifies client origin embedded in authenticated state.
+   */
+  extractOriginFromState?(state: string, now?: number): string | null;
 
   /**
    * Optional: Exchanges authorization code for access tokens and user profile.

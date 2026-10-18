@@ -17,6 +17,60 @@ import { connectLeaderboardStream } from '../../services/sse.js';
 const OIDC_SESSION_KEY = 'matiks_oidc_session';
 const OIDC_DRAFT_KEY = 'matiks_oidc_draft';
 
+const inFlightExchanges = new Map();
+const processedCodes = new Set();
+
+function saveOidcState(state) {
+  if (!state || typeof window === 'undefined') return;
+  const payload = JSON.stringify({ state, savedAt: Date.now() });
+  try {
+    sessionStorage.setItem('matiks_oidc_state', state);
+  } catch {
+    // Ignore storage quota
+  }
+  try {
+    localStorage.setItem('matiks_oidc_state', payload);
+  } catch {
+    // Ignore storage quota
+  }
+}
+
+function getSavedOidcState() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const sessionState = sessionStorage.getItem('matiks_oidc_state');
+    if (sessionState && sessionState.trim()) return sessionState.trim();
+  } catch {
+    // Ignore
+  }
+  try {
+    const rawLocal = localStorage.getItem('matiks_oidc_state');
+    if (rawLocal) {
+      if (rawLocal.startsWith('{')) {
+        const parsed = JSON.parse(rawLocal);
+        if (parsed?.state && Date.now() - (parsed.savedAt || 0) < 15 * 60 * 1000) {
+          return parsed.state.trim();
+        }
+      } else if (rawLocal.trim()) {
+        return rawLocal.trim();
+      }
+    }
+  } catch {
+    // Ignore
+  }
+  return null;
+}
+
+function clearSavedOidcState() {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.removeItem('matiks_oidc_state');
+    localStorage.removeItem('matiks_oidc_state');
+  } catch {
+    // Ignore
+  }
+}
+
 function readStoredInviteCode() {
   if (typeof window === 'undefined') return '';
   const storages = [window.sessionStorage, window.localStorage];
@@ -213,6 +267,7 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
     if (oidcError) {
       const cleanUrl = window.location.pathname === '/auth/callback' ? '/' : window.location.pathname;
       window.history.replaceState({}, '', cleanUrl);
+      clearSavedOidcState();
       onOidcCallbackCompleteRef.current?.(null);
       return;
     }
@@ -221,19 +276,28 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
       const cleanUrl = window.location.pathname === '/auth/callback' ? '/' : window.location.pathname;
       window.history.replaceState({}, '', cleanUrl);
 
-      let savedState = null;
-      try {
-        savedState = sessionStorage.getItem('matiks_oidc_state');
-        sessionStorage.removeItem('matiks_oidc_state');
-      } catch {
-        savedState = null;
+      if (processedCodes.has(code)) {
+        return;
       }
 
-      let authenticatedUser = null;
-      exchangeOidcCode(code, state, savedState)
+      const savedState = getSavedOidcState();
+      const effectiveClientState = savedState || undefined;
+
+      let exchangePromise = inFlightExchanges.get(code);
+      if (!exchangePromise) {
+        exchangePromise = exchangeOidcCode(code, state, effectiveClientState);
+        inFlightExchanges.set(code, exchangePromise);
+      }
+
+      setOidcLoading(true);
+
+      exchangePromise
         .then((res) => {
+          inFlightExchanges.delete(code);
+          processedCodes.add(code);
+          clearSavedOidcState();
+
           if (res?.user && res?.token) {
-            authenticatedUser = res.user;
             const sessionObj = { user: res.user, token: res.token };
             setOidcSession(sessionObj);
             try {
@@ -252,14 +316,18 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
               setTeamCode(pending);
               setMode('join');
             }
+            onOidcCallbackCompleteRef.current?.(res.user);
+          } else {
+            onOidcCallbackCompleteRef.current?.(null);
           }
         })
         .catch((err) => {
+          inFlightExchanges.delete(code);
           setError(err.message || 'Failed to complete USAR FOSS Club OIDC sign-in.');
+          onOidcCallbackCompleteRef.current?.(null);
         })
         .finally(() => {
           setOidcLoading(false);
-          onOidcCallbackCompleteRef.current?.(authenticatedUser);
         });
       return;
     }
@@ -320,11 +388,7 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
         throw new Error('OIDC authorization URL is not available on this server.');
       }
       if (cfg.state) {
-        try {
-          sessionStorage.setItem('matiks_oidc_state', cfg.state);
-        } catch {
-          // Ignore storage errors
-        }
+        saveOidcState(cfg.state);
       }
       window.location.assign(cfg.authUrl);
     } catch (err) {
@@ -336,6 +400,7 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
   const handleClearOidcSession = () => {
     setOidcSession(null);
     setShowEmergencyWalkInForm(false);
+    clearSavedOidcState();
     try {
       localStorage.removeItem(OIDC_SESSION_KEY);
     } catch {
@@ -873,27 +938,27 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
             {/* Verified UFC Identity Profile Card */}
             <div className="border-2 border-[#2ee58f] bg-[#2ee58f]/10 p-3.5 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
-                {oidcSession.user.picture ? (
+                {oidcSession?.user?.picture ? (
                   <img
                     src={oidcSession.user.picture}
-                    alt={oidcSession.user.displayName}
+                    alt={oidcSession?.user?.displayName || 'Participant'}
                     className="w-10 h-10 border-2 border-[#090c0a] shrink-0 object-cover"
                   />
                 ) : (
                   <div className="w-10 h-10 bg-[#2ee58f] text-[#090c0a] border-2 border-[#090c0a] font-mono font-black text-base flex items-center justify-center shrink-0">
-                    {(oidcSession.user.displayName || 'U').slice(0, 1).toUpperCase()}
+                    {((oidcSession?.user?.displayName || 'U')).slice(0, 1).toUpperCase()}
                   </div>
                 )}
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-sm font-black text-[#e8ece3] truncate">
-                      {oidcSession.user.displayName}
+                      {oidcSession?.user?.displayName || 'Verified Participant'}
                     </span>
-                    {(oidcSession.user.is_admin || oidcSession.user.isAdmin || oidcSession.user.role === 'admin') ? (
+                    {(oidcSession?.user?.is_admin || oidcSession?.user?.isAdmin || oidcSession?.user?.role === 'admin') ? (
                       <span className="px-1.5 py-0.5 bg-[#ff6b5e] text-[#090c0a] border border-[#090c0a] font-mono text-[10px] font-bold uppercase tracking-wider">
                         ★ ADMIN
                       </span>
-                    ) : oidcSession.user.isClubMember ? (
+                    ) : oidcSession?.user?.isClubMember ? (
                       <span className="px-1.5 py-0.5 bg-[#ffe36e] text-[#090c0a] border border-[#090c0a] font-mono text-[10px] font-bold uppercase tracking-wider">
                         ★ UFC MEMBER
                       </span>
@@ -904,14 +969,14 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
                     )}
                   </div>
                   <p className="font-mono text-xs text-[#2ee58f] truncate font-bold">
-                    ROLL #{oidcSession.user.rollNumber || 'VERIFIED'}
-                    {oidcSession.user.githubUsername ? ` • @${oidcSession.user.githubUsername}` : ''}
+                    ROLL #{oidcSession?.user?.rollNumber || 'VERIFIED'}
+                    {oidcSession?.user?.githubUsername ? ` • @${oidcSession.user.githubUsername}` : ''}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                {(oidcSession.user.is_admin || oidcSession.user.isAdmin || oidcSession.user.role === 'admin') && onNavigateToAdmin && (
+                {(oidcSession?.user?.is_admin || oidcSession?.user?.isAdmin || oidcSession?.user?.role === 'admin') && onNavigateToAdmin && (
                   <button
                     type="button"
                     onClick={onNavigateToAdmin}
@@ -1069,7 +1134,7 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
                   <div className="border border-[#2ee58f]/30 bg-[#2ee58f]/10 p-3 flex items-center justify-between text-xs font-mono">
                     <span className="text-[#aab5ac] uppercase font-bold">CREATING AS CAPTAIN:</span>
                     <span className="text-[#2ee58f] font-bold">
-                      {oidcSession.user.displayName} (ROLL #{oidcSession.user.rollNumber})
+                      {oidcSession?.user?.displayName || 'CAPTAIN'} (ROLL #{oidcSession?.user?.rollNumber || 'VERIFIED'})
                     </span>
                   </div>
                 </>
@@ -1114,7 +1179,7 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
                   <div className="border border-[#2ee58f]/30 bg-[#2ee58f]/10 p-3 flex items-center justify-between text-xs font-mono">
                     <span className="text-[#aab5ac] uppercase font-bold">JOINING AS MEMBER:</span>
                     <span className="text-[#2ee58f] font-bold">
-                      {oidcSession.user.displayName} (ROLL #{oidcSession.user.rollNumber})
+                      {oidcSession?.user?.displayName || 'MEMBER'} (ROLL #{oidcSession?.user?.rollNumber || 'VERIFIED'})
                     </span>
                   </div>
                 </>
@@ -1130,7 +1195,7 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
                   {loading
                     ? 'CONNECTING TO SQUAD...'
                     : mode === 'create'
-                    ? `CREATE SQUAD AS ${(oidcSession.user.displayName || 'CAPTAIN').toUpperCase()} ➔`
+                    ? `CREATE SQUAD AS ${(oidcSession?.user?.displayName || 'CAPTAIN').toUpperCase()} ➔`
                     : `JOIN SQUAD #${teamCode || '...'} ➔`}
                 </TactileButton>
               </div>
