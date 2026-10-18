@@ -370,15 +370,24 @@ describe('Matiks Hackathon — End-to-End Smoke Test Suite', () => {
 
   test('5. Rate Limiter & CORS Protection Enforcement When NODE_ENV is Production', async () => {
     const prevEnv = process.env.NODE_ENV;
+    const prevCors = process.env.CORS_ORIGINS;
     process.env.NODE_ENV = 'production';
+    delete process.env.CORS_ORIGINS;
     const { baseUrl, close } = await startTestServer();
     try {
       // Trusted origin receives Access-Control-Allow-Origin header
       const trustedRes = await fetch(`${baseUrl}/api/health`, {
-        headers: { Origin: 'http://localhost:5173' }
+        headers: { Origin: 'https://matiks.fossclub.tech' }
       });
       assert.equal(trustedRes.status, 200);
-      assert.equal(trustedRes.headers.get('access-control-allow-origin'), 'http://localhost:5173');
+      assert.equal(trustedRes.headers.get('access-control-allow-origin'), 'https://matiks.fossclub.tech');
+
+      // Loopback dev origin is rejected in production by default
+      const loopbackRes = await fetch(`${baseUrl}/api/health`, {
+        headers: { Origin: 'http://localhost:5173' }
+      });
+      assert.equal(loopbackRes.status, 200);
+      assert.equal(loopbackRes.headers.get('access-control-allow-origin'), null);
 
       // Untrusted origin does NOT receive Access-Control-Allow-Origin header in production
       const untrustedRes = await fetch(`${baseUrl}/api/health`, {
@@ -405,6 +414,11 @@ describe('Matiks Hackathon — End-to-End Smoke Test Suite', () => {
         delete process.env.NODE_ENV;
       } else {
         process.env.NODE_ENV = prevEnv;
+      }
+      if (prevCors === undefined) {
+        delete process.env.CORS_ORIGINS;
+      } else {
+        process.env.CORS_ORIGINS = prevCors;
       }
       await close();
     }
