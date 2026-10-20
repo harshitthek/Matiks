@@ -56,7 +56,7 @@ const ORGANIZER_NAME_KEY = 'matiks_organizer_name';
  * state-targeted global emergency controls, Omni-Search HUD (Ctrl+K),
  * tournament round operator configuration, and live multi-organizer audit sync.
  */
-export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogout }) {
+export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogout, currentUser }) {
   const [adminToken, setAdminToken] = useState(() => {
     try {
       const explicitToken = sessionStorage.getItem(ADMIN_STORAGE_KEY);
@@ -65,7 +65,7 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogou
       const rawOidc = localStorage.getItem('matiks_oidc_session');
       if (rawOidc) {
         const parsed = JSON.parse(rawOidc);
-        if (parsed?.token && (parsed.user?.is_admin || parsed.user?.isAdmin || parsed.user?.role === 'admin')) {
+        if (parsed?.token && (parsed.user?.is_admin || parsed.user?.isAdmin || parsed.user?.role === 'admin' || currentUser?.is_admin || currentUser?.isAdmin || currentUser?.role === 'admin')) {
           return parsed.token;
         }
       }
@@ -80,6 +80,8 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogou
       const savedName = sessionStorage.getItem(ORGANIZER_NAME_KEY) || localStorage.getItem(ORGANIZER_NAME_KEY);
       if (savedName) return savedName;
 
+      if (currentUser?.displayName) return currentUser.displayName;
+
       const rawOidc = localStorage.getItem('matiks_oidc_session');
       if (rawOidc) {
         const parsed = JSON.parse(rawOidc);
@@ -90,6 +92,20 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogou
       return 'Lead Organizer';
     }
   });
+
+  useEffect(() => {
+    if (adminToken) return;
+    if (!(currentUser?.is_admin || currentUser?.isAdmin || currentUser?.role === 'admin')) return;
+    try {
+      const parsed = JSON.parse(localStorage.getItem('matiks_oidc_session') || 'null');
+      if (parsed?.token) {
+        setAdminToken(parsed.token);
+        if (currentUser?.displayName) setOrganizerName(currentUser.displayName);
+      }
+    } catch {
+      // Storage unavailable
+    }
+  }, [currentUser, adminToken]);
 
   const [authError, setAuthError] = useState(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);

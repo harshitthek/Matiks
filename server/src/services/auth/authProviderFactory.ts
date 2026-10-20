@@ -43,8 +43,16 @@ export async function verifyAnySession(token: string): Promise<AuthUser | null> 
   const user = await primary.verifySession(token);
   if (user) return user;
 
-  if (!customProvider && oidcProviderInstance && primary !== oidcProviderInstance) {
-    return oidcProviderInstance.verifySession(token);
+  if (!customProvider) {
+    let oidc: ClubOidcAuthProvider | null = null;
+    try {
+      oidc = getClubOidcProvider();
+    } catch {
+      return null;
+    }
+    if (primary !== oidc) {
+      return oidc.verifySession(token);
+    }
   }
   return null;
 }

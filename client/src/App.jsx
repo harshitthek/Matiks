@@ -6,7 +6,6 @@ import { TeamLobby } from './components/lobby/TeamLobby.jsx';
 import { ArenaView } from './components/arena/ArenaView.jsx';
 import { LeaderboardView } from './components/leaderboard/LeaderboardView.jsx';
 import { AdminView } from './components/admin/AdminView.jsx';
-import { NotFoundView } from './components/common/NotFoundView.jsx';
 import { ErrorBoundary } from './components/common/ErrorBoundary.jsx';
 import { leaveTeam, resetTeamSprint, getAuthMe } from './services/api.js';
 import { soundFx } from './services/soundFx.js';
@@ -664,7 +663,7 @@ export function App() {
               LEADERBOARD 🏆
             </button>
 
-            {isUserAdmin && (
+            {(isUserAdmin || currentView === 'admin') && (
               <button
                 type="button"
                 onClick={() => navigateTo('admin')}
@@ -708,29 +707,26 @@ export function App() {
             )}
 
             {currentView === 'admin' && (
-              isUserAdmin ? (
-                <AdminView
-                  onReturnToLobby={() => navigateTo('squad')}
-                  onViewLeaderboard={() => navigateTo('leaderboard')}
-                  onLogin={() => setHasAdminSession(true)}
-                  onLogout={() => {
-                    setHasAdminSession(false);
-                    try {
-                      const rawOidc = localStorage.getItem('matiks_oidc_session');
-                      if (rawOidc) {
-                        const parsed = JSON.parse(rawOidc);
-                        setCurrentUser(parsed?.user || null);
-                      } else {
-                        setCurrentUser(null);
-                      }
-                    } catch {
+              <AdminView
+                currentUser={currentUser}
+                onReturnToLobby={() => navigateTo('squad')}
+                onViewLeaderboard={() => navigateTo('leaderboard')}
+                onLogin={() => setHasAdminSession(true)}
+                onLogout={() => {
+                  setHasAdminSession(false);
+                  try {
+                    const rawOidc = localStorage.getItem('matiks_oidc_session');
+                    if (rawOidc) {
+                      const parsed = JSON.parse(rawOidc);
+                      setCurrentUser(parsed?.user || null);
+                    } else {
                       setCurrentUser(null);
                     }
-                  }}
-                />
-              ) : (
-                <NotFoundView onReturnToLobby={() => navigateTo('squad')} />
-              )
+                  } catch {
+                    setCurrentUser(null);
+                  }
+                }}
+              />
             )}
           </ErrorBoundary>
         )}

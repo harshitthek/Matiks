@@ -63,7 +63,11 @@ function pruneExpiredStateOrigins(now: number): void {
 
 export function getAuthConfigHandler(req: Request, res: Response): void {
   const primaryProvider = getAuthProvider();
-  const forceOidc = req.query['oidc'] === 'true' || req.query['oidc'] === '1';
+  const forceOidc =
+    req.query['oidc'] === 'true' ||
+    req.query['oidc'] === '1' ||
+    req.query['force'] === 'true' ||
+    req.query['force'] === '1';
   const urlProvider = (!primaryProvider.getAuthUrl && forceOidc)
     ? getClubOidcProvider()
     : primaryProvider;
@@ -85,7 +89,8 @@ export function getAuthConfigHandler(req: Request, res: Response): void {
 
   const trustedOrigin = candidateOrigin && isAllowedClientOrigin(candidateOrigin) ? candidateOrigin : undefined;
 
-  if (urlProvider.getAuthUrl) {
+  const shouldGenerateUrl = forceOidc || primaryProvider.providerName === 'club_oidc';
+  if (shouldGenerateUrl && urlProvider.getAuthUrl) {
     authUrl = urlProvider.getAuthUrl(existingStateCookie || undefined, trustedOrigin);
     if (authUrl) {
       try {
@@ -231,14 +236,14 @@ export async function exchangeOidcCodeHandler(req: Request, res: Response): Prom
 
     const cookieState = extractCookie(req, 'matiks_oidc_state');
     const headerState = typeof req.headers['x-client-state'] === 'string' ? req.headers['x-client-state'] : undefined;
-    const clientStateCookie = (cookieState && cookieState === state)
-      ? cookieState
-      : (headerState && headerState === state)
-        ? headerState
-        : (cookieState || headerState);
+    const clientStateCookie = (headerState && headerState === state)
+      ? headerState
+      : (cookieState && cookieState === state)
+        ? cookieState
+        : (headerState || cookieState);
 
     const primaryProvider = getAuthProvider();
-    const provider = (!primaryProvider.exchangeCode && clientStateCookie)
+    const provider = (!primaryProvider.exchangeCode && (clientStateCookie || (typeof state === 'string' && getClubOidcProvider().isStateValid(state))))
       ? getClubOidcProvider()
       : primaryProvider;
 

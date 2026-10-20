@@ -770,6 +770,20 @@ describe('Matiks Hackathon — Phase 7: Pluggable Auth & Club OIDC Adapter', () 
         const clearedCookieHeader = successRes.headers.get('set-cookie');
         assert.ok(clearedCookieHeader);
         assert.ok(clearedCookieHeader.includes('Max-Age=0'));
+
+        // 7. POST /api/auth/oidc/exchange with x-client-state header succeeds even when Cookie is missing
+        const headerOnlyRes = await fetch(`${baseUrl}/api/auth/oidc/exchange`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-client-state': validTestState
+          },
+          body: JSON.stringify({ code: 'valid_auth_code', state: validTestState })
+        });
+        assert.equal(headerOnlyRes.status, 200);
+        const headerOnlyData = await headerOnlyRes.json();
+        assert.equal(headerOnlyData.success, true);
+        assert.equal(headerOnlyData.user.rollNumber, 'CS21045');
       } finally {
         resetAuthProviderInstances();
         await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -815,6 +829,49 @@ describe('Matiks Hackathon — Phase 7: Pluggable Auth & Club OIDC Adapter', () 
         assert.equal(authResult.user.role, 'admin');
         assert.equal(authResult.user.is_admin, true);
         assert.equal(authResult.user.isAdmin, true);
+      } finally {
+        await new Promise<void>((resolve) => mockServer.close(() => resolve()));
+      }
+    });
+
+    test('ClubOidcAuthProvider grants admin role to UFC organizers with lead/core roles and @fossclub.tech emails', async () => {
+      const mockServer = http.createServer((req, res) => {
+        if (req.method === 'POST' && (req.url === '/token' || req.url === '/api/auth/token')) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            access_token: 'mock_lead_token',
+            user: {
+              id: 'ufc_lead_1',
+              rollNumber: 'LEAD001',
+              name: 'UFC Tech Lead',
+              email: 'lead@fossclub.tech',
+              email_verified: true,
+              isClubMember: true,
+              role: 'lead'
+            }
+          }));
+        } else {
+          res.writeHead(404);
+          res.end();
+        }
+      });
+
+      await new Promise<void>((resolve) => mockServer.listen(0, resolve));
+      const port = (mockServer.address() as AddressInfo).port;
+
+      try {
+        const provider = new ClubOidcAuthProvider({
+          issuerUrl: `http://127.0.0.1:${port}`,
+          clientId: 'matiks',
+          clientSecret: 'secret_123',
+          timeoutMs: 1000
+        });
+
+        const authResult = await provider.exchangeCode('code_lead');
+        assert.equal(authResult.user.role, 'admin');
+        assert.equal(authResult.user.is_admin, true);
+        assert.equal(authResult.user.isAdmin, true);
+        assert.equal(authResult.user.isClubMember, true);
       } finally {
         await new Promise<void>((resolve) => mockServer.close(() => resolve()));
       }

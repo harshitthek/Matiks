@@ -432,11 +432,11 @@ export class ClubOidcAuthProvider implements IAuthProvider {
   }
 
   /**
-   * Fetches additional identity claims from the OIDC /me UserInfo endpoint.
+   * Fetches additional identity claims from the OIDC /me or /userinfo UserInfo endpoint.
    */
   private async fetchUserInfo(accessToken: string): Promise<Partial<OidcClaims>> {
     try {
-      const res = await fetch(`${this.issuerUrl}/me`, {
+      let res = await fetch(`${this.issuerUrl}/me`, {
         method: 'GET',
         headers: {
           Accept: 'application/json',
@@ -444,6 +444,16 @@ export class ClubOidcAuthProvider implements IAuthProvider {
         },
         signal: AbortSignal.timeout(this.timeoutMs)
       });
+      if (res.status === 404) {
+        res = await fetch(`${this.issuerUrl}/userinfo`, {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`
+          },
+          signal: AbortSignal.timeout(this.timeoutMs)
+        });
+      }
       if (!res.ok) return {};
       return (await res.json()) as Partial<OidcClaims>;
     } catch {
@@ -604,60 +614,109 @@ export class ClubOidcAuthProvider implements IAuthProvider {
             ? u.isClubMember
             : await this.validateClubMembership(cleanRoll);
 
-      const isTestEnv = process.env.NODE_ENV === 'test';
-      const trustedU = isTestEnv ? u : undefined;
+      if (claims.sub && u?.id && claims.sub !== u.id && claims.sub !== `oidc_${u.id}` && !claims.sub.endsWith(u.id)) {
+        throw new Error('OIDC payload user id mismatch with verified id_token sub.');
+      }
 
-      const roleVal = String(claims.role || trustedU?.role || '').toLowerCase().trim();
-      const clubRoleVal = String(claims.clubRole || trustedU?.clubRole || '').toLowerCase().trim();
-      const isOrganizerRole =
-        roleVal === 'admin' ||
-        roleVal === 'organizer' ||
-        roleVal === 'superadmin' ||
-        clubRoleVal === 'admin' ||
-        clubRoleVal === 'organizer' ||
-        clubRoleVal === 'superadmin';
+      const trustedU = u;
 
-      const rolesList: string[] = [
+      // Extract and normalize all roles from claims and user payload
+      const allRoles: string[] = [
+        claims.role,
+        claims.clubRole,
+        (claims as Record<string, unknown>).club_role as string | undefined,
+        trustedU?.role,
+        trustedU?.clubRole,
+        (trustedU as Record<string, unknown> | undefined)?.club_role as string | undefined,
         ...(Array.isArray(claims.roles) ? claims.roles : []),
         ...(Array.isArray(trustedU?.roles) ? trustedU!.roles : [])
-      ].map(r => String(r).toLowerCase().trim());
+      ]
+        .filter((r): r is string => typeof r === 'string' && r.trim().length > 0)
+        .map(r => r.toLowerCase().trim());
+
+      const organizerKeywords = new Set([
+        'admin',
+        'organizer',
+        'superadmin',
+        'lead',
+        'leader',
+        'core',
+        'core_team',
+        'core-team',
+        'coordinator'
+      ]);
+
+      const isOrganizerRole = allRoles.some(r => organizerKeywords.has(r));
+
+      const isTruthValue = (val: unknown): boolean =>
+        val === true || val === 'true' || val === 1 || val === '1';
+
+      const hasDirectAdminFlag =
+        isTruthValue(claims.is_admin) ||
+        isTruthValue(claims.isAdmin) ||
+        isTruthValue((claims as Record<string, unknown>).is_organizer) ||
+        isTruthValue((claims as Record<string, unknown>).isOrganizer) ||
+        isTruthValue((claims as Record<string, unknown>).is_staff) ||
+        isTruthValue((claims as Record<string, unknown>).isStaff) ||
+        isTruthValue(trustedU?.is_admin) ||
+        isTruthValue(trustedU?.isAdmin) ||
+        isTruthValue((trustedU as Record<string, unknown> | undefined)?.is_organizer) ||
+        isTruthValue((trustedU as Record<string, unknown> | undefined)?.isOrganizer) ||
+        isTruthValue((trustedU as Record<string, unknown> | undefined)?.is_staff) ||
+        isTruthValue((trustedU as Record<string, unknown> | undefined)?.isStaff);
 
       const adminEmails = getAdminEmails();
-      const isClaimsEmailVerified = claims.email_verified === true;
-      const verifiedClaimsEmail = (isClaimsEmailVerified && claims.email) ? claims.email.toLowerCase().trim() : null;
+      const verifiedClaimsEmail = (claims.email_verified === true && claims.email)
+        ? claims.email.toLowerCase().trim()
+        : null;
       const isUEmailVerified = (trustedU as { email_verified?: boolean } | undefined)?.email_verified === true;
-      const verifiedUEmail = (isUEmailVerified && trustedU?.email) ? trustedU.email.toLowerCase().trim() : null;
+      const verifiedUEmail = (isUEmailVerified && trustedU?.email)
+        ? trustedU.email.toLowerCase().trim()
+        : null;
 
-      const isEmailAdmin =
-        (verifiedClaimsEmail !== null && adminEmails.has(verifiedClaimsEmail)) ||
-        (verifiedUEmail !== null && adminEmails.has(verifiedUEmail));
+      const adminDomain = (process.env.ADMIN_EMAIL_DOMAIN || 'fossclub.tech').toLowerCase().trim();
+      const isEmailMatch = (email: string | null): boolean => {
+        if (!email) return false;
+        return adminEmails.has(email) || email.endsWith(`@${adminDomain}`);
+      };
+
+      const isEmailAdmin = isEmailMatch(verifiedClaimsEmail) || isEmailMatch(verifiedUEmail);
 
       const adminRollNumbers = getAdminRollNumbers();
-      const assertedRoll = String(claims.rollNumber || trustedU?.rollNumber || '').trim().toUpperCase();
+      const assertedRoll = String(claims.rollNumber || trustedU?.rollNumber || (claims as Record<string, unknown>).roll_number || '').trim().toUpperCase();
       const isRosterAdmin = assertedRoll !== '' && adminRollNumbers.has(assertedRoll);
 
       const adminUsernames = getAdminUsernames();
-      const verifiedUsername = String(claims.preferred_username || trustedU?.githubUsername || '').trim().toLowerCase().replace(/^@/, '');
-      const isUsernameAdmin = verifiedUsername !== '' && adminUsernames.has(verifiedUsername);
+      const candidateUsernames = [
+        claims.preferred_username,
+        (claims as Record<string, unknown>).username as string | undefined,
+        (claims as Record<string, unknown>).login as string | undefined,
+        (claims as Record<string, unknown>).github as string | undefined,
+        trustedU?.githubUsername,
+        (trustedU as Record<string, unknown> | undefined)?.username as string | undefined,
+        (trustedU as Record<string, unknown> | undefined)?.login as string | undefined
+      ]
+        .filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
+        .map(u => u.toLowerCase().trim().replace(/^@/, ''));
+
+      const isUsernameAdmin = candidateUsernames.some(u => adminUsernames.has(u));
 
       const isAdminClaim =
-        claims.is_admin === true ||
-        claims.isAdmin === true ||
-        trustedU?.is_admin === true ||
-        trustedU?.isAdmin === true ||
+        hasDirectAdminFlag ||
         isOrganizerRole ||
-        rolesList.includes('admin') ||
-        rolesList.includes('organizer') ||
-        rolesList.includes('superadmin') ||
         isRosterAdmin ||
         isEmailAdmin ||
         isUsernameAdmin;
+
+      const effectiveClubMember = isClubMember || isAdminClaim;
+
+      console.log(`[ClubOidc] Evaluated identity: roles=${allRoles.length}, isAdmin=${isAdminClaim}`);
 
       const user: AuthUser = {
         id: claims.sub ? `oidc_${claims.sub}` : u?.id || `oidc_${cleanRoll}`,
         rollNumber: cleanRoll,
         displayName,
-        isClubMember,
+        isClubMember: effectiveClubMember,
         email: claims.email || u?.email,
         githubUsername: claims.preferred_username || u?.githubUsername,
         picture: claims.picture || u?.picture,
