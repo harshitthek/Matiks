@@ -664,3 +664,94 @@ export async function adminSetEmergencyWalkIn(enabled, adminToken) {
 
 
 
+
+
+/**
+ * Public: Get the public registered teams list from the active event roster.
+ */
+export async function getPublicRoster() {
+  return request('/teams/roster');
+}
+
+/**
+ * Public: Check into pre-assigned squad using verified/registered email.
+ */
+export async function checkinByEmail(email, name) {
+  return request('/team/checkin-by-email', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ email, name })
+  });
+}
+
+/**
+ * Admin: Upload custom event roster CSV.
+ */
+export async function adminUploadRosterCsv(csvText, adminToken) {
+  return request('/admin/roster/upload', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    },
+    body: JSON.stringify({ csv: csvText })
+  });
+}
+
+/**
+ * Admin: Load server-side preset CSV ('competition-roster' or 'final-selected-teams').
+ */
+export async function adminLoadRosterPreset(preset, adminToken) {
+  return request('/admin/roster/load-preset', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    },
+    body: JSON.stringify({ preset })
+  });
+}
+
+/**
+ * Admin: Retrieve full roster with participant emails and check-in status.
+ */
+export async function adminGetRoster(adminToken) {
+  return request('/admin/roster', {
+    headers: {
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    }
+  });
+}
+
+/**
+ * Admin: Reset a participant's check-in status.
+ */
+export async function adminResetRosterMember(email, adminToken) {
+  return request('/admin/roster/reset-member', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    },
+    body: JSON.stringify({ email })
+  });
+}
+
+/**
+ * Admin: Clear event roster.
+ */
+export async function adminClearRoster(adminToken) {
+  return request('/admin/roster', {
+    method: 'DELETE',
+    headers: {
+      'x-admin-token': adminToken || '',
+      ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {})
+    }
+  });
+}

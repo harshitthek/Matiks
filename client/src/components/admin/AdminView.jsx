@@ -14,6 +14,7 @@ import { ReplayInspectorModal } from './ReplayInspectorModal.jsx';
 import { OmniSearchModal } from './OmniSearchModal.jsx';
 import { EmergencyControlModal } from './EmergencyControlModal.jsx';
 import { AdminActionToasts } from './AdminActionToasts.jsx';
+import { EventRosterManager } from './EventRosterManager.jsx';
 import {
   getAdminRooms,
   getAdminTelemetry,
@@ -1018,6 +1019,13 @@ export function AdminView({ onReturnToLobby, onViewLeaderboard, onLogin, onLogou
           actionLoading === 'delay' ||
           actionLoading === 'flush'
         }
+      />
+
+      {/* Event Team Roster & CSV Import Hub */}
+      <EventRosterManager
+        adminToken={adminToken}
+        onActionFeedback={(type, message) => setActionFeedback({ type, message })}
+        onRosterUpdated={refreshData}
       />
 
       {/* Anti-Cheat Anomaly Stream */}

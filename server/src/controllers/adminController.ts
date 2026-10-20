@@ -7,11 +7,14 @@
 
 import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { roomManager } from '../services/roomManager.js';
 import { windowManager } from '../services/windowManager.js';
 import { leaderboardManager } from '../services/leaderboardManager.js';
 import { adminAuthService } from '../services/adminAuthService.js';
 import { sseHub } from '../services/sseHub.js';
+import { rosterService } from '../services/rosterService.js';
 
 const adminStreamTickets = new Map<string, number>();
 
@@ -598,4 +601,139 @@ export function setEmergencyWalkInHandler(req: Request, res: Response): void {
     res.status(400).json({ error: message });
   }
 }
+
+export function uploadRosterCsvHandler(req: Request, res: Response): void {
+  try {
+    const csvContent = typeof req.body === 'string' ? req.body : req.body?.csv;
+    if (!csvContent || typeof csvContent !== 'string') {
+      res.status(400).json({ error: 'CSV content is required in request body.' });
+      return;
+    }
+
+    const result = rosterService.loadRosterFromCsv(csvContent);
+    const adminId = req.adminUser?.organizerName || (req.headers['x-admin-id'] as string) || 'admin_organizer';
+
+    roomManager.logSystemAudit({
+      action: 'ADMIN_UPLOAD_ROSTER_CSV',
+      teamCode: 'SYSTEM',
+      adminId,
+      reason: `Organizer uploaded event roster CSV with ${result.teamsCount} teams and ${result.membersCount} participants`,
+      details: result
+    });
+
+    res.status(200).json({
+      success: true,
+      ...result,
+      roster: rosterService.getRoster()
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to parse and load CSV';
+    res.status(400).json({ error: message });
+  }
+}
+
+export function getAdminRosterHandler(_req: Request, res: Response): void {
+  const roster = rosterService.getRoster();
+  const publicList = rosterService.getPublicRoster();
+  res.status(200).json({
+    active: rosterService.isRosterActive(),
+    totalTeams: roster.length,
+    teams: roster,
+    publicSummary: publicList
+  });
+}
+
+export function loadRosterPresetHandler(req: Request, res: Response): void {
+  try {
+    const { preset } = req.body || {};
+    if (preset !== 'competition-roster' && preset !== 'final-selected-teams' && preset !== 'final_selected_teams') {
+      res.status(400).json({
+        error: 'INVALID_PRESET',
+        message: 'Valid presets are "competition-roster" or "final-selected-teams".'
+      });
+      return;
+    }
+    const filename = preset === 'competition-roster' ? 'competition-roster.csv' : 'final_selected_teams.csv';
+    const candidatePaths = [
+      path.join(process.cwd(), 'server', 'data', 'rosters', filename),
+      path.join(process.cwd(), 'data', 'rosters', filename),
+      path.join(process.cwd(), filename)
+    ];
+
+    let foundPath: string | null = null;
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        foundPath = p;
+        break;
+      }
+    }
+
+    if (!foundPath) {
+      res.status(404).json({ error: `Preset file ${filename} not found on server.` });
+      return;
+    }
+
+    const content = fs.readFileSync(foundPath, 'utf8');
+    const result = rosterService.loadRosterFromCsv(content);
+    const adminId = req.adminUser?.organizerName || (req.headers['x-admin-id'] as string) || 'admin_organizer';
+
+    roomManager.logSystemAudit({
+      action: 'ADMIN_LOAD_ROSTER_PRESET',
+      teamCode: 'SYSTEM',
+      adminId,
+      reason: `Organizer loaded preset ${filename} with ${result.teamsCount} teams`,
+      details: { preset, path: foundPath, ...result }
+    });
+
+    res.status(200).json({
+      success: true,
+      preset,
+      ...result,
+      roster: rosterService.getRoster()
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to load preset';
+    res.status(400).json({ error: message });
+  }
+}
+
+export function resetRosterMemberHandler(req: Request, res: Response): void {
+  try {
+    const { email } = req.body || {};
+    if (!email || typeof email !== 'string') {
+      res.status(400).json({ error: 'Email is required to reset roster member.' });
+      return;
+    }
+    const success = rosterService.resetMember(email);
+    if (!success) {
+      res.status(404).json({ error: `Member with email "${email}" not found in roster.` });
+      return;
+    }
+    res.status(200).json({ success: true, email });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to reset member';
+    res.status(400).json({ error: message });
+  }
+}
+
+export function clearRosterHandler(req: Request, res: Response): void {
+  try {
+    rosterService.clearRoster();
+    const adminId = req.adminUser?.organizerName || (req.headers['x-admin-id'] as string) || 'admin_organizer';
+
+    roomManager.logSystemAudit({
+      action: 'ADMIN_CLEAR_ROSTER',
+      teamCode: 'SYSTEM',
+      adminId,
+      reason: 'Organizer cleared all event teams from roster',
+      details: {}
+    });
+
+    res.status(200).json({ success: true, message: 'Event roster cleared.' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to clear roster';
+    res.status(400).json({ error: message });
+  }
+}
+
 

@@ -10,7 +10,9 @@ import {
   leaveTeam,
   getAuthConfig,
   getAuthUser,
-  exchangeOidcCode
+  exchangeOidcCode,
+  getPublicRoster,
+  checkinByEmail
 } from '../../services/api.js';
 import { connectLeaderboardStream } from '../../services/sse.js';
 
@@ -204,8 +206,28 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
   const [error, setError] = useState(init.initialOidcError);
   const [existingTeamMatch, setExistingTeamMatch] = useState(null);
   const [oidcSession, setOidcSession] = useState(init.savedSession);
+  const [hasActiveRoster, setHasActiveRoster] = useState(false);
+  const [rosterTeams, setRosterTeams] = useState([]);
+  const [emailInput, setEmailInput] = useState('');
+  const [nameInput, setNameInput] = useState('');
+  const [checkinLoading, setCheckinLoading] = useState(false);
   const onOidcCallbackCompleteRef = useRef(onOidcCallbackComplete);
   const hasStreamUpdateRef = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    getPublicRoster()
+      .then((data) => {
+        if (!active) return;
+        if (Array.isArray(data?.teams)) {
+          setRosterTeams(data.teams);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     onOidcCallbackCompleteRef.current = onOidcCallbackComplete;
@@ -216,6 +238,9 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
     getAuthConfig()
       .then((cfg) => {
         if (!active) return;
+        if (typeof cfg?.hasActiveRoster === 'boolean') {
+          setHasActiveRoster(cfg.hasActiveRoster);
+        }
         if (typeof cfg?.emergencyWalkIn === 'boolean') {
           setEmergencyWalkIn(cfg.emergencyWalkIn);
         }
@@ -364,6 +389,42 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
         });
     }
   }, [init.savedSession?.token]);
+
+  const handleEmailCheckin = async (e) => {
+    if (e) e.preventDefault();
+    const effectiveEmail = emailInput.trim() || oidcSession?.user?.email || '';
+    const cleanEmail = effectiveEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setError('Please enter a valid registered email address.');
+      return;
+    }
+    setError(null);
+    setCheckinLoading(true);
+
+    try {
+      const res = await checkinByEmail(cleanEmail, nameInput.trim() || undefined);
+      if (res?.success && res?.teamCode && res?.memberToken) {
+        saveTokenForRoll(res.rollNumber, res.memberToken);
+        clearStoredInviteCode();
+
+        onJoinedTeam({
+          teamCode: res.teamCode,
+          teamName: res.teamName,
+          memberToken: res.memberToken,
+          rollNumber: res.rollNumber,
+          name: res.name,
+          isCaptain: res.isCaptain,
+          targetSize: res.targetSize
+        });
+      } else {
+        setError(res?.message || 'Check-in failed. Please verify your email is in the registered competition roster.');
+      }
+    } catch (err) {
+      setError(err.message || 'Check-in failed. Please verify your email is in the registered competition roster.');
+    } finally {
+      setCheckinLoading(false);
+    }
+  };
 
   const handleStartOidcLogin = async () => {
     setError(null);
@@ -677,7 +738,7 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
             )}
 
             {/* Squad Invitation Callout (when arrived via QR scan or ?team=CODE) */}
-            {teamCode ? (
+            {teamCode && (
               <div className="border-2 border-[#ffe36e] bg-[#ffe36e]/10 p-5 relative text-left">
                 <WashiTape color="butter" rotation="-1.5deg" className="-top-3 left-6" />
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -692,76 +753,140 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
                   YOU'VE BEEN INVITED TO JOIN SQUAD #{teamCode}
                 </h3>
                 <p className="font-body text-xs text-[#aab5ac] mt-1.5 leading-relaxed">
-                  Sign in with your USAR FOSS Club account to verify your roll number and enter the 120s combat sprint with your teammates.
-                </p>
-              </div>
-            ) : (
-              <div className="border-2 border-[#2ee58f]/30 bg-[#2ee58f]/5 p-5 text-center relative">
-                <WashiTape color="signal" rotation="1.5deg" className="-top-3 right-6" />
-                <span className="font-mono text-xs font-black text-[#2ee58f] uppercase tracking-widest block mb-1">
-                  USAR FOSS CLUB // COMBAT ENTRANCE GATE
-                </span>
-                <p className="font-display font-bold text-base text-[#e8ece3]">
-                  Single Sign-On Required to Enter Arena
-                </p>
-                <p className="font-body text-xs text-[#aab5ac] mt-1.5 max-w-md mx-auto">
-                  All participants must authenticate through USAR FOSS Club Single Sign-On (oidc.fossclub.tech). Your roll number and student identity will be authoritatively linked.
+                  Enter your registered team email below to join your squad for the 120s combat sprint.
                 </p>
               </div>
             )}
 
-            {/* Primary OIDC Sign-In CTA */}
-            <div>
+            {/* Event Roster Email Check-In (Primary Entry Gate) */}
+            <div className="border-2 border-[#2ee58f] bg-[#090c0a] p-5 relative text-left">
+              <WashiTape color="signal" rotation="-1.5deg" className="-top-3 left-6" />
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <span className="font-mono text-xs font-black text-[#2ee58f] uppercase tracking-wider">
+                  § 01 // ENTER REGISTERED EMAIL
+                </span>
+                <span className="font-mono text-[10px] bg-[#2ee58f]/15 text-[#2ee58f] border border-[#2ee58f]/30 px-2 py-0.5 uppercase font-bold">
+                  AUTOMATIC SQUAD LINK
+                </span>
+              </div>
+              <p className="font-body text-xs text-[#aab5ac] mb-4">
+                Enter the email address you registered with. Your squad and teammates will load automatically.
+              </p>
+              <form onSubmit={handleEmailCheckin} className="space-y-3">
+                <div>
+                  <label htmlFor="roster-email-input" className="block font-mono text-[11px] text-[#ffe36e] uppercase font-bold mb-1">
+                    REGISTERED EMAIL ADDRESS *
+                  </label>
+                  <input
+                    id="roster-email-input"
+                    type="email"
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    placeholder="e.g. participant@example.com"
+                    className="w-full bg-[#0f1411] border-2 border-white/20 focus:border-[#2ee58f] p-3 text-sm font-mono text-[#e8ece3] outline-none transition-colors"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="roster-name-input" className="block font-mono text-[11px] text-[#aab5ac] uppercase font-bold mb-1">
+                    DISPLAY NAME (OPTIONAL)
+                  </label>
+                  <input
+                    id="roster-name-input"
+                    type="text"
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    placeholder="Auto-derived from roster if blank"
+                    className="w-full bg-[#0f1411] border-2 border-white/20 focus:border-[#2ee58f] p-3 text-sm font-mono text-[#e8ece3] outline-none transition-colors"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={checkinLoading}
+                  className="w-full py-3.5 px-6 bg-[#2ee58f] hover:bg-[#3bf59e] text-[#090c0a] font-mono font-black text-sm tracking-wider uppercase border-2 border-[#090c0a] shadow-[4px_4px_0_#090c0a] flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5 cursor-pointer disabled:opacity-50 mt-2"
+                >
+                  <span>{checkinLoading ? 'CHECKING IN...' : 'ENTER SQUAD ARENA ➔'}</span>
+                </button>
+              </form>
+            </div>
+
+            {/* Pre-Registered Squads Showcase (Only Team Names) */}
+            {rosterTeams.length > 0 && (
+              <div className="border-2 border-white/10 bg-[#0f1411] p-4 text-left">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <span className="font-mono text-xs font-bold text-[#ffe36e] uppercase tracking-wider">
+                    REGISTERED SQUADS ({rosterTeams.length} TEAMS)
+                  </span>
+                  <span className="font-mono text-[10px] text-[#aab5ac]">
+                    Only registered teams can compete
+                  </span>
+                </div>
+                <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                  {rosterTeams.map((team) => (
+                    <div
+                      key={team.teamCode}
+                      className="flex items-center justify-between p-2.5 bg-[#090c0a] border border-white/10 hover:border-[#2ee58f]/40 transition-all text-xs"
+                    >
+                      <div className="flex items-center gap-2 font-mono">
+                        <span className="w-2 h-2 rounded-full bg-[#2ee58f]" />
+                        <span className="font-bold text-[#e8ece3]">{team.teamName}</span>
+                      </div>
+                      <div className="flex items-center gap-2 font-mono text-[11px]">
+                        <span className="text-[#aab5ac]">
+                          {team.checkedInCount}/{team.targetSize} READY
+                        </span>
+                        <span
+                          className={`px-1.5 py-0.5 border text-[10px] font-bold uppercase ${
+                            team.checkedInCount >= team.targetSize
+                              ? 'border-[#2ee58f] text-[#2ee58f] bg-[#2ee58f]/10'
+                              : 'border-[#f5a623] text-[#f5a623] bg-[#f5a623]/10'
+                          }`}
+                        >
+                          {team.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Secondary OIDC Login Option */}
+            <div className="text-center pt-2">
               <button
                 type="button"
                 onClick={handleStartOidcLogin}
                 disabled={oidcLoading}
-                className="w-full py-4 px-6 bg-[#2ee58f] hover:bg-[#3bf59e] text-[#090c0a] font-mono font-black text-sm sm:text-base tracking-wider uppercase border-2 border-[#090c0a] shadow-[4px_4px_0_#090c0a] flex items-center justify-center gap-3 transition-all hover:-translate-y-0.5 cursor-pointer disabled:opacity-50"
+                className="font-mono text-xs text-[#aab5ac] hover:text-[#2ee58f] underline underline-offset-4 transition-colors cursor-pointer"
               >
-                <div className="w-6 h-6 rounded-xs bg-[#E6F8ED] border border-[#090c0a] p-0.5 flex items-center justify-center shrink-0">
-                  <img
-                    src="/brand/ufc-logo.svg"
-                    alt="UFC"
-                    className="w-full h-full object-contain"
-                  />
-                </div>
-                <span>
-                  {oidcLoading
-                    ? 'VERIFYING WITH OIDC.FOSSCLUB.TECH...'
-                    : teamCode
-                    ? `SIGN IN TO JOIN SQUAD #${teamCode}`
-                    : 'SIGN IN WITH USAR FOSS CLUB (OIDC)'}
-                </span>
+                {oidcLoading ? 'CONNECTING TO OIDC...' : 'Or sign in via USAR FOSS Club OIDC SSO'}
               </button>
-              <p className="font-mono text-[10px] text-[#aab5ac] text-center mt-2.5 uppercase tracking-wider">
-                AUTHORITATIVE GITHUB SSO VIA OIDC.FOSSCLUB.TECH • ZERO CREDENTIAL TYPING
-              </p>
             </div>
 
             {/* 3 Core Architectural Pillars */}
             <div className="pt-4 border-t-2 border-[#2ee58f]/20 grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
               <div className="p-3 bg-[#090c0a] border border-[#2ee58f]/30">
                 <span className="font-mono text-[11px] font-bold text-[#2ee58f] block uppercase mb-1">
-                  ✓ ZERO MANUAL INPUT
+                  ✓ ZERO CODE TYPING
                 </span>
                 <p className="font-body text-xs text-[#aab5ac] leading-relaxed">
-                  Full name and student roll number are authoritatively linked from your verified profile.
+                  Enter your email; the engine matches your squad and teammates automatically.
                 </p>
               </div>
               <div className="p-3 bg-[#090c0a] border border-[#2ee58f]/30">
                 <span className="font-mono text-[11px] font-bold text-[#2ee58f] block uppercase mb-1">
-                  🛡️ ANTI-SPOOF LOCK
+                  📋 PRE-REGISTERED SQUADS
                 </span>
                 <p className="font-body text-xs text-[#aab5ac] leading-relaxed">
-                  Cryptographic session binding prevents roll impersonation and double-device abuse.
+                  Only pre-registered teams and emails can join the competition arena.
                 </p>
               </div>
               <div className="p-3 bg-[#090c0a] border border-[#2ee58f]/30">
                 <span className="font-mono text-[11px] font-bold text-[#2ee58f] block uppercase mb-1">
-                  ⚡ 1-TAP SQUAD JOIN
+                  ⚡ 120s REFLEX SPRINT
                 </span>
                 <p className="font-body text-xs text-[#aab5ac] leading-relaxed">
-                  Scan your captain's QR code to jump instantly into the squad lobby upon sign-in.
+                  When all squad members toggle READY, the synchronized 3-2-1 countdown triggers.
                 </p>
               </div>
             </div>
@@ -994,6 +1119,41 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
                 </button>
               </div>
             </div>
+
+            {/* Event Roster Squad Link Card for Authenticated Participant */}
+            {(hasActiveRoster || rosterTeams.length > 0) && (
+              <div className="border-2 border-[#2ee58f] bg-[#090c0a] p-4 text-left relative">
+                <WashiTape color="signal" rotation="1deg" className="-top-3 right-6" />
+                <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                  <span className="font-mono text-xs font-black text-[#2ee58f] uppercase tracking-wider">
+                    § TOURNAMENT ROSTER ACTIVE
+                  </span>
+                  <span className="font-mono text-[10px] bg-[#2ee58f]/15 text-[#2ee58f] border border-[#2ee58f]/30 px-2 py-0.5 uppercase font-bold">
+                    AUTO SQUAD MATCH
+                  </span>
+                </div>
+                <p className="font-body text-xs text-[#aab5ac] mb-3">
+                  Match with your pre-assigned competition squad using your registered email.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="email"
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    placeholder={oidcSession?.user?.email || 'Enter registered email'}
+                    className="flex-1 bg-[#0f1411] border-2 border-white/20 focus:border-[#2ee58f] p-2 text-xs font-mono text-[#e8ece3] outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleEmailCheckin}
+                    disabled={checkinLoading}
+                    className="py-2 px-3 bg-[#2ee58f] hover:bg-[#3bf59e] text-[#090c0a] font-mono font-bold text-xs uppercase cursor-pointer disabled:opacity-50"
+                  >
+                    {checkinLoading ? 'CONNECTING...' : 'LINK SQUAD ➔'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Contest Window Status Banner */}
             <div

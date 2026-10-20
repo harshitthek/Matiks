@@ -9,6 +9,7 @@ import type { OperatorMode } from '../types/math.js';
 import { roomManager } from '../services/roomManager.js';
 import { windowManager } from '../services/windowManager.js';
 import { verifyAnySession } from '../services/auth/authProviderFactory.js';
+import { rosterService } from '../services/rosterService.js';
 
 function isValidStringField(val: unknown, maxLength = 64): val is string {
   return typeof val === 'string' && val.trim().length > 0 && val.trim().length <= maxLength;
@@ -65,6 +66,14 @@ export async function createTeamHandler(req: Request, res: Response): Promise<vo
     const cleanCaptainRoll = effectiveCaptainRoll.trim().toUpperCase();
     const isClubMember = sessionUser ? sessionUser.isClubMember : undefined;
 
+    if (rosterService.isRosterActive() && !windowManager.isEmergencyWalkInEnabled() && !isTestEnv) {
+      res.status(403).json({
+        error: 'ROSTER_LOCKED',
+        message: 'An active competition roster is loaded. Teams are pre-assigned; please check in using your registered email.'
+      });
+      return;
+    }
+
     const rawMode = req.body.operatorMode;
     const operatorMode: OperatorMode | undefined =
       rawMode === 'add' || rawMode === 'sub' || rawMode === 'mixed' ? rawMode : undefined;
@@ -113,12 +122,27 @@ export async function joinTeamHandler(req: Request, res: Response): Promise<void
       return;
     }
 
+    const cleanTeamCode = teamCode.trim().toUpperCase();
     const cleanRoll = effectiveRollNumber.trim().toUpperCase();
     const isClubMember = sessionUser ? sessionUser.isClubMember : undefined;
 
+    const existingRoom = roomManager.getRoom(cleanTeamCode);
+    const isExistingMember = existingRoom?.members.has(cleanRoll);
+    if (rosterService.isRosterActive() && !windowManager.isEmergencyWalkInEnabled() && !isTestEnv && !isExistingMember) {
+      const isEmail = cleanRoll.includes('@');
+      const rosterTeam = isEmail ? rosterService.findTeamByEmail(cleanRoll) : null;
+      if (!rosterTeam || rosterTeam.teamCode.toUpperCase() !== cleanTeamCode) {
+        res.status(403).json({
+          error: 'ROSTER_NOT_REGISTERED',
+          message: 'An active competition roster is in effect. Please check in with your registered email address.'
+        });
+        return;
+      }
+    }
+
     const token = (req.headers['x-member-token'] as string) || (req.body.token as string) || (req.body.memberToken as string);
     const { room, member, memberToken } = roomManager.joinTeam(
-      teamCode,
+      cleanTeamCode,
       cleanRoll,
       effectiveName,
       token,
@@ -268,4 +292,37 @@ export function lockRosterHandler(req: Request, res: Response): void {
     res.status(400).json({ error: message });
   }
 }
+
+export async function checkinByEmailHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const { email, name } = req.body || {};
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      res.status(400).json({
+        error: 'INVALID_EMAIL',
+        message: 'A valid registered email address is required.'
+      });
+      return;
+    }
+
+    const result = await rosterService.checkinByEmail(email, typeof name === 'string' ? name : undefined);
+    res.status(200).json({
+      success: true,
+      ...result
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Check-in failed';
+    const isNotFound = message.includes('not registered');
+    res.status(isNotFound ? 404 : 400).json({ error: message });
+  }
+}
+
+export function getPublicRosterHandler(_req: Request, res: Response): void {
+  const teams = rosterService.getPublicRoster();
+  res.status(200).json({
+    active: rosterService.isRosterActive(),
+    totalTeams: teams.length,
+    teams
+  });
+}
+
 

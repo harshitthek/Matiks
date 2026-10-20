@@ -19,6 +19,7 @@ import {
 import { roomManager } from '../services/roomManager.js';
 import { windowManager } from '../services/windowManager.js';
 import { isAllowedClientOrigin, getAllowedOrigins } from '../config/corsOrigins.js';
+import { rosterService } from '../services/rosterService.js';
 
 
 
@@ -121,6 +122,8 @@ export function getAuthConfigHandler(req: Request, res: Response): void {
     oidcIssuer: process.env.CLUB_OIDC_ISSUER_URL || 'https://oidc.fossclub.tech',
     authUrl,
     state,
+    hasActiveRoster: rosterService.isRosterActive(),
+    rosterTeamsCount: rosterService.getRoster().length,
     roundOperatorMode: roomManager.getRoundOperatorModeOverride(),
     emergencyWalkIn: windowManager.isEmergencyWalkInEnabled(),
     windowOpen: windowManager.isOpen(),

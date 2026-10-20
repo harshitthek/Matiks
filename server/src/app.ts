@@ -15,7 +15,9 @@ import {
   getTeamSnapshotHandler,
   leaveTeamHandler,
   resetTeamSprintHandler,
-  lockRosterHandler
+  lockRosterHandler,
+  checkinByEmailHandler,
+  getPublicRosterHandler
 } from './controllers/teamController.js';
 
 import {
@@ -53,7 +55,12 @@ import {
   adjustScoreHandler,
   getRoundModeHandler,
   setRoundModeHandler,
-  setEmergencyWalkInHandler
+  setEmergencyWalkInHandler,
+  uploadRosterCsvHandler,
+  getAdminRosterHandler,
+  loadRosterPresetHandler,
+  resetRosterMemberHandler,
+  clearRosterHandler
 } from './controllers/adminController.js';
 
 import {
@@ -184,6 +191,8 @@ export function createApp(): express.Application {
   app.get('/api/sse/admin', sseAdminHandler);
 
   // Inbound Team REST endpoints
+  app.get('/api/teams/roster', getPublicRosterHandler);
+  app.post('/api/team/checkin-by-email', loginLimiter, checkinByEmailHandler);
   app.post('/api/team/create', createTeamHandler);
   app.post('/api/team/join', joinTeamHandler);
   app.post('/api/team/ready', readyToggleHandler);
@@ -210,6 +219,11 @@ export function createApp(): express.Application {
   app.post('/api/admin/emergency/pause-all', requireAdminAuth, emergencyPauseAllHandler);
   app.post('/api/admin/emergency/resume-all', requireAdminAuth, emergencyResumeAllHandler);
   app.post('/api/admin/broadcast', requireAdminAuth, flashBroadcastHandler);
+  app.get('/api/admin/roster', requireAdminAuth, getAdminRosterHandler);
+  app.post('/api/admin/roster/upload', requireAdminAuth, uploadRosterCsvHandler);
+  app.post('/api/admin/roster/load-preset', requireAdminAuth, loadRosterPresetHandler);
+  app.post('/api/admin/roster/reset-member', requireAdminAuth, resetRosterMemberHandler);
+  app.delete('/api/admin/roster', requireAdminAuth, clearRosterHandler);
   app.get('/api/admin/round-mode', requireAdminAuth, getRoundModeHandler);
   app.post('/api/admin/round-mode', requireAdminAuth, setRoundModeHandler);
   app.post('/api/admin/emergency-walk-in', requireAdminAuth, setEmergencyWalkInHandler);

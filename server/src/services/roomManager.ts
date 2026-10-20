@@ -146,7 +146,8 @@ export class RoomManager {
     captainRoll: string,
     captainName: string,
     isClubMember?: boolean,
-    operatorMode?: OperatorMode
+    operatorMode?: OperatorMode,
+    customTeamCode?: string
   ): { room: TeamRoom; teamCode: string; memberToken: string } {
     if (!Number.isInteger(targetSize) || targetSize < 1 || targetSize > 4) {
       throw new Error('Target team size must be an integer between 1 and 4 members.');
@@ -157,7 +158,19 @@ export class RoomManager {
       throw new Error(`Roll number ${cleanRoll} is already registered in team ${this.rollToTeamMap.get(cleanRoll)}.`);
     }
 
-    const teamCode = this.generateTeamCode();
+    const cleanCustomCode = customTeamCode ? customTeamCode.trim().toUpperCase() : null;
+    if (cleanCustomCode) {
+      if (cleanCustomCode.startsWith('SIM-') || cleanCustomCode === 'SYSTEM') {
+        throw new Error(`Custom team code "${cleanCustomCode}" is reserved.`);
+      }
+      if (cleanCustomCode.length < 3 || cleanCustomCode.length > 10) {
+        throw new Error('Custom team code must be between 3 and 10 characters.');
+      }
+      if (this.rooms.has(cleanCustomCode)) {
+        throw new Error(`Team code "${cleanCustomCode}" is already in use.`);
+      }
+    }
+    const teamCode = cleanCustomCode || this.generateTeamCode();
     const members = new Map<string, TeamMember>();
 
     const memberToken = `tok_${cleanRoll.toLowerCase()}_${randomBytes(16).toString('hex')}`;
