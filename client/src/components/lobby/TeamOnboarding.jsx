@@ -306,11 +306,24 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
       }
 
       const savedState = getSavedOidcState();
-      const effectiveClientState = savedState || undefined;
+      if (!savedState) {
+        setOidcLoading(false);
+        setError('Sign-in session expired or was not initiated in this browser. Please try signing in again.');
+        onOidcCallbackCompleteRef.current?.(null);
+        return;
+      }
+
+      if (savedState !== state) {
+        setOidcLoading(false);
+        setError('OIDC state verification failed. Please try signing in again.');
+        clearSavedOidcState();
+        onOidcCallbackCompleteRef.current?.(null);
+        return;
+      }
 
       let exchangePromise = inFlightExchanges.get(code);
       if (!exchangePromise) {
-        exchangePromise = exchangeOidcCode(code, state, effectiveClientState);
+        exchangePromise = exchangeOidcCode(code, state, savedState);
         inFlightExchanges.set(code, exchangePromise);
       }
 

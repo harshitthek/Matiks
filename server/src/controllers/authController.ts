@@ -236,14 +236,13 @@ export async function exchangeOidcCodeHandler(req: Request, res: Response): Prom
 
     const cookieState = extractCookie(req, 'matiks_oidc_state');
     const headerState = typeof req.headers['x-client-state'] === 'string' ? req.headers['x-client-state'] : undefined;
-    const clientStateCookie = (headerState && headerState === state)
-      ? headerState
-      : (cookieState && cookieState === state)
-        ? cookieState
-        : (headerState || cookieState);
+    const clientState = [headerState, cookieState].find(
+      (s) => typeof s === 'string' && s === state
+    ) ?? headerState ?? cookieState;
 
     const primaryProvider = getAuthProvider();
-    const provider = (!primaryProvider.exchangeCode && (clientStateCookie || (typeof state === 'string' && getClubOidcProvider().isStateValid(state))))
+    const isStateValid = typeof state === 'string' && getClubOidcProvider().isStateValid(state);
+    const provider = (!primaryProvider.exchangeCode && (clientState || isStateValid))
       ? getClubOidcProvider()
       : primaryProvider;
 
@@ -263,18 +262,18 @@ export async function exchangeOidcCodeHandler(req: Request, res: Response): Prom
       return;
     }
 
-    if (!clientStateCookie) {
+    if (!clientState) {
       res.status(400).json({
         error: 'INVALID_OIDC_STATE',
-        message: 'Client session state cookie is missing.'
+        message: 'Client session state is missing. Please initiate sign-in from your browser.'
       });
       return;
     }
 
-    if (clientStateCookie !== state) {
+    if (clientState !== state) {
       res.status(400).json({
         error: 'INVALID_OIDC_STATE',
-        message: 'OIDC state parameter does not match client session cookie.'
+        message: 'OIDC state parameter does not match client session state.'
       });
       return;
     }

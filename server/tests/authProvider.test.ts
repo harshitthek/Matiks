@@ -724,16 +724,30 @@ describe('Matiks Hackathon — Phase 7: Pluggable Auth & Club OIDC Adapter', () 
         assert.ok(setCookieHeader.includes('matiks_oidc_state=sec_state_456'));
         assert.ok(setCookieHeader.includes('HttpOnly'));
 
-        // 4. POST /api/auth/oidc/exchange with missing state cookie returns 400
-        const noCookieRes = await fetch(`${baseUrl}/api/auth/oidc/exchange`, {
+        // 4. POST /api/auth/oidc/exchange with missing client state returns 400
+        const noStateRes = await fetch(`${baseUrl}/api/auth/oidc/exchange`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code: 'valid_auth_code', state: validTestState })
         });
-        assert.equal(noCookieRes.status, 400);
-        const noCookieData = await noCookieRes.json();
-        assert.equal(noCookieData.error, 'INVALID_OIDC_STATE');
-        assert.equal(noCookieData.message, 'Client session state cookie is missing.');
+        assert.equal(noStateRes.status, 400);
+        const noStateData = await noStateRes.json();
+        assert.equal(noStateData.error, 'INVALID_OIDC_STATE');
+        assert.equal(noStateData.message, 'Client session state is missing. Please initiate sign-in from your browser.');
+
+        // 4b. POST /api/auth/oidc/exchange with invalid HMAC state returns 400
+        const invalidStateRes = await fetch(`${baseUrl}/api/auth/oidc/exchange`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-client-state': 'invalid_forged_state'
+          },
+          body: JSON.stringify({ code: 'valid_auth_code', state: 'invalid_forged_state' })
+        });
+        assert.equal(invalidStateRes.status, 400);
+        const invalidStateData = await invalidStateRes.json();
+        assert.equal(invalidStateData.error, 'INVALID_OIDC_STATE');
+        assert.equal(invalidStateData.message, 'Valid OIDC state parameter is required and must not be expired.');
 
         // 5. POST /api/auth/oidc/exchange with state mismatch against cookie returns 400
         const mismatchRes = await fetch(`${baseUrl}/api/auth/oidc/exchange`, {
@@ -747,6 +761,7 @@ describe('Matiks Hackathon — Phase 7: Pluggable Auth & Club OIDC Adapter', () 
         assert.equal(mismatchRes.status, 400);
         const mismatchData = await mismatchRes.json();
         assert.equal(mismatchData.error, 'INVALID_OIDC_STATE');
+        assert.equal(mismatchData.message, 'OIDC state parameter does not match client session state.');
 
         // 6. POST /api/auth/oidc/exchange with matching state and valid code succeeds
         const successRes = await fetch(`${baseUrl}/api/auth/oidc/exchange`, {
