@@ -1,4 +1,4 @@
-name: CI — Lint, Build & Test
+name: CI/CD — Test, Build & Auto-Deploy
 
 on:
   push:
@@ -50,3 +50,104 @@ jobs:
 
       - name: Run frontend service and audio test suites
         run: npm --prefix client test
+
+  deploy-frontend:
+    name: Auto-Deploy Frontend to Vercel
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel Environment Info
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+
+      - name: Build Project Artifacts
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel build --prod --token=$VERCEL_TOKEN
+
+      - name: Deploy to Vercel Production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+
+      - name: Verify Live Frontend URL
+        run: |
+          sleep 5
+          curl -f -I --max-time 15 https://matiks.fossclub.tech
+
+  deploy-backend:
+    name: Auto-Deploy Backend to Cloud VM
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install server dependencies
+        run: npm ci --prefix server
+
+      - name: Build TypeScript backend
+        run: npm run build:server
+
+      - name: Package deployment bundle
+        run: |
+          cd server
+          tar -czf /tmp/deploy-bundle.tar.gz dist package.json package-lock.json
+
+      - name: Configure SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "${{ secrets.VM_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Copy bundle to VM
+        run: |
+          scp -i ~/.ssh/id_rsa /tmp/deploy-bundle.tar.gz ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/opt/matiks/
+
+      - name: Extract, install dependencies & restart service
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} '
+            set -e
+            cd /opt/matiks
+            tar -xzf deploy-bundle.tar.gz
+            rm -f deploy-bundle.tar.gz
+            npm install --omit=dev --no-audit --no-fund
+            sudo systemctl restart matiks-backend.service
+            sleep 3
+            systemctl is-active matiks-backend.service
+          '
+
+      - name: Verify Live Backend API Health
+        run: |
+          sleep 3
+          curl -f --max-time 15 https://harshitthek.is-a.dev/api/health
