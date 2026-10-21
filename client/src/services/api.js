@@ -386,9 +386,17 @@ export async function exportTournamentJson(adminToken) {
  * Auth: Fetches active authentication configuration, OIDC URL, and server-generated state.
  */
 export async function getAuthConfig(forceOidc = false) {
-  const query = forceOidc ? '?oidc=true' : '';
+  const params = new URLSearchParams();
+  if (forceOidc) params.set('oidc', 'true');
+  const clientOrigin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '';
+  if (clientOrigin) {
+    params.set('origin', clientOrigin);
+  }
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const headers = clientOrigin ? { 'x-client-origin': clientOrigin } : {};
   return request(`/auth/config${query}`, {
-    credentials: 'include'
+    credentials: 'include',
+    headers
   });
 }
 

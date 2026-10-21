@@ -28,14 +28,20 @@ export const DEFAULT_ALLOWED_ORIGINS = [
  */
 export function getAllowedOrigins(options: { forRedirect?: boolean } = {}): string[] {
   const forRedirect = options.forRedirect ?? true;
+  const clientOrigin = process.env.CLIENT_ORIGIN?.trim() ? [process.env.CLIENT_ORIGIN.trim().replace(/\/+$/, '')] : [];
+
   if (typeof process.env.CORS_ORIGINS === 'string' && process.env.CORS_ORIGINS.trim().length > 0) {
     const list = process.env.CORS_ORIGINS.split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean);
-    return forRedirect ? list.filter(o => !CORS_ONLY_ORIGINS.includes(o)) : list;
+    const combined = [...new Set([...list, ...clientOrigin])];
+    return forRedirect ? combined.filter(o => !CORS_ONLY_ORIGINS.includes(o)) : combined;
   }
+
   const devExtras = process.env.NODE_ENV !== 'production' ? DEV_CLIENT_ORIGINS : [];
+  const baseClientOrigins = [...clientOrigin, ...DEFAULT_CLIENT_ORIGINS, ...devExtras];
+  const combined = [...new Set(baseClientOrigins)];
   return forRedirect
-    ? [...devExtras, ...DEFAULT_CLIENT_ORIGINS]
-    : [...devExtras, ...DEFAULT_ALLOWED_ORIGINS];
+    ? combined.filter(o => !CORS_ONLY_ORIGINS.includes(o))
+    : [...new Set([...combined, ...CORS_ONLY_ORIGINS])];
 }
 
 
@@ -46,7 +52,8 @@ export function getAllowedOrigins(options: { forRedirect?: boolean } = {}): stri
  * (or in development mode when custom CORS is not explicitly provided).
  */
 export function isVercelPreviewAllowed(): boolean {
-  return process.env.ALLOW_VERCEL_PREVIEWS === 'true' && process.env.NODE_ENV !== 'production';
+  if (process.env.ALLOW_VERCEL_PREVIEWS === 'false') return false;
+  return process.env.ALLOW_VERCEL_PREVIEWS === 'true' || process.env.NODE_ENV !== 'production';
 }
 
 
@@ -55,6 +62,9 @@ export function isVercelPreviewAllowed(): boolean {
  * Format: https://matiks-git-<branch>-usarfoss.vercel.app
  */
 export const VERCEL_PREVIEW_ORIGIN_REGEX = /^https:\/\/matiks-git-[a-z0-9-]+-usarfoss\.vercel\.app$/;
+
+const PRIVATE_LAN_ORIGIN_REGEX =
+  /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/;
 
 /**
  * Checks whether an origin is allowed for client operations.
@@ -72,7 +82,17 @@ export function isAllowedClientOrigin(candidate: string, options: { forRedirect?
     return true;
   }
 
-  // Previews are never eligible for code redirection without an explicit allowlist entry
+  // Allow LAN / localhost during non-production
+  if (process.env.NODE_ENV !== 'production' && PRIVATE_LAN_ORIGIN_REGEX.test(normalized)) {
+    return true;
+  }
+
+  // Previews are eligible for redirect only when explicitly enabled via ALLOW_VERCEL_PREVIEWS === 'true'
+  if (process.env.ALLOW_VERCEL_PREVIEWS === 'true' && VERCEL_PREVIEW_ORIGIN_REGEX.test(normalized)) {
+    return true;
+  }
+
+  // Previews are eligible for non-redirect CORS when allowed
   if (!forRedirect && isVercelPreviewAllowed() && VERCEL_PREVIEW_ORIGIN_REGEX.test(normalized)) {
     return true;
   }

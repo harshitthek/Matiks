@@ -114,6 +114,18 @@ function clearStoredInviteCode() {
   try { window.localStorage?.removeItem('matiks_pending_invite_code'); } catch {}
 }
 
+function saveTokenForRoll(roll, token) {
+  if (!roll || !token || typeof window === 'undefined') return;
+  try {
+    const raw = sessionStorage.getItem('matiks_member_tokens');
+    const vault = raw ? JSON.parse(raw) : {};
+    vault[roll.trim().toUpperCase()] = token;
+    sessionStorage.setItem('matiks_member_tokens', JSON.stringify(vault));
+  } catch {
+    // Storage unavailable
+  }
+}
+
 function loadInitialState(initialTeamCode) {
   let savedSession = null;
   let draft = null;
@@ -411,11 +423,15 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
       setError('Please enter a valid registered email address.');
       return;
     }
+    const isMatchingOidcEmail = Boolean(
+      oidcSession?.user?.email && oidcSession.user.email.trim().toLowerCase() === cleanEmail
+    );
+    const effectiveName = nameInput.trim() || (isMatchingOidcEmail ? oidcSession?.user?.displayName : undefined) || undefined;
     setError(null);
     setCheckinLoading(true);
 
     try {
-      const res = await checkinByEmail(cleanEmail, nameInput.trim() || undefined);
+      const res = await checkinByEmail(cleanEmail, effectiveName);
       if (res?.success && res?.teamCode && res?.memberToken) {
         saveTokenForRoll(res.rollNumber, res.memberToken);
         clearStoredInviteCode();
@@ -472,6 +488,16 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
   };
 
   const handleClearOidcSession = () => {
+    try {
+      sessionStorage.removeItem('matiks_member_tokens');
+    } catch {
+      // Ignore storage errors
+    }
+    try {
+      localStorage.removeItem('matiks_member_tokens');
+    } catch {
+      // Ignore storage errors
+    }
     setOidcSession(null);
     setShowEmergencyWalkInForm(false);
     clearSavedOidcState();
@@ -483,14 +509,20 @@ export function TeamOnboarding({ initialTeamCode = '', onJoinedTeam, onOidcCallb
   };
 
   const getSavedTokenForRoll = (roll) => {
-    try {
-      const raw = localStorage.getItem('matiks_member_tokens');
-      if (!raw) return undefined;
-      const vault = JSON.parse(raw);
-      return vault?.[roll.trim().toUpperCase()];
-    } catch {
-      return undefined;
+    if (!roll || typeof window === 'undefined') return undefined;
+    const cleanRoll = roll.trim().toUpperCase();
+    for (const storage of [window.sessionStorage, window.localStorage]) {
+      try {
+        const raw = storage?.getItem('matiks_member_tokens');
+        if (raw) {
+          const vault = JSON.parse(raw);
+          if (vault?.[cleanRoll]) return vault[cleanRoll];
+        }
+      } catch {
+        // Continue to fallback storage
+      }
     }
+    return undefined;
   };
 
   const handleSubmit = async (e) => {

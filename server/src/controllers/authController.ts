@@ -71,7 +71,12 @@ export async function getAuthConfigHandler(req: Request, res: Response): Promise
 
   const existingStateCookie = extractCookie(req, 'matiks_oidc_state');
 
+  const queryOrigin = typeof req.query['origin'] === 'string' ? req.query['origin'].trim().replace(/\/+$/, '') : undefined;
+  const headerOrigin = typeof req.headers['x-client-origin'] === 'string' ? req.headers['x-client-origin'].trim().replace(/\/+$/, '') : undefined;
+
   const candidateOrigin =
+    (queryOrigin && isAllowedClientOrigin(queryOrigin) ? queryOrigin : undefined) ||
+    (headerOrigin && isAllowedClientOrigin(headerOrigin) ? headerOrigin : undefined) ||
     (typeof req.headers.origin === 'string' && req.headers.origin.trim().replace(/\/+$/, '')) ||
     (typeof req.headers.referer === 'string' && (() => {
       try {
@@ -323,12 +328,7 @@ export async function verifyMembershipHandler(req: Request, res: Response): Prom
 }
 
 function resolveClientBaseUrl(req?: Request): string {
-  const explicitOrigin = process.env.CLIENT_ORIGIN?.trim();
-  if (explicitOrigin) {
-    return explicitOrigin.replace(/\/+$/, '');
-  }
-
-  // Validate request origin against trusted allowlist if present
+  // 1. Validate request origin against trusted allowlist if present
   if (req?.headers.origin && typeof req.headers.origin === 'string') {
     const origin = req.headers.origin.trim().replace(/\/+$/, '');
     if (isAllowedClientOrigin(origin)) {
@@ -336,7 +336,7 @@ function resolveClientBaseUrl(req?: Request): string {
     }
   }
 
-  // Validate request referer against trusted allowlist if present
+  // 2. Validate request referer against trusted allowlist if present
   if (req?.headers.referer && typeof req.headers.referer === 'string') {
     try {
       const parsed = new URL(req.headers.referer);
@@ -349,12 +349,24 @@ function resolveClientBaseUrl(req?: Request): string {
     }
   }
 
+  // 3. Explicit environment variable if allowed
+  const explicitOrigin = process.env.CLIENT_ORIGIN?.trim();
+  if (explicitOrigin && isAllowedClientOrigin(explicitOrigin)) {
+    return explicitOrigin.replace(/\/+$/, '');
+  }
+
+  // 4. First allowed client origin
   const firstCorsOrigin = (process.env.CORS_ORIGINS?.trim() ? getAllowedOrigins({ forRedirect: true }) : [])
     .find(s => s.startsWith('https://') || (process.env.NODE_ENV !== 'production' && s.startsWith('http://')));
   if (firstCorsOrigin) {
     return firstCorsOrigin.replace(/\/+$/, '');
   }
 
+  const allowed = getAllowedOrigins({ forRedirect: true });
+  const secureAllowed = allowed.find(s => s.startsWith('https://') || (process.env.NODE_ENV !== 'production' && s.startsWith('http://')));
+  if (secureAllowed) {
+    return secureAllowed.replace(/\/+$/, '');
+  }
 
   if (process.env.NODE_ENV === 'production') {
     throw new Error('CLIENT_ORIGIN environment variable is required in production.');
