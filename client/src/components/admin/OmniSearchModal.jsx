@@ -14,7 +14,11 @@ const EXCUSE_PRESETS = [
  * Provides lightning-fast keyboard search across all squads, members, and roll numbers,
  * with 1-click panic recovery actions and squad governance controls.
  */
-export function OmniSearchModal({
+export function OmniSearchModal(props) {
+  return props.isOpen ? <OmniSearchContent {...props} /> : null;
+}
+
+function OmniSearchContent({
   isOpen,
   onClose,
   rooms = [],
@@ -35,12 +39,9 @@ export function OmniSearchModal({
   const inputRef = useRef(null);
 
   useEffect(() => {
-    if (isOpen) {
-      setQuery('');
-      setAdjustingTeamCode(null);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  }, [isOpen]);
+    const timer = setTimeout(() => inputRef.current?.focus(), 50);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e) => {

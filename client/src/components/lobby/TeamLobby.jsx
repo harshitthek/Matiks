@@ -357,7 +357,9 @@ export function TeamLobby({
   const isCurrentlyReady = currentMember?.isReady ?? false;
   const isCaptain = Boolean(currentMember?.isCaptain);
   const [lockRosterLoading, setLockRosterLoading] = useState(false);
-  resolvedRollRef.current = currentMember?.rollNumber || currentRoll;
+  useEffect(() => {
+    resolvedRollRef.current = currentMember?.rollNumber || currentRoll;
+  }, [currentMember?.rollNumber, currentRoll]);
 
   const handleLockRoster = useCallback(async () => {
     if (!isCaptain || lockRosterLoading) return;

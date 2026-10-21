@@ -57,7 +57,7 @@ export function AdminActionToasts({ actions = [], onDismiss }) {
             )}
 
             <div className="text-[9px] text-[#aab5ac]/60 text-right mt-1">
-              {new Date(item.timestamp || Date.now()).toLocaleTimeString()}
+              {item.timestamp != null ? new Date(item.timestamp).toLocaleTimeString() : 'Time unavailable'}
             </div>
           </div>
         );

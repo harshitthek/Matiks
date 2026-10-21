@@ -121,7 +121,7 @@ jobs:
       - name: Package deployment bundle
         run: |
           cd server
-          tar -czf /tmp/deploy-bundle.tar.gz dist package.json package-lock.json
+          tar -czf /tmp/deploy-bundle.tar.gz dist prisma data package.json package-lock.json
 
       - name: Configure SSH Key
         run: |
@@ -141,7 +141,7 @@ jobs:
             cd /opt/matiks
             tar -xzf deploy-bundle.tar.gz
             rm -f deploy-bundle.tar.gz
-            npm install --omit=dev --no-audit --no-fund
+            npm ci --omit=dev --no-audit --no-fund
             sudo systemctl restart matiks-backend.service
             sleep 3
             systemctl is-active matiks-backend.service

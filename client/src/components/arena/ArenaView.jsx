@@ -101,7 +101,6 @@ export function ArenaView({
   const [submissionError, setSubmissionError] = useState(null);
   const [teammates, setTeammates] = useState([]);
   const [flashBanner, setFlashBanner] = useState(null);
-  const [remainingSeconds, setRemainingSeconds] = useState(durationSeconds || 120);
 
   const [isFullscreen, setIsFullscreen] = useState(() =>
     typeof document !== 'undefined'
@@ -123,6 +122,7 @@ export function ArenaView({
   const enteredFullscreenByArenaRef = useRef(false);
   const userOptedOutOfFullscreenRef = useRef(false);
   const isUnmountedRef = useRef(false);
+  const isFinishedRef = useRef(Boolean(initialIsFinished));
 
   const requestFullscreenSafe = useCallback(async (isManual = false) => {
     try {
@@ -240,7 +240,6 @@ export function ArenaView({
   const questionStartTimeRef = useRef(0);
   const pauseStartRef = useRef(null);
   const isSubmittingRef = useRef(false);
-  const isFinishedRef = useRef(Boolean(initialIsFinished));
   const currentInputRef = useRef('');
   const currentIndexRef = useRef(initialQuestionIndex || 0);
   const streakRef = useRef(initialStreak || 0);
@@ -905,7 +904,6 @@ export function ArenaView({
               durationSeconds={durationSeconds}
               isPaused={isPaused}
               onExpire={handleTimerExpire}
-              onRemainingSecondsChange={setRemainingSeconds}
             />
           </div>
 

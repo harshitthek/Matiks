@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Real-time backend engine for Matiks speed math hackathon",
   "type": "module",
+  "engines": {
+    "node": ">=22.16.0"
+  },
   "main": "dist/index.js",
   "scripts": {
     "test": "tsx --import ./tests/setup.ts --test --test-concurrency=1 tests/databaseService.test.ts tests/mathEngine.test.ts tests/servicesUnit.test.ts tests/roomManager.test.ts tests/authProvider.test.ts tests/adminGovernance.test.ts tests/rosterService.test.ts tests/smokeTest.ts tests/qaRegression.test.ts tests/rateLimit.test.ts tests/idempotentSubmit.test.ts tests/redisAuthState.test.ts tests/gameStateMirror.test.ts tests/outbox.test.ts tests/chaosNetworkTest.ts tests/loadTest.ts",
@@ -21,8 +24,8 @@
     "test:chaos": "tsx --import ./tests/setup.ts --test tests/chaosNetworkTest.ts",
     "test:load": "tsx --import ./tests/setup.ts --test tests/loadTest.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts",
+    "start": "node --env-file-if-exists=.env dist/index.js",
+    "dev": "node --env-file-if-exists=.env --import tsx --watch src/index.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "db:empty": "tsx src/scripts/empty_db.ts",

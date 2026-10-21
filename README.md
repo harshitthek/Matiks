@@ -129,10 +129,13 @@ The system implements the `IAuthProvider` adapter pattern (`server/src/services/
 
 ```bash
 # 1. Start Backend Server (http://localhost:3001)
+# Requires Node.js 22.16 or later. Configure both database URLs before running Prisma.
+cp -n server/.env.example server/.env
 npm --prefix server install
 npm --prefix server run dev
 
 # 2. Start Frontend Vite Server (http://localhost:5173)
+cp -n client/.env.example client/.env
 npm --prefix client install
 npm --prefix client run dev
 
