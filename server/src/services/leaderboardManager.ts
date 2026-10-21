@@ -113,6 +113,8 @@ export class LeaderboardManager {
   public updateTeam(entry: Omit<LeaderboardEntry, 'rank'>, immediate = false): void {
     this.entries.set(entry.teamCode, {
       ...entry,
+      teamAverageScore: Number.isFinite(entry.teamAverageScore) ? Math.max(0, entry.teamAverageScore) : 0,
+      averageTimeSeconds: Number.isFinite(entry.averageTimeSeconds) ? Math.max(0, entry.averageTimeSeconds) : 120,
       rank: 0 // Will be calculated dynamically
     });
     if (immediate) {
@@ -166,8 +168,8 @@ export class LeaderboardManager {
       }
 
       // Primary: Status group priority (racing and finished teams rank above WAITING teams)
-      const priorityA = a.status === 'WAITING' ? 1 : 0;
-      const priorityB = b.status === 'WAITING' ? 1 : 0;
+      const priorityA = a.status === 'WAITING' || a.activeMembersCount <= 0 ? 1 : 0;
+      const priorityB = b.status === 'WAITING' || b.activeMembersCount <= 0 ? 1 : 0;
       if (priorityA !== priorityB) {
         return priorityA - priorityB;
       }
@@ -181,7 +183,7 @@ export class LeaderboardManager {
         return a.averageTimeSeconds - b.averageTimeSeconds;
       }
       // Quaternary: Team name alphabetical stability
-      return a.teamName.localeCompare(b.teamName);
+      return a.teamName.localeCompare(b.teamName) || a.teamCode.localeCompare(b.teamCode);
     });
 
     return list.map((item, index) => ({

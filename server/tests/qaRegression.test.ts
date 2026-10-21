@@ -172,9 +172,11 @@ describe('Matiks Hackathon — QA & Edge-Case Regression Suite', () => {
     assert.equal(sFast.isFinished, true);
     assert.equal(sprintRoom.status, 'IN_SPRINT', 'Room stays IN_SPRINT while LV001 is still active');
 
-    // Now LV001 leaves the team mid-sprint -> remaining active member (LV003) is finished, so room finalizes!
+    // Leaving cannot remove a scored roster slot or inflate the average.
     roomManager.leaveTeam(newTeamCode, 'LV001', tNewCap);
-    assert.equal(sprintRoom.status, 'FINISHED');
+    assert.equal(sprintRoom.status, 'IN_SPRINT');
+    assert.equal(sprintRoom.members.size, 2);
+    assert.equal(sprintRoom.members.get('LV001')!.connected, false);
   });
 
   test('2. Rematch Reset (resetTeamSprint) Guards: Protects Active Teammates & Auto-Finalizes Past Grace Cutoff', async () => {
@@ -210,18 +212,21 @@ describe('Matiks Hackathon — QA & Edge-Case Regression Suite', () => {
     // Player 1 clicking Play Again while Player 2 is still active MUST be blocked!
     assert.throws(
       () => roomManager.resetTeamSprint(teamCode, 'RM001', t1),
-      /Cannot reset squad while room is in IN_SPRINT status/
+      /already participated/i
     );
 
     // Even 100ms before expiresAt + 2500ms grace cutoff, Player 2's session must NOT be prematurely killed
     s2.expiresAt = Date.now() - 2000; // within the +2500ms transit grace window!
     assert.throws(
       () => roomManager.resetTeamSprint(teamCode, 'RM001', t1),
-      /Cannot reset squad while room is in IN_SPRINT status/
+      /already participated/i
     );
 
-    // Once past the authoritative expiresAt + 2500ms cutoff, resetTeamSprint auto-finalizes and resets cleanly!
+    // Even after the grace cutoff, replay is denied until a new contest window opens.
     s2.expiresAt = Date.now() - 2600;
+    assert.throws(() => roomManager.resetTeamSprint(teamCode, 'RM001', t1), /already participated/i);
+    windowManager.closeWindow();
+    windowManager.openWindow(120);
     const resetRoom = roomManager.resetTeamSprint(teamCode, 'RM001', t1);
     assert.equal(resetRoom.status, 'AWAITING_READY');
     assert.equal(resetRoom.members.get('RM001')!.individualScore, 0);

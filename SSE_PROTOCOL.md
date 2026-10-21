@@ -13,7 +13,7 @@ Instead of duplex WebSockets, this platform separates concerns into two clean tr
 1. **Inbound Commands (Client $\rightarrow$ Server REST):**
    * `POST /api/team/create` & `POST /api/team/join` — Create a team room or register roll number & name in an existing squad.
    * `POST /api/team/ready` — Toggle atomic member ready status.
-   * `POST /api/team/leave` & `POST /api/team/reset` — Leave a squad (with automatic captain succession) or reset a completed sprint for a rematch.
+   * `POST /api/team/leave` & `POST /api/team/reset` — Leave a squad (with automatic captain succession) or prepare a completed squad for its next contest window.
    * `POST /api/sprint/submit` — Submit question answer with client timestamp & measured latency delta.
    * `POST /api/admin/stream-ticket` — Exchange `ADMIN_SECRET` for a 60-second single-use SSE stream ticket.
    * `POST /api/admin/teams/:teamCode/excuse-member` — Organizer recovery endpoint to excuse a member who suffered hardware failure.
@@ -287,7 +287,7 @@ Used by students to submit their answer during the 2-minute sprint.
   `answerMismatch` is `true` when the resent answer differs from the recorded one. A replay changes no score, writes nothing, and broadcasts no event, and it is checked after the member token (a replay still needs the player's own token). This is what lets the client re-send an answer whose reply was lost on a weak connection without leaving the player stuck. First-time responses carry neither field.
 
 ### 2. `POST /api/team/reset` & `POST /api/team/leave`
-* `POST /api/team/reset`: Resets a completed squad room back to `AWAITING_READY` (or `LOBBY`) for a rematch while retaining the squad's `roomUsedPairKeys` so subsequent games never repeat questions.
+* `POST /api/team/reset`: Prepares a completed squad for a new contest window. A team/member that has already started a sprint in the current window receives a rejection; resetting cannot clear that attempt or its score. Reconnect and resume remain allowed. A cancelled countdown does not consume an attempt.
 * `POST /api/team/leave`: Removes a member from a squad, automatically promoting the next active member to Captain if the Captain leaves, or dissolving the room if empty.
 
 ### 3. `POST /api/admin/teams/:teamCode/excuse-member`
@@ -372,3 +372,11 @@ To survive Wi-Fi packet loss without triggering expensive full-state roundtrips,
 ### Production Observability Endpoints
 * `GET /metrics`: Prometheus text exposition endpoint. Authentication is enforced in production (`NODE_ENV=production`) or when `REQUIRE_METRICS_AUTH=true` (and whenever `METRICS_TOKEN` is configured outside `NODE_ENV=test`) via constant-time `METRICS_TOKEN` / `ADMIN_SECRET` verification (`Authorization: Bearer <token>` or `x-metrics-token`), and remains open for local scraping in development (when `METRICS_TOKEN` is unset) and test environments. Exposes active SSE connections, submission counters, latency histograms (SSE streams excluded to protect percentiles), and room states.
 * `GET /api/admin/replay/:sessionId`: Streams millisecond-by-millisecond question submission telemetry from disk audits into the admin dispute inspector modal.
+
+### Window participation and ranking corrections
+
+Team snapshots add `contestWindow.opensAt` (window identity) and `contestWindow.hasParticipated`. Extending an open window retains its identity. Closing and opening creates a new identity. The UI uses the participation flag to disable replay; reset, ready/countdown, and launch also enforce the rule on the server. `SPRINT_STARTED` audit records retain team/member claims across disk, Redis, and SQL recovery, including room dissolution.
+
+Scores stop at zero after wrong answers and organizer penalties. Team score is the mean of non-excused member scores. Time tie-breaks use the mean of active member solve times, excluding pauses and the 2.5-second submission grace; an incomplete timed-out run counts as 120 seconds. Further ties use team name then team code. UI scores retain two decimal places so fractional ranking differences remain visible.
+
+Voluntary departures after launch retain the scored roster slot and mark it disconnected. The organizer's explicit excuse action still changes the divisor with an audit trail. A final ceremony requires a closed window, settled active sprints, and at least one eligible finished team. Disqualified/waiting/zero-active teams cannot receive medals.

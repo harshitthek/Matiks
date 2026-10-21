@@ -7,7 +7,7 @@ import { ArenaView } from './components/arena/ArenaView.jsx';
 import { LeaderboardView } from './components/leaderboard/LeaderboardView.jsx';
 import { AdminView } from './components/admin/AdminView.jsx';
 import { ErrorBoundary } from './components/common/ErrorBoundary.jsx';
-import { leaveTeam, resetTeamSprint, getAuthMe } from './services/api.js';
+import { leaveTeam, getAuthMe } from './services/api.js';
 import { soundFx } from './services/soundFx.js';
 
 const SESSION_STORAGE_KEY = 'matiks_squad_session';
@@ -547,17 +547,6 @@ export function App() {
     });
   }, []);
 
-  const handlePlayAgainFromSummary = useCallback(async () => {
-    const current = teamSessionRef.current;
-    if (current?.teamCode && current?.rollNumber) {
-      try {
-        await resetTeamSprint(current.teamCode, current.rollNumber, current.memberToken);
-      } catch {
-        // Even if already reset by a teammate, transition back to lobby
-      }
-    }
-    handleReturnToLobbyFromSprint();
-  }, [handleReturnToLobbyFromSprint]);
 
   const isInActiveArena = Boolean(sprintSession && !isSprintFinished && currentView === 'squad');
 
@@ -771,7 +760,6 @@ export function App() {
                 }}
                 onStateSync={handleSprintStateSync}
                 onReturnToLobby={handleReturnToLobbyFromSprint}
-                onPlayAgain={handlePlayAgainFromSummary}
                 onViewLeaderboard={() => navigateTo('leaderboard')}
               />
             ) : teamSession && !oidcCallbackPending ? (

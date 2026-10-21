@@ -139,8 +139,9 @@ cp -n client/.env.example client/.env
 npm --prefix client install
 npm --prefix client run dev
 
-# 3. Run Full Verification Suite (166 Server Tests + 13 Client Tests = 179 Tests)
+# 3. Run verification suites
 npm --prefix server test
+npm --prefix server run test:ranking  # Window attempts, ranking, and score recovery
 npm --prefix client test
 npm --prefix client run lint
 

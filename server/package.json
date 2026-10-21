@@ -8,8 +8,8 @@
   },
   "main": "dist/index.js",
   "scripts": {
-    "test": "tsx --import ./tests/setup.ts --test --test-concurrency=1 tests/databaseService.test.ts tests/mathEngine.test.ts tests/servicesUnit.test.ts tests/roomManager.test.ts tests/authProvider.test.ts tests/adminGovernance.test.ts tests/rosterService.test.ts tests/smokeTest.ts tests/qaRegression.test.ts tests/rateLimit.test.ts tests/idempotentSubmit.test.ts tests/redisAuthState.test.ts tests/gameStateMirror.test.ts tests/outbox.test.ts tests/chaosNetworkTest.ts tests/loadTest.ts",
-    "test:unit": "tsx --import ./tests/setup.ts --test --test-concurrency=1 tests/databaseService.test.ts tests/mathEngine.test.ts tests/servicesUnit.test.ts tests/roomManager.test.ts tests/authProvider.test.ts tests/adminGovernance.test.ts tests/rosterService.test.ts tests/smokeTest.ts tests/qaRegression.test.ts tests/rateLimit.test.ts tests/idempotentSubmit.test.ts tests/redisAuthState.test.ts tests/gameStateMirror.test.ts tests/outbox.test.ts",
+    "test": "tsx --import ./tests/setup.ts --test --test-concurrency=1 tests/databaseService.test.ts tests/mathEngine.test.ts tests/servicesUnit.test.ts tests/roomManager.test.ts tests/authProvider.test.ts tests/adminGovernance.test.ts tests/rosterService.test.ts tests/smokeTest.ts tests/qaRegression.test.ts tests/rateLimit.test.ts tests/idempotentSubmit.test.ts tests/redisAuthState.test.ts tests/gameStateMirror.test.ts tests/outbox.test.ts tests/chaosNetworkTest.ts tests/loadTest.ts tests/leaderboardWindow.test.ts",
+    "test:unit": "tsx --import ./tests/setup.ts --test --test-concurrency=1 tests/databaseService.test.ts tests/mathEngine.test.ts tests/servicesUnit.test.ts tests/roomManager.test.ts tests/authProvider.test.ts tests/adminGovernance.test.ts tests/rosterService.test.ts tests/smokeTest.ts tests/qaRegression.test.ts tests/rateLimit.test.ts tests/idempotentSubmit.test.ts tests/redisAuthState.test.ts tests/gameStateMirror.test.ts tests/outbox.test.ts tests/leaderboardWindow.test.ts",
     "test:db": "tsx --import ./tests/setup.ts --test tests/databaseService.test.ts",
     "test:admin": "tsx --import ./tests/setup.ts --test tests/adminGovernance.test.ts",
     "test:smoke": "tsx --import ./tests/setup.ts --test tests/smokeTest.ts",
@@ -29,7 +29,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "db:empty": "tsx src/scripts/empty_db.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test:ranking": "node --import tsx --import ./tests/setup.ts --test tests/leaderboardWindow.test.ts"
   },
   "keywords": [
     "speed-math",

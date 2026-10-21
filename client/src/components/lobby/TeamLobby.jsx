@@ -443,6 +443,7 @@ export function TeamLobby({
   const readyCount = activeMembers.filter((m) => m.isReady).length;
   const isRosterFull = snapshot ? members.length >= snapshot.targetSize : false;
   const isContestWindowOpen = snapshot?.contestWindow?.isOpen ?? false;
+  const hasParticipated = snapshot?.contestWindow?.hasParticipated === true;
   const roomStatus = snapshot?.status || 'LOBBY';
   const isRoundFinished = roomStatus === 'FINISHED' || roomStatus === 'COMPLETED';
 
@@ -796,10 +797,10 @@ export function TeamLobby({
             <TactileButton
               variant="signal"
               onClick={handlePlayAgain}
-              disabled={resetLoading}
+              disabled={resetLoading || hasParticipated || !isContestWindowOpen}
               className="flex-1 py-4 text-sm md:text-base shadow-[6px_6px_0_#090c0a]"
             >
-              {resetLoading ? 'RESETTING SQUAD...' : '🔄 PLAY AGAIN (NEW SPRINT WITH SQUAD)'}
+              {resetLoading ? 'RESETTING SQUAD...' : hasParticipated || !isContestWindowOpen ? 'ATTEMPT COMPLETE — WAIT FOR THE NEXT WINDOW' : 'JOIN THIS WINDOW WITH YOUR SQUAD'}
             </TactileButton>
 
             {onViewLeaderboard && (
@@ -861,6 +862,10 @@ export function TeamLobby({
                 </TactileButton>
               )}
             </div>
+          </div>
+        ) : hasParticipated ? (
+          <div className="p-4 border-2 border-[#f5a623] bg-[#090c0a] text-[#ffe36e] font-mono text-xs font-bold">
+            THIS SQUAD OR ONE OF ITS MEMBERS HAS ALREADY PARTICIPATED. WAIT FOR THE NEXT CONTEST WINDOW.
           </div>
         ) : (
           <div className="space-y-4">

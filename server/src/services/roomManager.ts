@@ -36,6 +36,8 @@ import { leaderboardManager } from './leaderboardManager.js';
 import { windowManager } from './windowManager.js';
 import { metrics } from './metrics.js';
 import { databaseService } from './databaseService.js';
+import { sessionElapsedSeconds } from './sessionTiming.js';
+import { onControlStateChanged, type ControlState } from '../store/controlState.js';
 
 export interface SerializedTeamRoom extends Omit<TeamRoom, 'members'> {
   members: Array<[string, TeamMember]>;
@@ -49,6 +51,7 @@ export interface PersistedTournamentState {
   sessions: Array<[string, SprintSession]>;
   rollToTeamMap: Array<[string, string]>;
   auditLogs: AuditRecord[];
+  control?: ControlState;
 }
 
 /**
@@ -330,10 +333,19 @@ export class RoomManager {
       throw new Error('Unauthorized: Valid member token is required to leave team.');
     }
 
+    // A voluntary departure must not shrink the scored roster or delete a result.
+    if ((room.status === 'IN_SPRINT' || room.status === 'FINISHED') && this.hasParticipated(room)) {
+      member.connected = false;
+      this.broadcastSnapshot(room);
+      this.notifyStateMutated();
+      return { dissolved: false, room };
+    }
+
     if (member.activeSessionId) {
       const sess = this.sessions.get(member.activeSessionId);
       if (sess) {
         sess.isFinished = true;
+        sess.updatedAt = Math.max(Date.now(), (sess.updatedAt ?? 0) + 1);
         this.persistSessionAudit(sess);
       }
       this.lastQuestionTimes.delete(member.activeSessionId);
@@ -404,12 +416,15 @@ export class RoomManager {
       throw new Error('Unauthorized: Valid member token is required to reset squad.');
     }
 
+    this.assertCanParticipate(room);
+
     // If the requesting member's own 120s timer has expired, finalize their session immediately
     // while still respecting the +2.5s transit grace window for any other active teammates
     if (member.activeSessionId) {
       const ownSession = this.sessions.get(member.activeSessionId);
       if (ownSession && !ownSession.isFinished && Date.now() >= ownSession.expiresAt) {
         ownSession.isFinished = true;
+        ownSession.updatedAt = Math.max(Date.now(), (ownSession.updatedAt ?? 0) + 1);
       }
     }
     this.checkAndFinalizeIfExpired(room);
@@ -441,6 +456,7 @@ export class RoomManager {
     room.status = room.members.size >= room.targetSize ? 'AWAITING_READY' : 'LOBBY';
     room.startedAt = undefined;
     room.completedAt = undefined;
+    room.scoreAdjustment = 0;
     room.isPaused = false;
     room.pausedAt = undefined;
     room.operatorMode = this.roundOperatorMode ?? room.operatorMode ?? 'add';
@@ -510,6 +526,28 @@ export class RoomManager {
   /**
    * Toggles a member's READY status and triggers the atomic ready gate check.
    */
+  public hasParticipated(room: TeamRoom): boolean {
+    const opening = windowManager.getConfig().opensAt;
+    if (!opening) return false;
+    const rolls = new Set([...room.members.values()].filter(m => !m.isExcused).map(m => m.rollNumber));
+    return this.auditLogs.some(record => {
+      if (record.action !== 'SPRINT_STARTED' || !record.details || typeof record.details !== 'object') return false;
+      if (record.details.windowOpenedAt !== opening) return false;
+      const priorRolls = record.details.rollNumbers;
+      return record.teamCode === room.teamCode || (Array.isArray(priorRolls) && priorRolls.some(r => rolls.has(r)));
+    }) || (room.startedAt != null && room.startedAt >= opening) || [...this.sessions.values()].some(session =>
+      (session.windowOpenedAt === opening || (session.windowOpenedAt == null && session.startedAt >= opening)) &&
+      (session.teamCode === room.teamCode || rolls.has(session.rollNumber))
+    );
+  }
+
+  private assertCanParticipate(room: TeamRoom): void {
+    if (this.hasParticipated(room)) {
+      throw new Error('This team or one of its members has already participated in this contest window. Only one sprint is allowed per window.');
+    }
+    if (room.isDisqualified) throw new Error('Disqualified teams cannot start a sprint.');
+  }
+
   public toggleReady(
     teamCode: string,
     rollNumber: string,
@@ -538,6 +576,8 @@ export class RoomManager {
     if (member.isExcused) {
       throw new Error(`Excused member cannot toggle ready state.`);
     }
+
+    if (isReady) this.assertCanParticipate(room);
 
     member.isReady = isReady;
     member.lastActiveAt = Date.now();
@@ -572,6 +612,7 @@ export class RoomManager {
    * Initiates the synchronized 3-second countdown across all team members' screens.
    */
   private startCountdown(room: TeamRoom): void {
+    this.assertCanParticipate(room);
     room.status = 'COUNTDOWN';
     this.broadcastSnapshot(room);
 
@@ -640,6 +681,8 @@ export class RoomManager {
    * Generates identical-difficulty math papers and parallel individual sessions at T=0.
    */
   private launchSprint(room: TeamRoom): void {
+    this.assertCanParticipate(room);
+    if (!windowManager.isOpen()) throw new Error('Contest window is closed.');
     room.status = 'IN_SPRINT';
     const startedAt = Date.now();
     room.startedAt = startedAt;
@@ -660,6 +703,14 @@ export class RoomManager {
     for (const q of masterQuestions) {
       roomUsedKeys.add(mathEngine.getCanonicalKey(q.a, q.b, q.operator));
     }
+
+    // The single game writer claims the attempt synchronously before exposing any sessions.
+    this.logAudit({
+      id: randomUUID(), timestamp: startedAt, action: 'SPRINT_STARTED',
+      teamCode: room.teamCode, adminId: 'SYSTEM',
+      details: { windowOpenedAt: windowManager.getConfig().opensAt,
+        rollNumbers: [...room.members.values()].filter(m => !m.isExcused).map(m => m.rollNumber) }
+    });
 
     const sessionIds: Record<string, string> = {};
     const questionsByRollNumber: Record<string, QuestionSanitized[]> = {};
@@ -683,6 +734,8 @@ export class RoomManager {
         rollNumber: member.rollNumber,
         memberToken: member.token,
         startedAt,
+        windowOpenedAt: windowManager.getConfig().opensAt,
+        updatedAt: startedAt,
         expiresAt: startedAt + 120_000, // Exactly 120 seconds
         questions: shuffledQuestions,
         submissions: [],
@@ -863,7 +916,8 @@ export class RoomManager {
     const finalAnomalyReason = anomalyReason || evalResult.anomalyReason;
 
     // Update session state
-    session.currentScore += evalResult.pointsAwarded;
+    session.currentScore = Math.max(0, session.currentScore + evalResult.pointsAwarded);
+    session.updatedAt = Math.max(now, (session.updatedAt ?? 0) + 1);
     session.consecutiveStreak = evalResult.newStreak;
     session.completedQuestions += 1;
 
@@ -884,6 +938,7 @@ export class RoomManager {
       pointsAwarded: evalResult.pointsAwarded,
       streakAfter: session.consecutiveStreak,
       scoreAfter: session.currentScore,
+      scoreRevision: session.updatedAt,
       timestamp: now,
       isAnomaly: finalIsAnomaly,
       anomalyReason: finalAnomalyReason
@@ -920,6 +975,8 @@ export class RoomManager {
     // Check if player finished all 15 questions
     if (session.completedQuestions >= session.questions.length) {
       session.isFinished = true;
+      session.updatedAt = Math.max(Date.now(), (session.updatedAt ?? 0) + 1);
+      session.completedAt = now;
       this.persistSessionAudit(session);
       void databaseService.syncSprintSession(session, room.isPaused, room.pausedAt);
       this.checkRoomCompletion(room);
@@ -969,6 +1026,7 @@ export class RoomManager {
         const session = this.sessions.get(member.activeSessionId);
         if (session) {
           session.isFinished = true;
+          session.updatedAt = Math.max(Date.now(), (session.updatedAt ?? 0) + 1);
           this.persistSessionAudit(session);
         }
       }
@@ -999,6 +1057,7 @@ export class RoomManager {
         const session = this.sessions.get(member.activeSessionId);
         if (session) {
           session.isFinished = true;
+          session.updatedAt = Math.max(Date.now(), (session.updatedAt ?? 0) + 1);
           this.persistSessionAudit(session);
         }
       }
@@ -1048,6 +1107,7 @@ export class RoomManager {
       const activeSession = this.sessions.get(member.activeSessionId);
       if (activeSession) {
         activeSession.isFinished = true;
+        activeSession.updatedAt = Math.max(Date.now(), (activeSession.updatedAt ?? 0) + 1);
         this.persistSessionAudit(activeSession);
       }
     }
@@ -1174,8 +1234,9 @@ export class RoomManager {
       for (const member of room.members.values()) {
         if (member.activeSessionId) {
           const session = this.sessions.get(member.activeSessionId);
-          if (session) {
+          if (session && !session.isFinished) {
             session.expiresAt += pausedDuration;
+            session.updatedAt = Math.max(Date.now(), (session.updatedAt ?? 0) + 1);
             void databaseService.syncSprintSession(session, false);
             const remaining = session.expiresAt + 2500 - Date.now();
             if (remaining > maxRemaining) {
@@ -1292,8 +1353,9 @@ export class RoomManager {
         for (const member of room.members.values()) {
           if (member.activeSessionId) {
             const session = this.sessions.get(member.activeSessionId);
-            if (session) {
+            if (session && !session.isFinished) {
               session.expiresAt += pausedDuration;
+              session.updatedAt = Math.max(now, (session.updatedAt ?? 0) + 1);
               void databaseService.syncSprintSession(session, false);
               const remaining = session.expiresAt + 2500 - now;
               if (remaining > maxRemaining) {
@@ -1471,6 +1533,7 @@ export class RoomManager {
         const sess = this.sessions.get(member.activeSessionId);
         if (sess) {
           sess.isFinished = true;
+          sess.updatedAt = Math.max(Date.now(), (sess.updatedAt ?? 0) + 1);
           this.persistSessionAudit(sess);
           this.sessions.delete(member.activeSessionId);
         }
@@ -1632,6 +1695,7 @@ export class RoomManager {
         const sess = this.sessions.get(member.activeSessionId);
         if (sess) {
           sess.currentScore = member.individualScore;
+          sess.updatedAt = Math.max(Date.now(), (sess.updatedAt ?? 0) + 1);
           void databaseService.syncSprintSession(sess, room.isPaused, room.pausedAt);
         }
       }
@@ -1723,7 +1787,8 @@ export class RoomManager {
       windowManager.isOpen(),
       windowManager.getConfig().opensAt,
       windowManager.getConfig().closesAt,
-      mode
+      mode,
+      windowManager.getConfig().updatedAt
     );
     return this.roundOperatorMode;
   }
@@ -1744,11 +1809,16 @@ export class RoomManager {
     const activeCount = activeMembers.length;
     const averageScore = activeCount > 0 ? Number((totalScore / activeCount).toFixed(2)) : 0;
 
-    // Calculate average completion time
+    // Average each active member's solve time, not the slowest member's wall clock.
     let averageTimeSeconds = 0;
     if (room.startedAt) {
-      const referenceEnd = room.completedAt ?? Date.now();
-      averageTimeSeconds = Number(((referenceEnd - room.startedAt) / 1000).toFixed(1));
+      const now = Date.now();
+      const times = activeMembers.map(m => {
+        const session = m.activeSessionId ? this.sessions.get(m.activeSessionId) : undefined;
+        return session ? sessionElapsedSeconds(session, now, room.isPaused ? room.pausedAt : undefined)
+          : Math.min(120, Math.max(0, ((room.completedAt ?? now) - room.startedAt!) / 1000));
+      });
+      averageTimeSeconds = times.length ? Number((times.reduce((a, b) => a + b, 0) / times.length).toFixed(2)) : 0;
     }
 
     const memberBreakdown: MemberLeaderboardSummary[] = Array.from(room.members.values()).map(m => ({
@@ -1800,6 +1870,7 @@ export class RoomManager {
    * Broadcasts complete room snapshot to team members and admin over SSE.
    */
   public broadcastSnapshot(room: TeamRoom): void {
+    room.updatedAt = Math.max(Date.now(), (room.updatedAt ?? 0) + 1);
     const snapshot = this.getSnapshot(room);
     sseHub.broadcast(`team:${room.teamCode}`, 'team_snapshot', snapshot);
     sseHub.broadcast('admin', 'room_snapshot', snapshot);
@@ -1869,7 +1940,9 @@ export class RoomManager {
       allReady,
       contestWindow: {
         isOpen: windowManager.isOpen(),
-        closesAt: windowConfig.closesAt
+        closesAt: windowConfig.closesAt,
+        opensAt: windowConfig.opensAt,
+        hasParticipated: this.hasParticipated(room)
       }
     };
   }
@@ -2147,7 +2220,8 @@ export class RoomManager {
       rooms: serializedRooms,
       sessions: Array.from(this.sessions.entries()),
       rollToTeamMap: Array.from(this.rollToTeamMap.entries()),
-      auditLogs: [...this.auditLogs]
+      auditLogs: [...this.auditLogs],
+      control: windowManager.exportControlState()
     };
   }
 
@@ -2178,8 +2252,10 @@ export class RoomManager {
           ? snapshot.roundOperatorMode
           : null;
       this.auditLogs = Array.isArray(snapshot.auditLogs) ? [...snapshot.auditLogs] : [];
+      if (snapshot.control) windowManager.restoreControlState(snapshot.control);
       this.rollToTeamMap = new Map(Array.isArray(snapshot.rollToTeamMap) ? snapshot.rollToTeamMap : []);
       this.sessions = new Map(Array.isArray(snapshot.sessions) ? snapshot.sessions : []);
+      for (const session of this.sessions.values()) session.currentScore = Math.max(0, session.currentScore || 0);
 
       const now = Date.now();
       for (const [sessionId, sess] of this.sessions.entries()) {
@@ -2194,6 +2270,14 @@ export class RoomManager {
           const membersMap = new Map<string, TeamMember>(
             Array.isArray(rawRoom.members) ? rawRoom.members : []
           );
+          for (const member of membersMap.values()) member.individualScore = Math.max(0, member.individualScore || 0);
+          for (const member of membersMap.values()) {
+            const session = member.activeSessionId ? this.sessions.get(member.activeSessionId) : undefined;
+            if (session) {
+              member.individualScore = session.currentScore;
+              member.completedQuestions = session.completedQuestions;
+            }
+          }
           const room: TeamRoom = {
             ...rawRoom,
             members: membersMap
@@ -2447,4 +2531,8 @@ export class RoomManager {
 export const roomManager = new RoomManager();
 windowManager.onOpen(() => roomManager.onWindowOpened());
 windowManager.onClose(() => roomManager.onWindowClosed());
+onControlStateChanged(() => {
+  const config = windowManager.getConfig();
+  void databaseService.syncTournamentWindow(config.isOpen, config.opensAt, config.closesAt, roomManager.getRoundOperatorModeOverride(), config.updatedAt);
+});
 

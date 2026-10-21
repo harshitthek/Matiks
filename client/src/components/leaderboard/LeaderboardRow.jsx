@@ -1,5 +1,6 @@
 import React from 'react';
 import { RadarDot } from '../common/RadarDot.jsx';
+import { formatLeaderboardScore } from '../../services/leaderboardPresentation.js';
 
 /**
  * Leaderboard Standings Table Row for Ranks 4+.
@@ -24,7 +25,7 @@ export function LeaderboardRow({ entry }) {
       {/* Left Column: Rank + Team Info */}
       <div className="flex items-center gap-3 md:gap-4 min-w-0">
         <span className="font-mono text-sm md:text-base font-extrabold w-8 text-center text-[#aab5ac] shrink-0">
-          #{entry.rank}
+          {entry.isDisqualified || entry.status === 'WAITING' ? '—' : `#${entry.rank}`}
         </span>
 
         <div className="min-w-0">
@@ -51,7 +52,7 @@ export function LeaderboardRow({ entry }) {
           <div className="flex items-center gap-2 mt-0.5">
             <RadarDot status={isRacing ? 'online' : isFinished ? 'butter' : 'offline'} />
             <span className="font-mono text-[10px] text-[#aab5ac] uppercase font-bold tracking-wider">
-              {isRacing ? 'RACING ⚡' : isFinished ? 'FINISHED 🏁' : 'WAITING'}
+              {entry.isDisqualified ? 'DISQUALIFIED' : isRacing ? 'RACING ⚡' : isFinished ? 'FINISHED 🏁' : 'WAITING'}
             </span>
             {entry.averageTimeSeconds > 0 && (
               <>
@@ -89,7 +90,7 @@ export function LeaderboardRow({ entry }) {
         {/* Score Tile */}
         <div className="text-right shrink-0">
           <span className="font-display font-black text-xl md:text-2xl text-[#2ee58f]">
-            {Math.round(entry.teamAverageScore || 0).toLocaleString()}
+            {formatLeaderboardScore(entry.teamAverageScore)}
           </span>
           <span className="font-mono text-[10px] font-bold text-[#aab5ac] uppercase block -mt-1">
             PTS AVG

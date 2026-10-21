@@ -172,7 +172,9 @@ export function exportTournamentCsvHandler(_req: Request, res: Response): void {
     'AverageTimeSeconds',
     'ActiveMembersCount',
     'TotalMembersCount',
-    'MemberBreakdowns'
+    'MemberBreakdowns',
+    'Disqualified',
+    'DisqualificationReason'
   ];
 
   const rows = entries.map(entry => {
@@ -192,7 +194,9 @@ export function exportTournamentCsvHandler(_req: Request, res: Response): void {
       entry.averageTimeSeconds,
       entry.activeMembersCount,
       entry.membersCount,
-      breakdownText
+      breakdownText,
+      Boolean(entry.isDisqualified),
+      entry.disqualificationReason || ''
     ]
       .map(escapeCsvCell)
       .join(',');

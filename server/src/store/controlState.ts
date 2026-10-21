@@ -14,6 +14,16 @@ export interface ControlState {
   streamDelayMs: number;
 }
 
+/** Window identity/revision is independent of later answer and team writes. */
+export function reconcileControlState(disk?: ControlState, database?: ControlState): ControlState | undefined {
+  if (!disk) return database;
+  if (!database) return disk;
+  const a = disk.window, b = database.window;
+  const preferDisk = a.opensAt !== b.opensAt ? a.opensAt > b.opensAt
+    : (a.updatedAt ?? a.opensAt) >= (b.updatedAt ?? b.opensAt);
+  return { ...disk, window: preferDisk ? a : b };
+}
+
 type Listener = () => void;
 const listeners = new Set<Listener>();
 

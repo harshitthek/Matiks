@@ -9,6 +9,7 @@ import { LeaderboardRow } from './LeaderboardRow.jsx';
 import { FlowerSticker } from '../common/FlowerSticker.jsx';
 import { connectLeaderboardStream } from '../../services/sse.js';
 import { soundFx } from '../../services/soundFx.js';
+import { selectPodium, canStartCeremony, formatLeaderboardScore } from '../../services/leaderboardPresentation.js';
 
 /**
  * 4K Auditorium Stage Projector Leaderboard (Showcase Mode).
@@ -94,6 +95,7 @@ export function LeaderboardView({ onReturnToLobby }) {
   }, []);
 
   const startCeremony = useCallback(() => {
+    if (!canStartCeremony(standings, windowStatus)) return;
     if (ceremonyTimerRef.current) clearTimeout(ceremonyTimerRef.current);
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
 
@@ -130,7 +132,7 @@ export function LeaderboardView({ onReturnToLobby }) {
         }, 1400);
       }
     }, 1000);
-  }, [launchConfetti]);
+  }, [launchConfetti, standings, windowStatus]);
 
   const resetCeremony = useCallback(() => {
     if (ceremonyTimerRef.current) clearTimeout(ceremonyTimerRef.current);
@@ -148,22 +150,21 @@ export function LeaderboardView({ onReturnToLobby }) {
     if (!windowStatus) return;
     if (windowStatus.isOpen === true) {
       autoTriggeredRef.current = false;
+      if (previousWindowOpenRef.current === false) resetCeremony();
     } else if (
-      previousWindowOpenRef.current === true &&
-      windowStatus.isOpen === false &&
       !autoTriggeredRef.current &&
-      standings.length > 0
+      canStartCeremony(standings, windowStatus)
     ) {
       autoTriggeredRef.current = true;
       startCeremony();
     }
     previousWindowOpenRef.current = windowStatus.isOpen;
-  }, [windowStatus, standings.length, startCeremony]);
+  }, [windowStatus, standings, startCeremony, resetCeremony]);
 
-  const top1 = standings.find((s) => s.rank === 1);
-  const top2 = standings.find((s) => s.rank === 2);
-  const top3 = standings.find((s) => s.rank === 3);
-  const rest = standings.filter((s) => s.rank > 3);
+  const podium = selectPodium(standings, ceremonyPhase !== 'LIVE');
+  const [top1, top2, top3] = podium;
+  const podiumCodes = new Set(podium.map(entry => entry.teamCode));
+  const rest = standings.filter(entry => !podiumCodes.has(entry.teamCode));
 
   const isCeremonyActive = ceremonyPhase !== 'LIVE';
   const is3rdRevealed = !isCeremonyActive || ['REVEAL_3RD', 'REVEAL_2ND', 'REVEAL_1ST', 'CELEBRATING'].includes(ceremonyPhase);
@@ -239,8 +240,9 @@ export function LeaderboardView({ onReturnToLobby }) {
                   <TactileButton
                     variant="butter"
                     onClick={startCeremony}
+                    disabled={!canStartCeremony(standings, windowStatus)}
                     className="px-3 py-1 text-xs"
-                    title="Launch stage ceremony podium reveal"
+                    title="Available after the window closes and all sprints finish"
                   >
                     🏆 CEREMONY SHOWCASE
                   </TactileButton>
@@ -334,7 +336,7 @@ export function LeaderboardView({ onReturnToLobby }) {
               🎉 2026 MATIKS HACKATHON TOURNAMENT CHAMPION
             </span>
             <span className="font-display font-black text-xl md:text-2xl text-[#e8ece3]">
-              {top1.teamName} #{top1.teamCode} • {Math.round(top1.teamAverageScore || 0).toLocaleString()} PTS
+              {top1.teamName} #{top1.teamCode} • {formatLeaderboardScore(top1.teamAverageScore)} PTS
             </span>
           </div>
         )}

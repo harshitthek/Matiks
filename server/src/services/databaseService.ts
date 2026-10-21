@@ -25,6 +25,7 @@ import type { OperatorMode, Question, MathBucket } from '../types/math.js';
 import { BUCKET_METADATA } from './mathEngine.js';
 import { dbOutbox, type OutboxItem } from '../store/outbox.js';
 import { redisEnabled } from '../store/redis.js';
+import { sessionElapsedSeconds } from './sessionTiming.js';
 
 function toPrismaRoomStatus(
   status: string
@@ -232,7 +233,7 @@ export class DatabaseService {
               captainRoll,
               isDisqualified: Boolean(room.isDisqualified),
               scoreAdjustment: room.scoreAdjustment || 0,
-              updatedAt: new Date()
+              updatedAt: new Date(room.updatedAt ?? Date.now())
             },
             create: {
               teamCode: room.teamCode,
@@ -243,6 +244,7 @@ export class DatabaseService {
               captainRoll,
               isDisqualified: Boolean(room.isDisqualified),
               scoreAdjustment: room.scoreAdjustment || 0,
+              updatedAt: new Date(room.updatedAt ?? Date.now()),
               createdAt: new Date(room.createdAt || Date.now())
             }
           });
@@ -359,10 +361,8 @@ export class DatabaseService {
       if (!this.isConnected || !this.prisma) return;
 
       try {
-        const durationSeconds = Math.round((session.expiresAt - session.startedAt) / 1000) || 120;
-        const averageTimeSeconds = session.submissions.length > 0
-          ? Number((session.submissions.reduce((acc, s) => acc + s.latencyMs, 0) / (session.submissions.length * 1000)).toFixed(2))
-          : 0;
+        const durationSeconds = 120;
+        const averageTimeSeconds = sessionElapsedSeconds(session, Date.now(), isPaused ? pausedAt : undefined);
         const accumulatedPauseMs = Math.max(0, (session.expiresAt - session.startedAt) - 120_000);
 
         // Ensure parent team exists in PostgreSQL so foreign key constraint is satisfied
@@ -389,7 +389,7 @@ export class DatabaseService {
             isTimeOut: session.isFinished && session.completedQuestions < session.questions.length,
             score: session.currentScore || 0,
             averageTimeSeconds,
-            updatedAt: new Date()
+            updatedAt: new Date(session.updatedAt ?? Date.now())
           },
           create: {
             sessionId: session.sessionId,
@@ -406,6 +406,7 @@ export class DatabaseService {
             isTimeOut: session.isFinished && session.completedQuestions < session.questions.length,
             score: session.currentScore || 0,
             averageTimeSeconds,
+            updatedAt: new Date(session.updatedAt ?? Date.now()),
             createdAt: new Date(session.startedAt || Date.now())
           }
         });
@@ -477,6 +478,7 @@ export class DatabaseService {
     checkExisting: boolean
   ): Promise<boolean> {
     const { sessionId, rollNumber, sub } = item;
+    const revision = new Date(sub.scoreRevision ?? sub.timestamp);
     const prisma = this.prisma!;
     const parentSession = await prisma.sprintSession.findUnique({ where: { sessionId } });
     if (!parentSession) return false;
@@ -511,10 +513,11 @@ export class DatabaseService {
         }
       });
 
-      await tx.sprintSession.update({
-        where: { sessionId },
+      await tx.sprintSession.updateMany({
+        where: { sessionId, updatedAt: { lte: revision } },
         data: {
-          score: sub.scoreAfter ?? (sub.pointsAwarded || 0)
+          score: sub.scoreAfter ?? (sub.pointsAwarded || 0),
+          updatedAt: revision
         }
       });
     }, { maxWait: 10000, timeout: 15000 });
@@ -681,35 +684,35 @@ export class DatabaseService {
     isOpen: boolean,
     openedAt?: number,
     closesAt?: number,
-    roundMode?: OperatorMode | null
+    roundMode?: OperatorMode | null,
+    revision?: number
   ): Promise<void> {
     if (!this.isConnected || !this.prisma) return Promise.resolve();
-
-    return this.trackWrite(
-      (async () => {
-        try {
-          await this.prisma!.tournamentWindow.upsert({
-            where: { id: 'GLOBAL' },
-            update: {
-              isOpen,
-              openedAt: openedAt ? BigInt(openedAt) : null,
-              closesAt: closesAt ? BigInt(closesAt) : null,
-              ...(roundMode ? { roundMode } : {}),
-              updatedAt: new Date()
-            },
-            create: {
-              id: 'GLOBAL',
-              isOpen,
-              openedAt: openedAt ? BigInt(openedAt) : null,
-              closesAt: closesAt ? BigInt(closesAt) : null,
-              roundMode: roundMode || 'add'
-            }
-          });
+    const savedAt = new Date(revision ?? Date.now());
+    return this.enqueueTeamOp('SYSTEM:WINDOW', async () => {
+      try {
+        await this.prisma!.tournamentWindow.upsert({
+          where: { id: 'GLOBAL' },
+          update: {
+            isOpen,
+            openedAt: openedAt ? BigInt(openedAt) : null,
+            closesAt: closesAt ? BigInt(closesAt) : null,
+            ...(roundMode ? { roundMode } : {}),
+            updatedAt: savedAt
+          },
+          create: {
+            id: 'GLOBAL',
+            isOpen,
+            openedAt: openedAt ? BigInt(openedAt) : null,
+            closesAt: closesAt ? BigInt(closesAt) : null,
+            roundMode: roundMode || 'add',
+            updatedAt: savedAt
+          }
+        });
         } catch (err) {
           console.error('[DatabaseService] Error syncing tournament window:', err);
         }
-      })()
-    );
+    });
   }
 
   /**
@@ -744,10 +747,6 @@ export class DatabaseService {
         include: { members: true }
       });
 
-      if (teams.length === 0) {
-        return null; // Database is empty, allow file snapshot or fresh state
-      }
-
       const sessions = await this.prisma.sprintSession.findMany({
         include: {
           submissions: {
@@ -761,18 +760,23 @@ export class DatabaseService {
       const windowConfig = await this.prisma.tournamentWindow.findUnique({
         where: { id: 'GLOBAL' }
       });
+      if (teams.length === 0 && auditLogs.length === 0 && !windowConfig) return null;
 
       const now = Date.now();
       const serializedRooms: SerializedTeamRoom[] = teams.map((t) => {
-        const teamSessions = sessions.filter((s) => s.teamCode === t.teamCode);
-        const minStartedAt = teamSessions.length > 0 ? Math.min(...teamSessions.map((s) => Number(s.startedAt))) : undefined;
+        const history = sessions.filter((s) => s.teamCode === t.teamCode);
+        const latestStart = history.length ? Math.max(...history.map(s => Number(s.startedAt))) : undefined;
+        const hasRun = t.status === 'IN_SPRINT' || t.status === 'FINISHED';
+        const teamSessions = hasRun ? history.filter(s => Number(s.startedAt) === latestStart) : [];
+        const minStartedAt = teamSessions.length ? latestStart : undefined;
         const hasActiveSprint = teamSessions.some((s) => !s.isFinished && (s.isPaused || Number(s.expiresAt) > now));
         const allFinished = teamSessions.length > 0 && teamSessions.every((s) => s.isFinished || (!s.isPaused && Number(s.expiresAt) <= now));
         const isRoomPaused = teamSessions.some((s) => s.isPaused && !s.isFinished);
         const pausedAtSession = teamSessions.find((s) => s.isPaused && s.pausedAt);
         const pausedAt = pausedAtSession?.pausedAt ? Number(pausedAtSession.pausedAt) : undefined;
         const completedAt = (t.status === 'FINISHED' || allFinished) && teamSessions.length > 0
-          ? Math.max(...teamSessions.map((s) => Number(s.expiresAt)))
+          ? Math.max(...teamSessions.map(s => s.submissions.length >= 15
+            ? Number(s.submissions.at(-1)!.submittedAt) : Number(s.expiresAt)))
           : undefined;
 
         let roomStatus: RoomStatus = t.status as any;
@@ -792,10 +796,11 @@ export class DatabaseService {
           isDisqualified: t.isDisqualified,
           scoreAdjustment: t.scoreAdjustment,
           createdAt: t.createdAt.getTime(),
+          updatedAt: t.updatedAt.getTime(),
           startedAt: minStartedAt,
           completedAt,
           members: t.members.map((m) => {
-            const memberSessions = sessions
+            const memberSessions = teamSessions
               .filter(
                 (s) =>
                   s.teamCode === t.teamCode &&
@@ -803,13 +808,11 @@ export class DatabaseService {
               )
               .sort((a, b) => Number(b.startedAt) - Number(a.startedAt));
             const memberSession = memberSessions[0];
-            const isMemberFinished = memberSession ? (memberSession.isFinished || (!memberSession.isPaused && Number(memberSession.expiresAt) <= now)) : false;
             const memberSubmissions = memberSession?.submissions || [];
-            const calculatedMemberScore = memberSubmissions.reduce((acc, sub) => acc + (sub.pointsAwarded || 0), 0);
-            const memberScore = memberSession ? Math.max(memberSession.score, calculatedMemberScore) : 0;
-            const completedCount = memberSession
-              ? Math.max(memberSubmissions.length, isMemberFinished ? 15 : 0)
-              : 0;
+            const calculatedMemberScore = memberSubmissions.reduce((acc, sub) => Math.max(0, acc + (sub.pointsAwarded || 0)), 0);
+            // Stored score includes organizer adjustments; taking max(score, submissions) erases penalties.
+            const memberScore = memberSession ? Math.max(0, Number.isFinite(memberSession.score) ? memberSession.score : calculatedMemberScore) : 0;
+            const completedCount = memberSubmissions.length;
             return [
               m.rollNumber,
               {
@@ -824,7 +827,7 @@ export class DatabaseService {
                 lastActiveAt: 0,
                 token: m.memberToken,
                 isClubMember: m.isClubMember,
-                activeSessionId: (hasActiveSprint && memberSession && !isMemberFinished) ? memberSession.sessionId : undefined
+                activeSessionId: memberSession?.sessionId
               }
             ];
           })
@@ -882,9 +885,9 @@ export class DatabaseService {
         const isFinished = s.isFinished || (!s.isPaused && Number(s.expiresAt) <= now) || restoredQuestions.length < 15;
         const lastSub = mappedSubmissions[mappedSubmissions.length - 1];
         const consecutiveStreak = lastSub?.streakAfter ?? 0;
-        const completedQuestions = mappedSubmissions.length > 0 ? mappedSubmissions.length : (isFinished ? 15 : 0);
-        const calculatedSessionScore = mappedSubmissions.reduce((acc, sub) => acc + (sub.pointsAwarded || 0), 0);
-        const currentScore = Math.max(s.score, calculatedSessionScore);
+        const completedQuestions = mappedSubmissions.length;
+        const calculatedSessionScore = mappedSubmissions.reduce((acc, sub) => Math.max(0, acc + (sub.pointsAwarded || 0)), 0);
+        const currentScore = Math.max(0, Number.isFinite(s.score) ? s.score : calculatedSessionScore);
 
         const matchingMember = teams
           .find((t) => t.teamCode === s.teamCode)
@@ -905,6 +908,8 @@ export class DatabaseService {
             consecutiveStreak,
             completedQuestions,
             isFinished,
+            completedAt: completedQuestions >= 15 ? lastSub?.timestamp : undefined,
+            updatedAt: s.updatedAt.getTime(),
             operatorMode: (teams.find((t) => t.teamCode === s.teamCode)?.operatorMode as OperatorMode) || 'add'
           }
         ];
@@ -923,13 +928,25 @@ export class DatabaseService {
 
       const teamTimestamps = teams.map((t) => t.updatedAt.getTime());
       const sessionTimestamps = sessions.map((s) => s.updatedAt.getTime());
-      const maxUpdated = Math.max(0, ...teamTimestamps, ...sessionTimestamps);
+      const maxUpdated = Math.max(0, ...teamTimestamps, ...sessionTimestamps,
+        ...auditLogs.map(record => Number(record.timestamp)), windowConfig?.updatedAt?.getTime() ?? 0);
       const computedSavedAt = maxUpdated > 0 ? maxUpdated : Date.now();
 
       return {
         version: 1,
         savedAt: computedSavedAt,
         roundOperatorMode: (windowConfig?.roundMode as OperatorMode) || null,
+        ...(windowConfig ? { control: {
+          window: {
+            isOpen: windowConfig.isOpen,
+            opensAt: Number(windowConfig.openedAt ?? 0),
+            closesAt: Number(windowConfig.closesAt ?? 0),
+            durationMinutes: Math.max(0, (Number(windowConfig.closesAt ?? 0) - Number(windowConfig.openedAt ?? 0)) / 60_000),
+            updatedAt: windowConfig.updatedAt?.getTime() ?? Number(windowConfig.openedAt ?? 0)
+          },
+          emergencyWalkIn: false,
+          streamDelayMs: process.env.NODE_ENV === 'test' ? 0 : 5000
+        } } : {}),
         rooms: serializedRooms,
         sessions: mappedSessions,
         rollToTeamMap,

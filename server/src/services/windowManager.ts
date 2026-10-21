@@ -15,6 +15,26 @@ export class WindowManager {
   private onOpenCallbacks: Array<() => void> = [];
   private onCloseCallbacks: Array<() => void> = [];
   private emergencyWalkInEnabled: boolean = false;
+  private closingTimer: NodeJS.Timeout | null = null;
+
+  private scheduleClose(): void {
+    if (this.closingTimer) clearTimeout(this.closingTimer);
+    this.closingTimer = null;
+    if (!this.config.isOpen) return;
+    // Node timeouts are limited to a signed 32-bit delay; reschedule long windows in chunks.
+    const delay = Math.max(0, this.config.closesAt - Date.now());
+    this.closingTimer = setTimeout(() => {
+      this.closingTimer = null;
+      if (Date.now() >= this.config.closesAt) this.closeWindow();
+      else this.scheduleClose();
+    }, Math.min(delay, 2_147_483_647));
+    this.closingTimer.unref?.();
+  }
+
+  private saveWindow(): void {
+    this.config.updatedAt = Math.max(Date.now(), (this.config.updatedAt ?? 0) + 1);
+    controlStateChanged();
+  }
 
   constructor(defaultOpen = false, initialMinutes = 120) {
     const now = Date.now();
@@ -23,11 +43,13 @@ export class WindowManager {
       opensAt: defaultOpen ? now : 0,
       closesAt: defaultOpen ? now + initialMinutes * 60 * 1000 : 0,
       durationMinutes: defaultOpen ? initialMinutes : 0,
+      updatedAt: now,
       announcementTicker: defaultOpen
         ? '⚡ Welcome to Matiks Hackathon Math Sprint! Assemble your teams and lock READY.'
         : '⚡ Contest window is currently closed. Awaiting organizer to open competition window.',
       emergencyWalkIn: false
     };
+    this.scheduleClose();
   }
 
   /**
@@ -49,7 +71,7 @@ export class WindowManager {
    */
   public isOpen(): boolean {
     if (!this.config.isOpen) return false;
-    if (Date.now() > this.config.closesAt) {
+    if (Date.now() >= this.config.closesAt) {
       this.closeWindow();
       return false;
     }
@@ -77,7 +99,7 @@ export class WindowManager {
     this.emergencyWalkInEnabled = enabled;
     this.config.emergencyWalkIn = enabled;
     this.broadcastStatus();
-    controlStateChanged();
+    this.saveWindow();
     return this.emergencyWalkInEnabled;
   }
 
@@ -85,23 +107,28 @@ export class WindowManager {
    * Opens the competition window for a given duration in minutes.
    */
   public openWindow(durationMinutes = 120, ticker?: string): ContestWindowConfig {
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) throw new Error('Window duration must be a positive finite number.');
     const now = Date.now();
+    const wasOpen = this.isOpen();
+    const opening = wasOpen ? this.config.opensAt : Math.max(now, this.config.opensAt + 1);
     const defaultOpenTicker = '⚡ Welcome to Matiks Hackathon Math Sprint! Assemble your teams and lock READY.';
     const currentTicker = this.config.announcementTicker || '';
     const effectiveTicker = ticker ?? (currentTicker.includes('closed') ? defaultOpenTicker : (this.config.announcementTicker ?? defaultOpenTicker));
 
     this.config = {
       isOpen: true,
-      opensAt: now,
+      opensAt: opening,
       closesAt: now + durationMinutes * 60 * 1000,
       durationMinutes,
+      updatedAt: this.config.updatedAt,
       announcementTicker: effectiveTicker,
       emergencyWalkIn: this.emergencyWalkInEnabled
     };
 
     leaderboardManager.setPostCloseLive(false);
+    this.scheduleClose();
     this.broadcastStatus();
-    controlStateChanged();
+    this.saveWindow();
     for (const cb of this.onOpenCallbacks) {
       try {
         cb();
@@ -116,6 +143,8 @@ export class WindowManager {
    * Closes the competition window immediately.
    */
   public closeWindow(): ContestWindowConfig {
+    if (this.closingTimer) clearTimeout(this.closingTimer);
+    this.closingTimer = null;
     const wasOpen = this.config.isOpen;
     this.config.isOpen = false;
     const defaultClosedTicker = '⚡ Contest window is currently closed. Awaiting organizer to open competition window.';
@@ -123,9 +152,10 @@ export class WindowManager {
     if (!currentTicker || currentTicker.includes('Welcome') || currentTicker.includes('READY')) {
       this.config.announcementTicker = defaultClosedTicker;
     }
-    this.broadcastStatus();
-    controlStateChanged();
+    // A delayed snapshot must not trigger a ceremony before the current active teams arrive.
     leaderboardManager.setPostCloseLive(true);
+    this.broadcastStatus();
+    this.saveWindow();
     if (wasOpen) {
       for (const cb of this.onCloseCallbacks) {
         try {
@@ -144,7 +174,7 @@ export class WindowManager {
   public setTicker(ticker: string): void {
     this.config.announcementTicker = ticker;
     this.broadcastStatus();
-    controlStateChanged();
+    this.saveWindow();
   }
 
   /**
@@ -172,6 +202,7 @@ export class WindowManager {
       opensAt: saved.opensAt,
       closesAt: saved.closesAt,
       durationMinutes: saved.durationMinutes,
+      updatedAt: saved.updatedAt ?? saved.opensAt,
       announcementTicker: saved.announcementTicker ?? this.config.announcementTicker,
       emergencyWalkIn: this.emergencyWalkInEnabled
     };
@@ -180,6 +211,7 @@ export class WindowManager {
     if (typeof state.streamDelayMs === 'number') {
       leaderboardManager.setStreamDelayMs(state.streamDelayMs);
     }
+    this.scheduleClose();
     this.broadcastStatus();
   }
 

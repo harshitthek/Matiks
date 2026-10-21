@@ -78,7 +78,6 @@ export function ArenaView({
   onSprintFinishedChange,
   onStateSync,
   onReturnToLobby,
-  onPlayAgain,
   onViewLeaderboard
 }) {
   const [currentIndex, setCurrentIndex] = useState(initialQuestionIndex || 0);
@@ -717,7 +716,6 @@ export function ArenaView({
         teamName={teamCode ? `#${teamCode}` : 'Squad'}
         isTimeOut={isTimeOut}
         onReturnToLobby={onReturnToLobby}
-        onPlayAgain={onPlayAgain}
         onViewLeaderboard={onViewLeaderboard}
       />
     );

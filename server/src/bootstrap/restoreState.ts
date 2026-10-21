@@ -18,6 +18,7 @@ import { windowManager } from '../services/windowManager.js';
 import { metrics } from '../services/metrics.js';
 import { gameStateMirror, LeaseHeldError } from '../store/gameStateMirror.js';
 import { pingRedis, redisEnabled, RedisUnavailableError } from '../store/redis.js';
+import { reconcileControlState } from '../store/controlState.js';
 
 export type RestoreSource = 'redis' | 'database' | 'disk' | 'none';
 
@@ -60,68 +61,47 @@ async function restoreFromDiskAndDatabase(): Promise<RestoreSource> {
         .filter((code): code is string => typeof code === 'string' && code.length > 0)
     );
 
-    if (dbState && dbState.rooms.length > 0) {
+    if (dbState && (dbState.rooms.length > 0 || dbState.auditLogs.length > 0 || dbState.control)) {
+      const control = reconcileControlState(diskState?.control, dbState.control);
+      const audits = new Map([...(diskState?.auditLogs ?? []), ...dbState.auditLogs].map(record => [record.id, record]));
+      dbState.auditLogs = [...audits.values()].sort((a, b) => a.timestamp - b.timestamp);
+      dbState.control = control;
+      if (diskState) {
+        const sessions = new Map(dbState.sessions);
+        for (const [id, diskSession] of diskState.sessions) {
+          const databaseSession = sessions.get(id);
+          if (!databaseSession) { sessions.set(id, diskSession); continue; }
+          const revision = (s: typeof diskSession) => s.updatedAt ?? s.submissions.at(-1)?.timestamp ?? s.startedAt;
+          const diskIsNewer = diskSession.submissions.length > databaseSession.submissions.length ||
+            (diskSession.submissions.length === databaseSession.submissions.length && revision(diskSession) > revision(databaseSession));
+          const preferred = diskIsNewer ? diskSession : databaseSession;
+          sessions.set(id, { ...preferred, questions: diskSession.questions.length > preferred.questions.length ? diskSession.questions : preferred.questions });
+        }
+        dbState.sessions = [...sessions];
+        diskState.sessions = dbState.sessions;
+        const rooms = new Map(dbState.rooms.map(room => [room.teamCode, room]));
+        for (const diskRoom of diskState.rooms) {
+          const databaseRoom = rooms.get(diskRoom.teamCode);
+          if (!databaseRoom && dissolvedTeamCodes.has(diskRoom.teamCode)) continue;
+          if (!databaseRoom || (diskRoom.updatedAt ?? diskState.savedAt) > (databaseRoom.updatedAt ?? dbState.savedAt)) {
+            rooms.set(diskRoom.teamCode, diskRoom);
+          }
+        }
+        dbState.rooms = [...rooms.values()];
+        diskState.rooms = dbState.rooms;
+        dbState.rollToTeamMap = dbState.rooms.flatMap(room => room.members.map(([roll]) => [roll, room.teamCode] as [string, string]));
+        diskState.rollToTeamMap = dbState.rollToTeamMap;
+      }
       if (diskState && diskState.savedAt >= dbState.savedAt) {
         const filteredDiskState = withoutDissolved(diskState, dissolvedTeamCodes);
+        filteredDiskState.auditLogs = dbState.auditLogs;
+        filteredDiskState.control = control;
         roomManager.restoreStateSnapshot(filteredDiskState);
         syncRestoredStateToDb(isDbConnected);
         console.log(`💾 Restored tournament state from disk snapshot (${filteredDiskState.rooms.length} teams)`);
         return 'disk';
       }
 
-      if (diskState) {
-        const diskRoomMap = new Map(diskState.rooms.map((r) => [r.teamCode, r]));
-
-        // Merge sessions: keep newer DB session submissions while preserving full question papers from disk
-        for (const [sessId, diskSess] of diskState.sessions) {
-          const idx = dbState.sessions.findIndex(([id]) => id === sessId);
-          if (idx >= 0) {
-            const [, dbSess] = dbState.sessions[idx]!;
-            const preferred =
-              dbSess.submissions.length >= diskSess.submissions.length
-                ? {
-                    ...dbSess,
-                    questions:
-                      diskSess.questions && diskSess.questions.length >= dbSess.questions.length
-                        ? diskSess.questions
-                        : dbSess.questions
-                  }
-                : diskSess;
-            dbState.sessions[idx] = [sessId, preferred];
-          } else {
-            dbState.sessions.push([sessId, diskSess]);
-          }
-        }
-        const mergedSessionSet = new Set(dbState.sessions.map(([id]) => id));
-
-        // Reconcile disk-only rooms: avoid dropping rooms whose DB write failed, but exclude deliberately dissolved rooms
-        const existingCodes = new Set(dbState.rooms.map((r) => r.teamCode));
-
-        for (const diskRoom of diskState.rooms) {
-          if (!existingCodes.has(diskRoom.teamCode) && !dissolvedTeamCodes.has(diskRoom.teamCode)) {
-            dbState.rooms.push(diskRoom);
-            existingCodes.add(diskRoom.teamCode);
-          }
-        }
-
-        // Preserve newer DB room state while filling in-flight activeSessionId from disk
-        dbState.rooms = dbState.rooms.map((dbRoom) => {
-          const diskRoom = diskRoomMap.get(dbRoom.teamCode);
-          if (diskRoom) {
-            const diskMembers = new Map(diskRoom.members);
-            if (dbRoom.status === 'IN_SPRINT' || diskRoom.status === 'IN_SPRINT') {
-              for (const [roll, dbMember] of dbRoom.members) {
-                const diskMember = diskMembers.get(roll);
-                const hasValidDbSession = Boolean(dbMember.activeSessionId && mergedSessionSet.has(dbMember.activeSessionId));
-                if (!hasValidDbSession && diskMember?.activeSessionId && mergedSessionSet.has(diskMember.activeSessionId)) {
-                  dbMember.activeSessionId = diskMember.activeSessionId;
-                }
-              }
-            }
-          }
-          return dbRoom;
-        });
-      }
       roomManager.restoreStateSnapshot(dbState);
       syncRestoredStateToDb(isDbConnected);
       console.log(`🐘 Restored tournament state from PostgreSQL (${dbState.rooms.length} teams)`);

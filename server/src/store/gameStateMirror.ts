@@ -388,7 +388,8 @@ export class GameStateMirror {
         rooms,
         sessions,
         rollToTeamMap: rolls,
-        auditLogs
+        auditLogs,
+        control: meta.control
       },
       control: meta.control ?? null
     };

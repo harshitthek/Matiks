@@ -1,6 +1,7 @@
 import React from 'react';
 import { WashiTape } from '../common/WashiTape.jsx';
 import { RadarDot } from '../common/RadarDot.jsx';
+import { formatLeaderboardScore } from '../../services/leaderboardPresentation.js';
 
 /**
  * 4K Auditorium Stage Podium Card for Top 3 Ranks.
@@ -10,7 +11,7 @@ import { RadarDot } from '../common/RadarDot.jsx';
  * 3rd: Bronze/Amber (#f5a623)
  */
 export function PodiumCard({ entry, position = 1, isRevealed = true }) {
-  if (!entry) return null;
+  if (!entry || entry.isDisqualified || entry.status === 'WAITING' || entry.activeMembersCount <= 0) return null;
 
   const isFirst = position === 1;
   const isSecond = position === 2;
@@ -136,7 +137,7 @@ export function PodiumCard({ entry, position = 1, isRevealed = true }) {
           TEAM AVERAGE SCORE
         </span>
         <div className={`font-display font-black text-4xl md:text-5xl ${theme.scoreColor} tracking-tight`}>
-          {Math.round(entry.teamAverageScore || 0).toLocaleString()}
+          {formatLeaderboardScore(entry.teamAverageScore)}
           <span className="font-mono text-xs font-bold text-[#aab5ac] ml-1">pts</span>
         </div>
         {entry.averageTimeSeconds > 0 && (

@@ -30,7 +30,7 @@ function fakePrisma() {
         submissions.push(data);
       }
     },
-    sprintSession: { update: async () => undefined }
+    sprintSession: { updateMany: async () => ({ count: 1 }) }
   };
 
   const prisma = {

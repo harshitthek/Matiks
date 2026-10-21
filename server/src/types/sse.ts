@@ -39,6 +39,7 @@ export interface TeamRoom {
   isPaused: boolean;
   pausedAt?: number;
   createdAt: number;
+  updatedAt?: number;
   startedAt?: number;
   completedAt?: number;
   masterPaperId?: string;
@@ -65,6 +66,7 @@ export interface SubmissionRecord {
   pointsAwarded: number;
   streakAfter?: number;
   scoreAfter?: number;
+  scoreRevision?: number;
   timestamp: number;
   isAnomaly: boolean;
   anomalyReason?: string;
@@ -113,6 +115,9 @@ export interface SprintSession {
   consecutiveStreak: number;
   completedQuestions: number;
   isFinished: boolean;
+  completedAt?: number;
+  windowOpenedAt?: number;
+  updatedAt?: number;
   operatorMode?: OperatorMode;
 }
 
@@ -144,12 +149,14 @@ export interface ContestWindowConfig {
   opensAt: number;
   closesAt: number;
   durationMinutes: number;
+  updatedAt?: number;
   announcementTicker?: string;
   operatorMode?: OperatorMode;
   emergencyWalkIn?: boolean;
 }
 
 export type AuditAction =
+  | 'SPRINT_STARTED'
   | 'EXCUSE_MEMBER'
   | 'ROOM_PAUSE'
   | 'ROOM_RESUME'
@@ -212,6 +219,8 @@ export interface TeamSnapshotEvent {
   contestWindow: {
     isOpen: boolean;
     closesAt: number;
+    opensAt?: number;
+    hasParticipated?: boolean;
   };
 }
 

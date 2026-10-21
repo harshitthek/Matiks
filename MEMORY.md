@@ -221,3 +221,12 @@
 | **Phase 12** | SSE Monotonic Replay Buffer & HTTP/2 Reverse Proxy | **Completed** | `Last-Event-ID` circular replay, epoch desync recovery, turnkey Caddy & Nginx configs. |
 | **Phase 13** | Prometheus Metrics & Structured Request Logging | **Completed** | Low-cardinality `/metrics`, timing-safe auth, monotonic request IDs, NDJSON logging. 101/101 total tests passing. |
 
+
+
+### ADR-23: One Team Attempt Per Window and Authoritative Ranking Recovery
+
+* **Decision:** A team and its participating rolls consume one attempt when their sprint launches. Reconnecting/resuming is permitted. Cancelled countdowns do not consume an attempt. Reset cannot erase a current-window attempt; opening a new window permits the next run, while extending an open window retains its identity. Immutable `SPRINT_STARTED` audit records preserve claims even after room dissolution. Organizer controls also accompany disk snapshots.
+* **Scores:** Wrong-answer and organizer deductions floor each member's score at zero. Stored adjusted scores are authoritative; recovery must not choose the maximum of score and raw submission points. Progress counts actual submissions, not a fabricated 15 for timed-out members.
+* **Ranking:** Average non-excused member score descending, average active solve completion time ascending, team name, then team code. Pause duration and network grace do not enter completion time. Incomplete timed-out runs count as 120 seconds. Voluntary departures keep their scored slot; only explicit organizer excusal changes the divisor.
+* **Recovery:** Compare window, room, and session revisions independently rather than using unrelated global database writes as evidence of freshness. Merge attempt audits from both sources. The existing SQL updatedAt columns carry operation revisions; stale submission retries can persist their answer without overwriting a newer adjusted score. No schema migration is needed.
+* **Presentation:** Preserve fractional scores, exclude ineligible teams from medals, and wait for active sprints to settle before a ceremony. Flush current standings before broadcasting a window close.

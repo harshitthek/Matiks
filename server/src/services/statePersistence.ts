@@ -8,11 +8,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { roomManager, type PersistedTournamentState } from './roomManager.js';
+import { onControlStateChanged } from '../store/controlState.js';
 
 export class StatePersistenceService {
   private filePath: string;
   private saveTimer: NodeJS.Timeout | null = null;
   private enabled = false;
+  private unsubscribeControl?: () => void;
 
   constructor(customFilePath?: string) {
     this.filePath =
@@ -34,6 +36,10 @@ export class StatePersistenceService {
    */
   public enableAutoSave(debounceMs = 250): void {
     this.enabled = true;
+    this.unsubscribeControl?.();
+    this.unsubscribeControl = onControlStateChanged(() => {
+      if (this.enabled) this.scheduleSave(debounceMs);
+    });
     roomManager.setPersistenceHook(() => {
       if (this.enabled) {
         this.scheduleSave(debounceMs);
@@ -46,6 +52,8 @@ export class StatePersistenceService {
    */
   public disableAutoSave(): void {
     this.enabled = false;
+    this.unsubscribeControl?.();
+    this.unsubscribeControl = undefined;
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
