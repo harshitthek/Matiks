@@ -153,14 +153,38 @@ export async function getTeamSnapshot(teamCode, token) {
 }
 
 /**
+ * How an answer is re-sent when the network lets it down. Exported so tests can shorten the waits.
+ * An attempt that gets no reply within `timeoutMs` is abandoned and tried again after the matching `backoffMs`.
+ */
+export const submitRetryPolicy = { attempts: 3, timeoutMs: 4000, backoffMs: [250, 600] };
+
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+
+/** A network failure, a timeout, or a gateway error: the answer may or may not have reached the server. Anything else is a real answer. */
+function isTransientFailure(err) {
+  if (!err) return false;
+  if (err.name === 'AbortError') return true;
+  if (err.status === undefined) return err.name === 'TypeError';
+  return RETRYABLE_STATUSES.has(err.status);
+}
+
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
  * Submits an answer to the sprint session.
+ *
+ * It is safe to send the same answer again: the server answers a question it has already answered from the recorded result (`replayed: true`)
+ * and never counts it twice. So when the reply is lost on a weak connection, the identical request is simply sent again, and the player
+ * does not end up stuck on a question the server has already moved past. Only network failures, timeouts and gateway errors are retried; a
+ * refusal from the server (a 400, for instance) is final.
  */
 export async function submitAnswer(sessionId, questionIndex, answer, clientDeltaMs, clientTimestamp, memberToken) {
   const headers = { 'Content-Type': 'application/json' };
   if (memberToken) {
     headers['x-member-token'] = memberToken;
   }
-  return request('/sprint/submit', {
+  // The body is built once, so every attempt carries the same timing and the server sees one answer, however many times it arrives.
+  const options = {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -171,7 +195,24 @@ export async function submitAnswer(sessionId, questionIndex, answer, clientDelta
       clientTimestamp,
       token: memberToken
     })
-  });
+  };
+
+  const { attempts, timeoutMs, backoffMs } = submitRetryPolicy;
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await request('/sprint/submit', { ...options, signal: controller.signal });
+    } catch (err) {
+      lastError = err;
+      if (!isTransientFailure(err) || attempt === attempts - 1) throw err;
+      await pause(backoffMs[Math.min(attempt, backoffMs.length - 1)]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastError;
 }
 
 /**

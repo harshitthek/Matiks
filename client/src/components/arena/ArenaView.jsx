@@ -496,6 +496,27 @@ export function ArenaView({
       } catch (err) {
         pendingInputBufferRef.current = [];
         console.warn('[Arena] Answer submission failed:', err);
+
+        // The server is on an earlier question than this player (it came back from a restart a moment behind). Step back to the question
+        // it is on instead of showing an error: the next answer is scored from there, and the score on screen is corrected by its reply.
+        const expectedIndex = err?.data?.expectedIndex;
+        if (
+          err?.data?.errorCode === 'OUT_OF_SYNC' &&
+          Number.isInteger(expectedIndex) &&
+          expectedIndex >= 0 &&
+          expectedIndex < questions.length &&
+          !isFinishedRef.current
+        ) {
+          currentInputRef.current = '';
+          setCurrentInput('');
+          currentIndexRef.current = expectedIndex;
+          setCurrentIndex(expectedIndex);
+          questionStartTimeRef.current = performance.now();
+          setSubmissions((prev) => prev.filter((s) => s.questionIndex < expectedIndex));
+          setSubmissionError(null);
+          return;
+        }
+
         const isSprintDone = Boolean(
           err?.data?.isFinished ||
             err?.data?.errorCode === 'SPRINT_FINISHED' ||

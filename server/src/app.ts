@@ -5,6 +5,8 @@
  * body parsers, and admin authorization middleware.
  */
 
+import { gameStateMirror } from './store/gameStateMirror.js';
+import { redisEnabled, redisGuard } from './store/redis.js';
 import express from 'express';
 import cors from 'cors';
 
@@ -83,55 +85,38 @@ import { requireAdminAuth, requireMetricsAuth } from './middleware/auth.js';
 import { requestLoggingMiddleware } from './config/logger.js';
 import { metrics, metricsMiddleware } from './services/metrics.js';
 import { isAllowedClientOrigin } from './config/corsOrigins.js';
+import { LIMITS, scaled } from './config/rateLimits.js';
+import { allOf, byBodyField, byIp, byParam, createRateLimiter } from './middleware/rateLimit.js';
 
 
 const PRIVATE_LAN_ORIGIN_REGEX =
   /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/;
 
-function createRateLimiter(windowMs: number, maxRequests: number): express.RequestHandler {
-  const ipRequests = new Map<string, { count: number; resetAt: number }>();
-  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (process.env.NODE_ENV === 'test') {
-      return next();
-    }
-    const ip = req.ip || req.socket.remoteAddress || 'unknown';
-    const now = Date.now();
-
-    if (ipRequests.size > 500) {
-      for (const [key, val] of ipRequests.entries()) {
-        if (now > val.resetAt) {
-          ipRequests.delete(key);
-        }
-      }
-    }
-
-    const entry = ipRequests.get(ip);
-    if (!entry || now > entry.resetAt) {
-      ipRequests.set(ip, { count: 1, resetAt: now + windowMs });
-      return next();
-    }
-    if (entry.count >= maxRequests) {
-      res.status(429).json({
-        error: 'RATE_LIMIT_EXCEEDED',
-        message: 'Too many requests. Please try again later.'
-      });
-      return;
-    }
-    entry.count++;
-    next();
-  };
-}
-
 export function createApp(): express.Application {
   const app = express();
 
-  // Rate limiters for sensitive unauthenticated endpoints
-  const configLimiter = createRateLimiter(60 * 1000, 60);
-  const adminLoginLimiter = createRateLimiter(60 * 1000, 15);
-  const loginLimiter = createRateLimiter(60 * 1000, 30);
-  const oidcExchangeLimiter = createRateLimiter(60 * 1000, 30);
-  const membershipLimiter = createRateLimiter(60 * 1000, 60);
-  const metricsLimiter = createRateLimiter(60 * 1000, 120);
+  // Rate limiters for the unauthenticated endpoints (see config/rateLimits.ts for why address limits are loose and identity limits are not)
+  const ipLimiter = (name: string, limit: { windowMs: number; max: number }) =>
+    createRateLimiter({ name, windowMs: limit.windowMs, max: scaled(limit.max), key: byIp });
+  const identityLimiter = (name: string, limit: { windowMs: number; max: number }, key: (req: express.Request) => string | null) =>
+    createRateLimiter({ name, windowMs: limit.windowMs, max: scaled(limit.max), key });
+
+  const configLimiter = ipLimiter('config', LIMITS.config.ip);
+  const adminLoginLimiter = ipLimiter('admin_login', LIMITS.adminLogin.ip);
+  const loginLimiter = allOf(
+    ipLimiter('login_ip', LIMITS.login.ip),
+    identityLimiter('login_roll', LIMITS.login.identity, byBodyField('rollNumber'))
+  );
+  const checkinLimiter = allOf(
+    ipLimiter('checkin_ip', LIMITS.login.ip),
+    identityLimiter('checkin_email', LIMITS.login.identity, byBodyField('email'))
+  );
+  const oidcExchangeLimiter = ipLimiter('oidc_exchange', LIMITS.oidcExchange.ip);
+  const membershipLimiter = allOf(
+    ipLimiter('membership_ip', LIMITS.membership.ip),
+    identityLimiter('membership_id', LIMITS.membership.identity, byParam('identifier'))
+  );
+  const metricsLimiter = ipLimiter('metrics', LIMITS.metrics.ip);
 
   // Trust reverse proxy (Nginx, Cloudflare, ALB) for accurate client IP and protocol detection
   app.set('trust proxy', 1);
@@ -167,7 +152,18 @@ export function createApp(): express.Application {
 
   // Health check
   app.get('/api/health', (_req, res) => {
-    res.status(200).json({ status: 'ok', serverTime: Date.now() });
+    const wantsRedis = process.env.STATE_BACKEND === 'upstash' && redisEnabled();
+    const mirror = gameStateMirror.status;
+    res.status(200).json({
+      status: 'ok',
+      serverTime: Date.now(),
+      state: {
+        backend: wantsRedis ? 'upstash' : 'memory',
+        redis: !wantsRedis ? 'off' : redisGuard.isHealthy() ? 'ok' : 'down',
+        saving: wantsRedis && mirror.enabled && mirror.holdsLease && mirror.lastError === '',
+        lastSavedAt: wantsRedis ? mirror.lastFlushAt : 0
+      }
+    });
   });
 
   // Prometheus Metrics exposition
@@ -192,7 +188,7 @@ export function createApp(): express.Application {
 
   // Inbound Team REST endpoints
   app.get('/api/teams/roster', getPublicRosterHandler);
-  app.post('/api/team/checkin-by-email', loginLimiter, checkinByEmailHandler);
+  app.post('/api/team/checkin-by-email', checkinLimiter, checkinByEmailHandler);
   app.post('/api/team/create', createTeamHandler);
   app.post('/api/team/join', joinTeamHandler);
   app.post('/api/team/ready', readyToggleHandler);

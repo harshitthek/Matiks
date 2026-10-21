@@ -51,6 +51,20 @@ export interface PersistedTournamentState {
   auditLogs: AuditRecord[];
 }
 
+/**
+ * A submission for a question the server has not reached. `expectedIndex` is the question the server is on, so the client can go back to it.
+ * The message is the one this error has always had.
+ */
+export class OutOfSyncError extends Error {
+  constructor(
+    public readonly expectedIndex: number,
+    public readonly receivedIndex: number
+  ) {
+    super(`Invalid question index. Expected question ${expectedIndex}, got ${receivedIndex}.`);
+    this.name = 'OutOfSyncError';
+  }
+}
+
 export class RoomManager {
   private rooms = new Map<string, TeamRoom>();
   private sessions = new Map<string, SprintSession>();
@@ -743,6 +757,28 @@ export class RoomManager {
       throw new Error(`Team room ${session.teamCode} not found.`);
     }
 
+    // A question that has already been answered: the first answer stands, and asking again just returns what was recorded. A phone on a weak
+    // connection can lose the reply to an answer that did count, and the player (or the client) then sends it again. Answering from the
+    // record keeps the screen and the server in step instead of leaving the player stuck on a question the server has already moved past.
+    // This comes before the pause, finish and deadline checks because it changes nothing: no score, no timing, no event, no write.
+    if (Number.isInteger(questionIndex) && questionIndex >= 0 && questionIndex < session.completedQuestions) {
+      const recorded = session.submissions.find((s) => s.questionIndex === questionIndex);
+      if (recorded) {
+        metrics.sprintSubmissionReplaysTotal.inc();
+        return {
+          isCorrect: recorded.isCorrect,
+          pointsAwarded: recorded.pointsAwarded,
+          currentScore: recorded.scoreAfter,
+          consecutiveStreak: recorded.streakAfter,
+          completedQuestions: questionIndex + 1,
+          isFinished: questionIndex + 1 >= session.questions.length,
+          isAnomaly: recorded.isAnomaly,
+          replayed: true,
+          answerMismatch: recorded.submittedAnswer !== submittedAnswer
+        };
+      }
+    }
+
     if (room.isPaused) {
       throw new Error(`Session is temporarily paused by hackathon administrators.`);
     }
@@ -760,9 +796,9 @@ export class RoomManager {
 
     // Sequential progression check: player must answer in order
     if (questionIndex !== session.completedQuestions) {
-      throw new Error(
-        `Invalid question index. Expected question ${session.completedQuestions}, got ${questionIndex}.`
-      );
+      // Only ever reached for a question that has not been reached yet (an answered one was replayed above). That happens when the server has
+      // fewer answers recorded than the player has sent: it came back from a restart a moment behind. The error says where the server is.
+      throw new OutOfSyncError(session.completedQuestions, questionIndex);
     }
 
     if (session.questions.length < 15) {

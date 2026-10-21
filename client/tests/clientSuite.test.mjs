@@ -143,6 +143,92 @@ describe('Matiks Client — Frontend Services & Realtime Stream Test Suite', () 
       );
     });
 
+    describe('submitAnswer — safe to send again', () => {
+      let savedPolicy;
+      beforeEach(() => {
+        savedPolicy = { ...api.submitRetryPolicy, backoffMs: [...api.submitRetryPolicy.backoffMs] };
+        api.submitRetryPolicy.backoffMs = [1, 1];
+        api.submitRetryPolicy.timeoutMs = 50;
+      });
+      afterEach(() => {
+        Object.assign(api.submitRetryPolicy, savedPolicy);
+      });
+
+      const okReply = (body) => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        json: async () => body
+      });
+
+      test('sends the same answer again after a network failure, with an identical body, and returns the reply', async () => {
+        const bodies = [];
+        let calls = 0;
+        globalThis.fetch = async (url, options = {}) => {
+          calls += 1;
+          bodies.push(options.body);
+          if (calls < 3) throw new TypeError('Failed to fetch');
+          return okReply({ success: true, isCorrect: true, replayed: true });
+        };
+
+        const res = await api.submitAnswer('sess_1', 4, 91, 1200, 1700000000000, 'tok_1');
+        assert.equal(calls, 3);
+        assert.equal(res.replayed, true);
+        assert.ok(bodies.every((b) => b === bodies[0]), 'every attempt must carry the same body, so the server sees one answer');
+      });
+
+      test('abandons an attempt that gets no reply in time and tries again', async () => {
+        let calls = 0;
+        globalThis.fetch = (url, options = {}) => {
+          calls += 1;
+          if (calls === 1) {
+            return new Promise((resolve, reject) => {
+              options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+            });
+          }
+          return Promise.resolve(okReply({ success: true, isCorrect: false }));
+        };
+
+        const res = await api.submitAnswer('sess_1', 0, 12, 900, Date.now(), 'tok_1');
+        assert.equal(calls, 2);
+        assert.equal(res.isCorrect, false);
+      });
+
+      test('retries a gateway error, but gives up after the last attempt with that error', async () => {
+        let calls = 0;
+        globalThis.fetch = async () => {
+          calls += 1;
+          return { ok: false, status: 503, statusText: 'Service Unavailable', headers: { get: () => 'text/plain' }, text: async () => 'busy' };
+        };
+
+        await assert.rejects(
+          () => api.submitAnswer('sess_1', 2, 33, 800, Date.now(), 'tok_1'),
+          (err) => err.status === 503 && err.message === 'busy'
+        );
+        assert.equal(calls, api.submitRetryPolicy.attempts);
+      });
+
+      test('never retries a refusal from the server', async () => {
+        let calls = 0;
+        globalThis.fetch = async () => {
+          calls += 1;
+          return {
+            ok: false,
+            status: 400,
+            statusText: 'Bad Request',
+            headers: { get: () => 'application/json' },
+            json: async () => ({ error: '120-second sprint deadline expired.', errorCode: 'SPRINT_FINISHED', isFinished: true })
+          };
+        };
+
+        await assert.rejects(
+          () => api.submitAnswer('sess_1', 14, 50, 700, Date.now(), 'tok_1'),
+          (err) => err.status === 400 && err.data.errorCode === 'SPRINT_FINISHED'
+        );
+        assert.equal(calls, 1);
+      });
+    });
+
     test('formats Admin v2.0 governance & emergency endpoints with proper tokens and bodies', async () => {
       capturedCalls = [];
       globalThis.fetch = async (url, options = {}) => {

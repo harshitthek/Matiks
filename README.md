@@ -104,7 +104,7 @@ Instead of fragile WebSockets, this platform uses unidirectional SSE + REST:
   * `POST /api/team/create` & `POST /api/team/join` — Create a squad or join an existing team room.
   * `POST /api/team/ready` — Toggle member ready state.
   * `POST /api/team/leave` & `POST /api/team/reset` — Leave a squad (with automatic captain succession) or reset a finished room for a rematch.
-  * `POST /api/sprint/submit` — Submit answer with `clientDeltaMs` and timestamp.
+  * `POST /api/sprint/submit` — Submit answer with `clientDeltaMs` and timestamp. Safe to send again: an already-answered question returns its recorded result (`replayed: true`) and is never scored twice.
   * `POST /api/admin/teams/:teamCode/excuse-member` — Organizer recovery for hardware failure.
   * `POST /api/admin/stream-ticket` — Exchange admin credentials for a single-use 60s SSE stream ticket.
   * `GET /api/admin/export/csv` & `GET /api/admin/export/json` — Download formula-safe CSV standings and full JSON tournament reports.
@@ -136,13 +136,18 @@ npm --prefix server run dev
 npm --prefix client install
 npm --prefix client run dev
 
-# 3. Run Full Verification Suite (94 Server Tests + 7 Client Tests = 101 Tests)
+# 3. Run Full Verification Suite (166 Server Tests + 13 Client Tests = 179 Tests)
 npm --prefix server test
 npm --prefix client test
 npm --prefix client run lint
 
 # 4. View Production Prometheus Metrics
 curl -H "Authorization: Bearer hackathon_admin_secret" http://localhost:3001/metrics
+
+# 5. Keep the game in Redis as well (optional; see ARCHITECTURE.md section 12)
+#    set STATE_BACKEND=upstash, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN in the server environment
+npm --prefix server run test:redis
+npm --prefix server run state:clear          # report what is saved; add "-- --yes" to remove it (server stopped)
 ```
 
 ---

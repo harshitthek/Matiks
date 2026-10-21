@@ -152,19 +152,21 @@ describe('Matiks Hackathon — Phase 6: Chaos & Campus Wi-Fi Resiliency Engine',
     );
     assert.equal(res0.completedQuestions, 1);
 
-    // Re-submitting Question 0 must fail
-    assert.throws(
-      () =>
-        roomManager.submitAnswer(
-          session.sessionId,
-          0,
-          session.questions[0].answer,
-          800,
-          Date.now(),
-          session.memberToken
-        ),
-      /Invalid question index. Expected question 1, got 0/
-    );
+    // Re-submitting Question 0 (a reply lost on a weak connection) is answered from the record and counts nothing twice
+    const scoreBefore = session.currentScore;
+    const again = roomManager.submitAnswer(
+      session.sessionId,
+      0,
+      session.questions[0].answer,
+      800,
+      Date.now(),
+      session.memberToken
+    ) as typeof res0 & { replayed?: boolean };
+    assert.equal(again.replayed, true);
+    assert.equal(again.completedQuestions, 1);
+    assert.equal(again.currentScore, res0.currentScore);
+    assert.equal(session.currentScore, scoreBefore);
+    assert.equal(session.submissions.length, 1);
   });
 
   test('4. Strict 120.0s Deadline Cutoff + 2.5s Transit Grace Enforcement', async () => {

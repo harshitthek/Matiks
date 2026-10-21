@@ -23,6 +23,8 @@ import type {
 import type { PersistedTournamentState, SerializedTeamRoom } from './roomManager.js';
 import type { OperatorMode, Question, MathBucket } from '../types/math.js';
 import { BUCKET_METADATA } from './mathEngine.js';
+import { dbOutbox, type OutboxItem } from '../store/outbox.js';
+import { redisEnabled } from '../store/redis.js';
 
 function toPrismaRoomStatus(
   status: string
@@ -430,10 +432,18 @@ export class DatabaseService {
     sub: SubmissionRecord,
     teamCode?: string
   ): Promise<void> {
-    if (!this.isConnected || !this.prisma) return Promise.resolve();
+    if (!this.prisma) return Promise.resolve();
+    const item: OutboxItem = { kind: 'submission', sessionId, rollNumber, sub, teamCode };
+    if (!this.isConnected) {
+      // The database is away: keep the record to write when it is back (only when a queue exists; otherwise the disk/Redis copy covers it)
+      return this.queueForRetry(item);
+    }
 
     const writeOp = async () => {
-      if (!this.isConnected || !this.prisma) return;
+      if (!this.isConnected || !this.prisma) {
+        await this.queueForRetry(item);
+        return;
+      }
 
       // Await parent session upsert if currently in-flight outside the team queue.
       // Team queue FIFO ordering already guarantees preceding session syncs have executed.
@@ -445,50 +455,98 @@ export class DatabaseService {
       }
 
       try {
-        const parentSession = await this.prisma.sprintSession.findUnique({
-          where: { sessionId }
-        });
-        if (!parentSession) {
+        const stored = await this.writeSubmission(item, false);
+        if (!stored) {
           console.warn(`[DatabaseService] Skipping submission for missing session ${sessionId}`);
-          return;
         }
-
-        const effectiveTeamCode = teamCode || parentSession.teamCode;
-        await this.prisma.$transaction(async (tx) => {
-          await tx.questionSubmission.create({
-            data: {
-              sessionId,
-              rollNumber,
-              questionIndex: sub.questionIndex,
-              operandA: sub.a ?? 0,
-              operandB: sub.b ?? 0,
-              operator: sub.operator ?? '+',
-              bucket: sub.bucket ?? 'B1',
-              userAnswer: sub.submittedAnswer,
-              expectedAnswer: sub.actualAnswer ?? 0,
-              isCorrect: Boolean(sub.isCorrect),
-              latencyMs: sub.latencyMs,
-              speedBonus: sub.pointsAwarded ? Math.max(0, sub.pointsAwarded - 100) : 0,
-              streak: sub.streakAfter || 0,
-              pointsAwarded: sub.pointsAwarded || 0,
-              isAnomaly: Boolean(sub.isAnomaly),
-              submittedAt: BigInt(sub.timestamp || Date.now())
-            }
-          });
-
-          await tx.sprintSession.update({
-            where: { sessionId },
-            data: {
-              score: sub.scoreAfter ?? (sub.pointsAwarded || 0)
-            }
-          });
-        }, { maxWait: 10000, timeout: 15000 });
       } catch (err) {
         console.error(`[DatabaseService] Error syncing submission for session ${sessionId}:`, err);
+        await this.queueForRetry(item);
       }
     };
 
     return teamCode ? this.enqueueTeamOp(teamCode, writeOp) : this.enqueueSessionOp(sessionId, writeOp);
+  }
+
+  /**
+   * Writes one answer. Returns false when the session it belongs to is not in the database. Throws when the write did not land.
+   * With `checkExisting` an answer that is already stored is left alone, which makes a retry safe.
+   */
+  private async writeSubmission(
+    item: Extract<OutboxItem, { kind: 'submission' }>,
+    checkExisting: boolean
+  ): Promise<boolean> {
+    const { sessionId, rollNumber, sub } = item;
+    const prisma = this.prisma!;
+    const parentSession = await prisma.sprintSession.findUnique({ where: { sessionId } });
+    if (!parentSession) return false;
+
+    if (checkExisting) {
+      const existing = await prisma.questionSubmission.findFirst({
+        where: { sessionId, rollNumber, questionIndex: sub.questionIndex },
+        select: { id: true }
+      });
+      if (existing) return true;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.questionSubmission.create({
+        data: {
+          sessionId,
+          rollNumber,
+          questionIndex: sub.questionIndex,
+          operandA: sub.a ?? 0,
+          operandB: sub.b ?? 0,
+          operator: sub.operator ?? '+',
+          bucket: sub.bucket ?? 'B1',
+          userAnswer: sub.submittedAnswer,
+          expectedAnswer: sub.actualAnswer ?? 0,
+          isCorrect: Boolean(sub.isCorrect),
+          latencyMs: sub.latencyMs,
+          speedBonus: sub.pointsAwarded ? Math.max(0, sub.pointsAwarded - 100) : 0,
+          streak: sub.streakAfter || 0,
+          pointsAwarded: sub.pointsAwarded || 0,
+          isAnomaly: Boolean(sub.isAnomaly),
+          submittedAt: BigInt(sub.timestamp || Date.now())
+        }
+      });
+
+      await tx.sprintSession.update({
+        where: { sessionId },
+        data: {
+          score: sub.scoreAfter ?? (sub.pointsAwarded || 0)
+        }
+      });
+    }, { maxWait: 10000, timeout: 15000 });
+    return true;
+  }
+
+  /** Puts a write that did not land in the Redis outbox, if there is one. Never throws. */
+  private async queueForRetry(item: OutboxItem): Promise<void> {
+    if (!redisEnabled() || process.env.STATE_BACKEND !== 'upstash') return;
+    await dbOutbox.enqueue(item);
+  }
+
+  /**
+   * Starts writing again what failed earlier (see store/outbox.ts). A record is retried until it lands; one that is already stored is skipped.
+   */
+  public startOutboxRetries(): void {
+    dbOutbox.start(
+      async (item) => {
+        if (!this.prisma) throw new Error('database not configured');
+        if (item.kind === 'submission') {
+          const stored = await this.writeSubmission(item, true);
+          if (!stored) throw new Error(`session ${item.sessionId} is not in the database yet`);
+        } else {
+          await this.writeAudit(item.record, true);
+        }
+      },
+      () => this.isConnected && this.prisma !== null
+    );
+  }
+
+  public stopOutboxRetries(): void {
+    dbOutbox.stop();
   }
 
   /**
@@ -564,31 +622,56 @@ export class DatabaseService {
    * Persists an immutable administrative audit action.
    */
   public async recordAudit(record: AuditRecord): Promise<void> {
-    if (!this.isConnected || !this.prisma) return;
+    if (!this.prisma) return;
+    if (!this.isConnected) {
+      await this.queueForRetry({ kind: 'audit', record });
+      return;
+    }
 
     return this.trackWrite(
       (async () => {
         try {
-          await this.prisma!.auditLog.create({
-            data: {
-              action: record.action,
-              targetTeam: record.teamCode || null,
-              targetRoll: record.rollNumber || null,
-              performedBy: record.adminId || 'ADMIN',
-              reason: record.reason || null,
-              details: record.details
-                ? typeof record.details === 'string'
-                  ? { message: record.details }
-                  : JSON.parse(JSON.stringify(record.details))
-                : undefined,
-              timestamp: BigInt(record.timestamp || Date.now())
-            }
-          });
+          await this.writeAudit(record, false);
         } catch (err) {
           console.error('[DatabaseService] Error recording audit log:', err);
+          await this.queueForRetry({ kind: 'audit', record });
         }
       })()
     );
+  }
+
+  /** Writes one audit entry. Throws when it did not land. With `checkExisting`, an entry already stored is left alone. */
+  private async writeAudit(record: AuditRecord, checkExisting: boolean): Promise<void> {
+    const prisma = this.prisma!;
+    const timestamp = BigInt(record.timestamp || Date.now());
+    if (checkExisting) {
+      const existing = await prisma.auditLog.findFirst({
+        where: {
+          action: record.action,
+          targetTeam: record.teamCode || null,
+          targetRoll: record.rollNumber || null,
+          performedBy: record.adminId || 'ADMIN',
+          timestamp
+        },
+        select: { id: true }
+      });
+      if (existing) return;
+    }
+    await prisma.auditLog.create({
+      data: {
+        action: record.action,
+        targetTeam: record.teamCode || null,
+        targetRoll: record.rollNumber || null,
+        performedBy: record.adminId || 'ADMIN',
+        reason: record.reason || null,
+        details: record.details
+          ? typeof record.details === 'string'
+            ? { message: record.details }
+            : JSON.parse(JSON.stringify(record.details))
+          : undefined,
+        timestamp
+      }
+    });
   }
 
   /**

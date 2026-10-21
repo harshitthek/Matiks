@@ -164,6 +164,42 @@
   * SSE streams excluded from request duration histogram to keep latency quantiles accurate.
   * Monotonic request ID generator (`req_${timestamp}_${counter}`) binding correlation IDs with query-stripped URL paths.
 
+### ADR-18: Idempotent Answer Submission (First Answer Wins)
+* **Context:** On campus Wi-Fi the reply to an accepted answer can be lost. The player then re-typed the answer, the server (already past that question) refused it with "Invalid question index", and the player stayed stuck on a question the server had moved past.
+* **Decision:**
+  * A question that is already answered returns the recorded result (`replayed: true`, plus `answerMismatch` when the resent answer differs). The first answer stands. A replay changes no score or timing, writes nothing, emits no SSE event, and is still gated by the member token.
+  * Questions not yet reached, and any submission after the sprint is over for a question not yet answered, are refused as before.
+  * The client re-sends the identical request (same body, so one answer however many times it arrives) after a network failure, a per-attempt timeout, or 502/503/504; a 400 is final.
+* **Consequence:** the submit endpoint is safe to retry, which is also what a shared state store with atomic operations will rely on later.
+
+### ADR-19: Identity-Aware Rate Limiting Behind a Store Interface
+* **Context:** The per-address limiter (30 sign-ins per minute) would lock out an auditorium of students behind one campus NAT address, and the automated tests bypassed it completely, so it was never exercised under load.
+* **Decision:**
+  * Address limits are loose flood guards; guessing is stopped by per-identity limits (roll number, email, membership identifier). The admin login stays strict per address. All limits and their reasoning are in `config/rateLimits.ts`.
+  * Counting sits behind `RateLimitStore` (in-memory, or Redis when `STATE_BACKEND=upstash`, see ADR-20), so routes do not change. A limiter whose store fails lets the request through.
+  * Tests no longer bypass limiters: under `NODE_ENV=test` the caps are scaled up but the limiters still count, and the limiter tests use the real numbers.
+
+### ADR-20: Live Game State Kept in Redis, Written Behind the Memory Copy
+* **Context:** The game ran in one process's memory, saved to a disk snapshot and PostgreSQL, and rebuilt on boot by merging the two. That merge was the most fragile code in the server, a crash lost up to a quarter second of play, a redeploy onto a fresh disk lost the snapshot, and sign-in sessions, single-use tickets and rate-limit counts vanished on every restart.
+* **Decision:**
+  * `STATE_BACKEND=memory` (default) behaves exactly as before. `STATE_BACKEND=upstash` also keeps a copy in Redis (`store/gameStateMirror.ts`): one document per team and per session, the roll-number map, the audit trail, and the organizers' control state (window, ticker, walk-in bypass, projector delay). Flushes are debounced (100 ms), send only what changed in one transaction, and retry with a growing delay, so the copy catches up by itself after an outage.
+  * On boot, Redis is the single source when it holds a game. If it holds none (first boot after switching on), the old disk-and-database restore runs once and seeds it. The old path also remains the fallback when Redis is unreachable at boot.
+  * Sign-in sessions, single-use admin tickets, the OIDC replay guard and origin record, attempt counters and rate-limit counts live in Redis (`store/ephemeralStore.ts`, `rateLimitStore.ts`) with a local fallback. They survive a restart. Secrets are stored hashed, never as key names.
+  * One writer: a lease key (20 s, renewed every 6 s) is held by the running server. A second server against the same Redis refuses to start (`LeaseHeldError`) rather than run a second, divergent game. After a hard crash the replacement waits for the lease to run out (about 20 s).
+  * Every Redis call goes through one circuit breaker; while it is open the game carries on in memory and the copy resumes afterwards. Redis is never on the answer path.
+* **Why write-behind and not Redis-as-primary:** the hot path stays in-process (no network hop per answer, no per-answer atomic script), which is what keeps answers fast on a game with one writer. The trade-off is a window of about 100 ms in which an accepted answer exists only in memory. A crash inside it loses that answer; the player's retry (ADR-18) is then accepted as new, or, if the client is ahead of the server, the server answers 409 `OUT_OF_SYNC` with `expectedIndex` and the client steps back to it.
+* **Consequence:** one server instance per game. Scaling to several instances would need the working set itself to move into Redis, which this does not do.
+
+### ADR-21: Failed Database Writes Wait in a Redis Outbox
+* **Context:** Answers and audit entries are written to PostgreSQL after the player has been answered. A failed write (a database restart, a network blip) was logged and lost from the archive.
+* **Decision:** with Redis on, a failed or skipped-while-disconnected write is appended to a list (`store/outbox.ts`) and a loop writes it again, oldest first, every 5 s while the database is reachable. A retry checks first whether the record is already stored (answers by session and question index, audit entries by action, actor, target and time), so a write that landed but whose reply was lost is not stored twice. A record that fails 8 times goes to a dead-letter list and no longer blocks the ones behind it. The queue is capped at 20,000. Exposed as `outbox_events_total{kind,outcome}` and `outbox_depth{state}`.
+* **Consequence:** the archive converges to the game even across a database outage. Dead-lettered records are kept for an organizer to inspect.
+
+### ADR-22: What Was Deliberately Not Put in Redis
+* **SSE replay log:** persisting the per-channel ring buffer cannot be made safe across a crash. Events sent after the last flush would be forgotten, the new process would reuse their ids for different content, and a client holding the old ids would silently skip it. The existing epoch mismatch (a new process gets a new epoch, every client re-fetches a snapshot) is the correct recovery, so the log stays in memory.
+* **Leaderboard mirror:** standings are derived from the rooms, which are restored. Nothing else reads a second copy, so it would only add writes. If a read-only replica for spectators is ever added, a sorted set is the natural shape.
+* **Atomic submit script:** unnecessary with a single writer (ADR-20). It becomes necessary only if the working set moves into Redis.
+
 ---
 
 ## 4. Phase Execution Roadmap & Lifecycle State

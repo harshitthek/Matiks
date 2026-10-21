@@ -8,6 +8,7 @@
 import type { ContestWindowConfig, WindowStatusEvent } from '../types/sse.js';
 import { sseHub } from './sseHub.js';
 import { leaderboardManager } from './leaderboardManager.js';
+import { controlStateChanged, type ControlState } from '../store/controlState.js';
 
 export class WindowManager {
   private config: ContestWindowConfig;
@@ -76,6 +77,7 @@ export class WindowManager {
     this.emergencyWalkInEnabled = enabled;
     this.config.emergencyWalkIn = enabled;
     this.broadcastStatus();
+    controlStateChanged();
     return this.emergencyWalkInEnabled;
   }
 
@@ -99,6 +101,7 @@ export class WindowManager {
 
     leaderboardManager.setPostCloseLive(false);
     this.broadcastStatus();
+    controlStateChanged();
     for (const cb of this.onOpenCallbacks) {
       try {
         cb();
@@ -121,6 +124,7 @@ export class WindowManager {
       this.config.announcementTicker = defaultClosedTicker;
     }
     this.broadcastStatus();
+    controlStateChanged();
     leaderboardManager.setPostCloseLive(true);
     if (wasOpen) {
       for (const cb of this.onCloseCallbacks) {
@@ -139,6 +143,43 @@ export class WindowManager {
    */
   public setTicker(ticker: string): void {
     this.config.announcementTicker = ticker;
+    this.broadcastStatus();
+    controlStateChanged();
+  }
+
+  /**
+   * What an organizer has set, for saving across a restart.
+   */
+  public exportControlState(): ControlState {
+    return {
+      window: { ...this.config, emergencyWalkIn: this.emergencyWalkInEnabled },
+      emergencyWalkIn: this.emergencyWalkInEnabled,
+      streamDelayMs: leaderboardManager.getStreamDelayMs()
+    };
+  }
+
+  /**
+   * Puts back what an organizer had set before a restart. A window that was open stays open until its original closing time; one whose
+   * time has passed, or that was closed, stays closed.
+   */
+  public restoreControlState(state: ControlState): void {
+    const saved = state.window;
+    const stillOpen = saved.isOpen && typeof saved.closesAt === 'number' && saved.closesAt > Date.now();
+    this.emergencyWalkInEnabled = Boolean(state.emergencyWalkIn);
+    this.config = {
+      ...this.config,
+      isOpen: stillOpen,
+      opensAt: saved.opensAt,
+      closesAt: saved.closesAt,
+      durationMinutes: saved.durationMinutes,
+      announcementTicker: saved.announcementTicker ?? this.config.announcementTicker,
+      emergencyWalkIn: this.emergencyWalkInEnabled
+    };
+    // Live (no delay) only once a window that was really opened has closed, as after an organizer closes it
+    leaderboardManager.setPostCloseLive(!stillOpen && saved.opensAt > 0);
+    if (typeof state.streamDelayMs === 'number') {
+      leaderboardManager.setStreamDelayMs(state.streamDelayMs);
+    }
     this.broadcastStatus();
   }
 

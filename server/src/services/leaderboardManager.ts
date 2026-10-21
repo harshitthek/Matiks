@@ -8,6 +8,7 @@
 
 import type { LeaderboardEntry } from '../types/sse.js';
 import { sseHub } from './sseHub.js';
+import { controlStateChanged } from '../store/controlState.js';
 
 const MAX_STREAM_DELAY_MS = 300_000; // 5 minutes maximum delay
 const MAX_DELAYED_QUEUE_SIZE = 100;
@@ -57,6 +58,7 @@ export class LeaderboardManager {
     const newDelay = Math.min(MAX_STREAM_DELAY_MS, Math.max(0, Math.floor(delayMs)));
     const prevDelay = this.streamDelayMs;
     this.streamDelayMs = newDelay;
+    if (newDelay !== prevDelay) controlStateChanged();
 
     if (newDelay === 0) {
       this.flush();

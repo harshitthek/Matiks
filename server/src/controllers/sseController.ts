@@ -193,7 +193,7 @@ export function sseLeaderboardHandler(req: Request, res: Response): void {
   });
 }
 
-export function sseAdminHandler(req: Request, res: Response): void {
+export async function sseAdminHandler(req: Request, res: Response): Promise<void> {
   const queryTicket = req.query['ticket'] as string | undefined;
   const authHeader = req.headers['authorization'];
   let providedToken: string | undefined;
@@ -202,7 +202,7 @@ export function sseAdminHandler(req: Request, res: Response): void {
     providedToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();
   }
 
-  const isAuthorized = isValidAdminStreamTicket(queryTicket) || isValidAdminToken(providedToken);
+  const isAuthorized = (await isValidAdminStreamTicket(queryTicket)) || isValidAdminToken(providedToken);
   if (!isAuthorized) {
     res.status(401).json({ error: 'UNAUTHORIZED_ADMIN_ACCESS' });
     return;

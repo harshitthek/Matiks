@@ -71,7 +71,7 @@ export async function requireAdminAuth(req: Request, res: Response, next: NextFu
 
   // 3. Check if token is the master ADMIN_SECRET (emergency bypass)
   if (isValidAdminToken(providedToken)) {
-    adminAuthService.recordSuccess(clientIp);
+    await adminAuthService.recordSuccess(clientIp);
     const rawOrganizer = req.headers['x-admin-id'] as string | undefined;
     req.adminUser = {
       organizerName: adminAuthService.sanitizeOrganizerName(rawOrganizer),
@@ -83,8 +83,8 @@ export async function requireAdminAuth(req: Request, res: Response, next: NextFu
 
   // Record failure and apply progressive tarpit delay on invalid master-secret candidates
   if (providedToken && !providedToken.startsWith('adm.')) {
-    adminAuthService.recordFailure(clientIp);
-    const delayMs = adminAuthService.getTarpitDelayMs(clientIp);
+    await adminAuthService.recordFailure(clientIp);
+    const delayMs = await adminAuthService.getTarpitDelayMs(clientIp);
     if (delayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }

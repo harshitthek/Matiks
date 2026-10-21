@@ -159,7 +159,7 @@ describe('Matiks Hackathon — Phase 7: Pluggable Auth & Club OIDC Adapter', () 
       assert.equal(parsed.searchParams.get('nonce'), provider.deriveNonce('test_state_123'));
     });
 
-    test('Generates cryptographically signed HMAC states with replay protection and tamper resistance', () => {
+    test('Generates cryptographically signed HMAC states with replay protection and tamper resistance', async () => {
       const provider = new ClubOidcAuthProvider({
         issuerUrl: 'https://oidc.fossclub.tech',
         clientSecret: 'super_secret_key_123'
@@ -173,23 +173,23 @@ describe('Matiks Hackathon — Phase 7: Pluggable Auth & Club OIDC Adapter', () 
       assert.equal(state.split('.').length, 3);
 
       // 2. State validates successfully on first verification
-      assert.equal(provider.validateState(state), true);
+      assert.equal(await provider.validateState(state), true);
 
       // 3. Replay attack: reusing the same state immediately fails
-      assert.equal(provider.validateState(state), false);
+      assert.equal(await provider.validateState(state), false);
 
       // 4. Tamper attack: modifying payload or signature fails
       const tampered = state.slice(0, -4) + 'abcd';
-      assert.equal(provider.validateState(tampered), false);
+      assert.equal(await provider.validateState(tampered), false);
 
       // 5. Unrecognized or invalid format states fail
-      assert.equal(provider.validateState('random_unsigned_string'), false);
+      assert.equal(await provider.validateState('random_unsigned_string'), false);
 
       // 6. Embedded client origin signing and verification
       const stateWithOrigin = provider.generateSignedState(Date.now(), 'https://matiks-usarfoss.vercel.app');
       assert.equal(stateWithOrigin.split('.').length, 3);
       assert.equal(provider.extractOriginFromState(stateWithOrigin), 'https://matiks-usarfoss.vercel.app');
-      assert.equal(provider.validateState(stateWithOrigin), true);
+      assert.equal(await provider.validateState(stateWithOrigin), true);
 
       // 7. Tampered origin in state fails extraction
       const parts = stateWithOrigin.split('.');

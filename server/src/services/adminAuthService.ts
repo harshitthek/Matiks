@@ -8,6 +8,7 @@
 
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
 import { getAdminSecret, isValidAdminToken } from '../config/env.js';
+import { ephemeral } from '../store/ephemeralStore.js';
 
 export interface AdminSessionPayload {
   organizerName: string;
@@ -30,7 +31,6 @@ const TARPIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_TARPIT_DELAY_MS = 5000; // Max 5s tarpit per attempt
 
 class AdminAuthService {
-  private failedAttempts = new Map<string, { count: number; lastFailedAt: number }>();
 
   /**
    * Sanitizes organizer name for safe storage and logging.
@@ -42,15 +42,19 @@ class AdminAuthService {
     return cleaned.length >= 2 ? cleaned : 'Organizer';
   }
 
-  /**
-   * Calculates progressive tarpit delay for an IP based on recent failed attempts.
-   */
-  public getTarpitDelayMs(clientIp: string): number {
-    this.cleanupOldFailures();
-    const entry = this.failedAttempts.get(clientIp);
-    if (!entry || entry.count <= 0) return 0;
+  private failKey(clientIp: string): string {
+    return `admin:fail:${clientIp}`;
+  }
 
-    switch (entry.count) {
+  /**
+   * Calculates progressive tarpit delay for an IP based on recent failed attempts. The count lives in the shared short-lived store (Redis when
+   * it is on), so restarting the server does not hand an attacker a clean slate.
+   */
+  public async getTarpitDelayMs(clientIp: string): Promise<number> {
+    const count = Number((await ephemeral().get(this.failKey(clientIp))) ?? 0);
+    if (!count || count <= 0) return 0;
+
+    switch (count) {
       case 1:
         return 200;
       case 2:
@@ -65,24 +69,17 @@ class AdminAuthService {
   }
 
   /**
-   * Records a failed authentication attempt for an IP.
+   * Records a failed authentication attempt for an IP. Failures are counted over a 15-minute window that starts with the first one.
    */
-  public recordFailure(clientIp: string): void {
-    const now = Date.now();
-    const entry = this.failedAttempts.get(clientIp);
-    if (entry && now - entry.lastFailedAt <= TARPIT_WINDOW_MS) {
-      entry.count += 1;
-      entry.lastFailedAt = now;
-    } else {
-      this.failedAttempts.set(clientIp, { count: 1, lastFailedAt: now });
-    }
+  public async recordFailure(clientIp: string): Promise<void> {
+    await ephemeral().incr(this.failKey(clientIp), TARPIT_WINDOW_MS);
   }
 
   /**
    * Clears failure count for an IP on successful authentication.
    */
-  public recordSuccess(clientIp: string): void {
-    this.failedAttempts.delete(clientIp);
+  public async recordSuccess(clientIp: string): Promise<void> {
+    await ephemeral().del(this.failKey(clientIp));
   }
 
   /**
@@ -161,13 +158,13 @@ class AdminAuthService {
     organizerName: string | undefined,
     clientIp: string
   ): Promise<AdminAuthResult> {
-    const tarpitMs = this.getTarpitDelayMs(clientIp);
+    const tarpitMs = await this.getTarpitDelayMs(clientIp);
     if (tarpitMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, tarpitMs));
     }
 
     if (!isValidAdminToken(secretCandidate)) {
-      this.recordFailure(clientIp);
+      await this.recordFailure(clientIp);
       return {
         success: false,
         error: 'INVALID_ADMIN_CREDENTIALS',
@@ -175,7 +172,7 @@ class AdminAuthService {
       };
     }
 
-    this.recordSuccess(clientIp);
+    await this.recordSuccess(clientIp);
     const sanitizedName = this.sanitizeOrganizerName(organizerName);
     const token = this.issueSessionToken(sanitizedName, 'superadmin');
     const payload = this.verifySessionToken(token)!;
@@ -214,22 +211,10 @@ class AdminAuthService {
   }
 
   /**
-   * Removes stale IP entries past the 15-minute failure window.
-   */
-  private cleanupOldFailures(): void {
-    const now = Date.now();
-    for (const [ip, entry] of this.failedAttempts) {
-      if (now - entry.lastFailedAt > TARPIT_WINDOW_MS) {
-        this.failedAttempts.delete(ip);
-      }
-    }
-  }
-
-  /**
    * Diagnostic helper for testing.
    */
   public resetTarpitForTesting(): void {
-    this.failedAttempts.clear();
+    ephemeral().clearLocal('admin:fail:');
   }
 }
 

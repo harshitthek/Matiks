@@ -351,6 +351,15 @@ export class MetricsRegistry {
   public readonly activeRooms: Gauge;
   public readonly connectedSseClients: Gauge;
   public readonly sprintSubmissionsTotal: Counter;
+  public readonly sprintSubmissionReplaysTotal: Counter;
+  public readonly rateLimitedTotal: Counter;
+  public readonly redisCommandsTotal: Counter;
+  public readonly redisErrorsTotal: Counter;
+  public readonly stateBackendInfo: Gauge;
+  public readonly redisHealthy: Gauge;
+  public readonly stateFlushDurationSeconds: Histogram;
+  public readonly outboxEventsTotal: Counter;
+  public readonly outboxDepth: Gauge;
   public readonly submissionLatencySeconds: Histogram;
   public readonly contestWindowOpen: Gauge;
   public readonly processMemoryRssBytes: Gauge;
@@ -388,6 +397,58 @@ export class MetricsRegistry {
       'sprint_submissions_total',
       'Total number of sprint math answers evaluated',
       ['operator', 'bucket', 'result']
+    );
+
+    this.sprintSubmissionReplaysTotal = new Counter(
+      'sprint_submission_replays_total',
+      'Answers submitted again for a question already answered, which were answered from the recorded result'
+    );
+
+    this.rateLimitedTotal = new Counter(
+      'rate_limited_total',
+      'Requests refused with 429 by a rate limiter',
+      ['limiter']
+    );
+
+    this.redisCommandsTotal = new Counter(
+      'redis_commands_total',
+      'Redis commands issued, by logical operation (a pipeline counts each command in it)',
+      ['op']
+    );
+
+    this.redisErrorsTotal = new Counter(
+      'redis_errors_total',
+      'Redis operations that failed or were skipped because the circuit was open',
+      ['op']
+    );
+
+    this.stateBackendInfo = new Gauge(
+      'state_backend_info',
+      'Which state backend this process is using (the label value is the backend, the gauge is always 1)',
+      ['backend']
+    );
+
+    this.redisHealthy = new Gauge(
+      'redis_healthy',
+      'Whether the Redis circuit is closed and Redis is configured (1) or not (0)'
+    );
+
+    this.stateFlushDurationSeconds = new Histogram(
+      'state_flush_duration_seconds',
+      'Time to write changed game state to Redis',
+      [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]
+    );
+
+    this.outboxEventsTotal = new Counter(
+      'outbox_events_total',
+      'Database writes that failed and were queued for retry, by kind and outcome (queued, retried_ok, dead)',
+      ['kind', 'outcome']
+    );
+
+    this.outboxDepth = new Gauge(
+      'outbox_depth',
+      'Database writes waiting in the retry queue (state is waiting or dead)',
+      ['state']
     );
 
     this.submissionLatencySeconds = new Histogram(
@@ -472,6 +533,15 @@ export class MetricsRegistry {
     this.activeRooms.reset();
     this.connectedSseClients.reset();
     this.sprintSubmissionsTotal.reset();
+    this.sprintSubmissionReplaysTotal.reset();
+    this.rateLimitedTotal.reset();
+    this.redisCommandsTotal.reset();
+    this.redisErrorsTotal.reset();
+    this.stateBackendInfo.reset();
+    this.redisHealthy.reset();
+    this.stateFlushDurationSeconds.reset();
+    this.outboxEventsTotal.reset();
+    this.outboxDepth.reset();
     this.submissionLatencySeconds.reset();
     this.contestWindowOpen.reset();
     this.processMemoryRssBytes.reset();
@@ -515,6 +585,15 @@ export class MetricsRegistry {
       ...this.activeRooms.serialize(),
       ...this.connectedSseClients.serialize(),
       ...this.sprintSubmissionsTotal.serialize(),
+      ...this.sprintSubmissionReplaysTotal.serialize(),
+      ...this.rateLimitedTotal.serialize(),
+      ...this.redisCommandsTotal.serialize(),
+      ...this.redisErrorsTotal.serialize(),
+      ...this.stateBackendInfo.serialize(),
+      ...this.redisHealthy.serialize(),
+      ...this.stateFlushDurationSeconds.serialize(),
+      ...this.outboxEventsTotal.serialize(),
+      ...this.outboxDepth.serialize(),
       ...this.submissionLatencySeconds.serialize(),
       ...this.contestWindowOpen.serialize(),
       ...this.processMemoryRssBytes.serialize(),

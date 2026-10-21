@@ -51,28 +51,28 @@ describe('Admin Security & Governance Engine Suite', () => {
       const testIp = '192.168.1.100';
 
       // 0 failures -> 0 delay
-      assert.equal(adminAuthService.getTarpitDelayMs(testIp), 0);
+      assert.equal(await adminAuthService.getTarpitDelayMs(testIp), 0);
 
       // 1st failure
       const res1 = await adminAuthService.loginOrganizer('wrong_secret_1', 'Hacker', testIp);
       assert.equal(res1.success, false);
-      assert.equal(adminAuthService.getTarpitDelayMs(testIp), 200);
+      assert.equal(await adminAuthService.getTarpitDelayMs(testIp), 200);
 
       // 2nd failure
       const res2 = await adminAuthService.loginOrganizer('wrong_secret_2', 'Hacker', testIp);
       assert.equal(res2.success, false);
-      assert.equal(adminAuthService.getTarpitDelayMs(testIp), 500);
+      assert.equal(await adminAuthService.getTarpitDelayMs(testIp), 500);
 
       // 3rd failure
       const res3 = await adminAuthService.loginOrganizer('wrong_secret_3', 'Hacker', testIp);
       assert.equal(res3.success, false);
-      assert.equal(adminAuthService.getTarpitDelayMs(testIp), 1500);
+      assert.equal(await adminAuthService.getTarpitDelayMs(testIp), 1500);
 
       // Successful login resets tarpit delay
       const resSuccess = await adminAuthService.loginOrganizer('hackathon_admin_secret', 'Harshit', testIp);
       assert.equal(resSuccess.success, true);
       assert.ok(resSuccess.token);
-      assert.equal(adminAuthService.getTarpitDelayMs(testIp), 0);
+      assert.equal(await adminAuthService.getTarpitDelayMs(testIp), 0);
     });
   });
 

@@ -277,6 +277,14 @@ Used by students to submit their answer during the 2-minute sprint.
   1. `clientDeltaMs >= 200`: If $< 200\text{ ms}$, flags `SUB_200MS_SPEED_ANOMALY`.
   2. Latency Jitter Tolerance: $| \text{serverDeltaMs} - \text{clientDeltaMs} | \le 350\text{ ms}$.
   3. Network Transit Grace: Submissions up to $+2.5\text{ s}$ past 120s are accepted (`now <= session.expiresAt + 2500`).
+  4. Sequential progression: a question not yet reached (`questionIndex` ahead of the session) is refused.
+* **Safe to send again (idempotent):** a question that has already been answered is never scored twice. The first answer stands, and sending the question again (same answer or not) returns the recorded result with `200 OK`:
+  ```json
+  { "success": true, "isCorrect": true, "pointsAwarded": 184, "currentScore": 184, "consecutiveStreak": 1,
+    "completedQuestions": 1, "isFinished": false, "isAnomaly": false,
+    "replayed": true, "answerMismatch": false }
+  ```
+  `answerMismatch` is `true` when the resent answer differs from the recorded one. A replay changes no score, writes nothing, and broadcasts no event, and it is checked after the member token (a replay still needs the player's own token). This is what lets the client re-send an answer whose reply was lost on a weak connection without leaving the player stuck. First-time responses carry neither field.
 
 ### 2. `POST /api/team/reset` & `POST /api/team/leave`
 * `POST /api/team/reset`: Resets a completed squad room back to `AWAITING_READY` (or `LOBBY`) for a rematch while retaining the squad's `roomUsedPairKeys` so subsequent games never repeat questions.

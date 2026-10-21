@@ -109,6 +109,17 @@ Matiks/
 │   │   │   ├── sprintController.ts       # Answer submission & authoritative clock sync
 │   │   │   ├── sseController.ts          # Team, Leaderboard, and Admin SSE stream handlers
 │   │   │   └── teamController.ts         # Team creation, join, ready toggle, leave, and rematch reset
+│   │   ├── bootstrap/
+│   │   │   ├── restoreState.ts           # Boot order: Redis if it holds a game, else disk + PostgreSQL (seeds Redis)
+│   │   │   └── clearState.ts             # `npm run state:clear`: report / remove the saved game in Redis
+│   │   ├── store/
+│   │   │   ├── redis.ts                  # Upstash client, circuit breaker, key prefix
+│   │   │   ├── gameStateMirror.ts        # Write-behind copy of the game in Redis, single-writer lease, load
+│   │   │   ├── ephemeralStore.ts         # Sessions, tickets, replay guard, counters (Redis + local fallback)
+│   │   │   ├── authSessions.ts           # Sign-in session store over the ephemeral store
+│   │   │   ├── rateLimitStore.ts         # Rate-limit counts: memory, Redis, adaptive
+│   │   │   ├── controlState.ts           # Organizer settings that must survive a restart
+│   │   │   └── outbox.ts                 # Retry queue for failed PostgreSQL writes
 │   │   ├── services/
 │   │   │   ├── authProvider.ts           # LocalHackathonAuthProvider & ClubOidcAuthProvider
 │   │   │   ├── leaderboardManager.ts     # Sorted priority queue with 50ms broadcast coalescing
@@ -125,6 +136,10 @@ Matiks/
 │   │   ├── app.ts                        # Express app factory, CORS, rate limiters, route mounting
 │   │   └── index.ts                      # HTTP server bootstrap, state restoration & graceful shutdown
 │   ├── tests/
+│   │   ├── gameStateMirror.test.ts       # Game state in Redis: restart recovery, incremental flush, outage, lease
+│   │   ├── redisAuthState.test.ts        # Sessions, tickets, replay guard and counters in Redis; fallbacks
+│   │   ├── outbox.test.ts                # Failed database writes: queue, order, dedupe, dead-letter
+│   │   ├── upstashLive.test.ts           # Same checks against a real Redis (UPSTASH_LIVE_TEST=1 only)
 │   │   ├── authOidc.test.ts              # Local & Club OIDC authentication tests
 │   │   ├── chaosNetworkTest.ts           # Jitter, deadline grace, disconnect & visibility resync tests
 │   │   ├── loadTest.ts                   # 30 teams / 90 students / 100 SSE streams / 1,350 submissions benchmark
@@ -411,6 +426,8 @@ export interface ContestWindow {
    * Client tracks `document.visibilityState`. When a student returns from a minimized tab, the client immediately requests `/api/sprint/sync` to restore exact server timestamps.
 4. **Proxy Buffering Suppression:**
    * Server sends `X-Accel-Buffering: no` to prevent Nginx/Cloudflare reverse proxies from caching live SSE streams.
+5. **Safe Answer Retries (Idempotent Submission):**
+   * A reply to an answer can be lost even though the answer counted. `POST /api/sprint/submit` answers a question it has already answered from the recorded result (`replayed: true`) and never scores it twice, so the client re-sends the identical request after a network failure, timeout, or gateway error (3 attempts, per-attempt timeout) and the player is never stuck on a question the server has moved past. Real refusals (a 400) are never retried.
 
 ---
 
@@ -432,6 +449,10 @@ export interface ContestWindow {
    * Prevents server thread exhaustion during concurrent room starts by utilizing the $\mathcal{O}(1)$ residual-targeted blueprint generator described in [MATH_ENGINE.md](MATH_ENGINE.md).
 6. **Hardware Failure Recovery (`[EXCUSE MEMBER]`):**
    * If a student experiences an unrecoverable device crash or dead battery, an admin can execute `POST /api/admin/teams/:teamCode/excuse-member` to remove that student from the score divisor without corrupting the rest of the team's average. Every action is recorded in an immutable append-only audit trail.
+
+7. **Identity-Aware Rate Limiting:**
+   * A campus Wi-Fi puts a whole auditorium behind one NAT address, so address limits on the sign-in endpoints are loose flood guards (600/min) and guessing is stopped by a per-identity limit (12 tries per 5 minutes per roll number or email, wherever they come from). The admin login stays strict per address (15/min).
+   * Every limit and its reasoning lives in `server/src/config/rateLimits.ts`. Counting is behind a `RateLimitStore` interface (in-memory today), and a limiter whose store is unavailable lets the request through, so a broken counter never stops the game. Refusals carry `RateLimit-*` and `Retry-After` headers and are counted in `rate_limited_total{limiter}`.
 
 ---
 
@@ -525,3 +546,31 @@ When the central club website (`fossclub.tech`) completes its OIDC endpoints:
 * **Low-Cardinality Sanitation:** Routes normalized via `normalizeRoute(path)` (`:teamCode`, `:sessionId`, `:identifier` masks) and `normalizeMethod(verb)` preventing metric cardinality explosions.
 * **NDJSON Logging:** Monotonic request IDs (`req_${timestamp}_${counter}`) binding correlation tracking across requests with privacy-preserving IP masking and URL token redaction.
 
+## 12. State Backend: Memory or Redis
+
+The running game is always held in this process's memory. `STATE_BACKEND` decides what else keeps it.
+
+| | `memory` (default) | `upstash` |
+| :--- | :--- | :--- |
+| Game state (teams, sessions, audit trail, organizer settings) | Disk snapshot + PostgreSQL, merged on boot | Redis, restored on boot; PostgreSQL is the archive |
+| Sign-in sessions, admin tickets, OIDC replay guard, attempt counters | Process memory | Redis (secrets hashed), local fallback |
+| Rate-limit counts | Process memory | Redis, local fallback |
+| Failed PostgreSQL writes | Logged | Queued in a Redis outbox and retried |
+| Survives a restart | Game: yes (disk/DB). Sign-ins: no | Everything above |
+
+```
+ request ──> memory (answers in < 1 ms) ──> reply
+                 │ change
+                 ▼
+         debounce 100 ms ──> diff vs. what Redis has ──> one MULTI/EXEC ──> Redis
+                                                              ▲ retry with backoff if it fails
+         boot:  Redis has a game? ── yes ──> restore from Redis
+                                  └─ no ───> disk + PostgreSQL once, then seed Redis
+```
+
+* **Files:** `store/redis.ts` (client, circuit breaker, key prefix), `store/gameStateMirror.ts` (lease, incremental flush, load), `store/ephemeralStore.ts` and `store/authSessions.ts` (short-lived auth state), `store/rateLimitStore.ts`, `store/outbox.ts`, `store/controlState.ts`, `bootstrap/restoreState.ts` (boot order), `bootstrap/clearState.ts` (`npm run state:clear`).
+* **Failure behaviour:** the circuit opens after a failed call and stays open 5 s; while open nothing waits on Redis and everything runs from memory. Reachable-at-boot is checked once; if Redis is down then, the old restore runs and saving to Redis starts by itself when it returns.
+* **One server per game:** a lease key stops a second server running the same game against the same Redis. After a hard crash the replacement waits for the lease to expire (about 20 s). `REDIS_KEY_PREFIX` separates deployments that share a Redis.
+* **Health:** `/api/health` reports `state.backend`, `state.redis` (`ok`, `down`, `off`) and whether the copy is current. `/metrics` has `redis_commands_total`, `redis_errors_total`, `redis_healthy`, `state_flush_duration_seconds`, `outbox_events_total`, `outbox_depth`.
+* **Data at rest:** the Redis copy holds what the server holds, including the per-session answer keys and member tokens inside team documents. Treat the Redis credentials like the database credentials.
+* **Between events:** stop the server, then `npm --prefix server run state:clear` (reports what is saved) and `... -- --yes` (removes the saved game and the write queue).

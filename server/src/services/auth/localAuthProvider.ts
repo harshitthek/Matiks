@@ -17,17 +17,12 @@ import type {
   AuthResult
 } from '../../types/auth.js';
 import { getAdminSecret, getAdminRollNumbers } from '../../config/env.js';
-
-interface SessionData {
-  user: AuthUser;
-  createdAt: number;
-  expiresAt: number;
-}
+import { AuthSessionStore } from '../../store/authSessions.js';
 
 export class LocalHackathonAuthProvider implements IAuthProvider {
   public readonly providerName = 'local_hackathon';
 
-  private sessions = new Map<string, SessionData>();
+  private sessions = new AuthSessionStore('sess:local');
   private verifiedMembers = new Set<string>();
   private readonly sessionTtlMs = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -48,22 +43,10 @@ export class LocalHackathonAuthProvider implements IAuthProvider {
     return randomBytes(32).toString('hex');
   }
 
-  private pruneExpiredSessions(): void {
-    const now = Date.now();
-    for (const [tok, sess] of this.sessions.entries()) {
-      if (now > sess.expiresAt) {
-        this.sessions.delete(tok);
-      }
-    }
-  }
-
   /**
    * Authenticates a student participant and registers an active session.
    */
   public async loginPlayer(credentials: PlayerLoginCredentials): Promise<AuthResult> {
-    if (this.sessions.size > 500) {
-      this.pruneExpiredSessions();
-    }
     const { rollNumber, name, teamCode } = credentials;
     const cleanRoll = rollNumber.trim().toUpperCase();
     const cleanName = name.trim();
@@ -87,7 +70,7 @@ export class LocalHackathonAuthProvider implements IAuthProvider {
 
     const token = this.generateToken();
     const now = Date.now();
-    this.sessions.set(token, {
+    await this.sessions.save(token, {
       user,
       createdAt: now,
       expiresAt: now + this.sessionTtlMs
@@ -124,13 +107,9 @@ export class LocalHackathonAuthProvider implements IAuthProvider {
       isAdmin: true
     };
 
-    if (this.sessions.size > 500) {
-      this.pruneExpiredSessions();
-    }
-
     const token = this.generateToken();
     const now = Date.now();
-    this.sessions.set(token, {
+    await this.sessions.save(token, {
       user,
       createdAt: now,
       expiresAt: now + this.sessionTtlMs
@@ -145,15 +124,8 @@ export class LocalHackathonAuthProvider implements IAuthProvider {
   public async verifySession(token: string): Promise<AuthUser | null> {
     if (!token || typeof token !== 'string') return null;
 
-    const session = this.sessions.get(token);
-    if (!session) return null;
-
-    if (Date.now() > session.expiresAt) {
-      this.sessions.delete(token);
-      return null;
-    }
-
-    return { ...session.user };
+    const session = await this.sessions.load(token);
+    return session ? { ...session.user } : null;
   }
 
   /**
@@ -185,7 +157,7 @@ export class LocalHackathonAuthProvider implements IAuthProvider {
    * Clears active sessions and resets test memberships to initial seed.
    */
   public clear(): void {
-    this.sessions.clear();
+    this.sessions.clearLocal();
     this.verifiedMembers.clear();
     if (process.env.NODE_ENV === 'test') {
       this.verifiedMembers.add('CS21045');

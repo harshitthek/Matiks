@@ -15,33 +15,22 @@ import { leaderboardManager } from '../services/leaderboardManager.js';
 import { adminAuthService } from '../services/adminAuthService.js';
 import { sseHub } from '../services/sseHub.js';
 import { rosterService } from '../services/rosterService.js';
+import { ephemeral, hashed } from '../store/ephemeralStore.js';
 
-const adminStreamTickets = new Map<string, number>();
+const TICKET_TTL_MS = 60_000;
+const ticketName = (ticket: string) => `admin:ticket:${hashed(ticket)}`;
 
-export function issueAdminStreamTicketHandler(req: Request, res: Response): void {
-  const now = Date.now();
-  for (const [t, exp] of adminStreamTickets) {
-    if (now > exp) {
-      adminStreamTickets.delete(t);
-    }
-  }
-
+export async function issueAdminStreamTicketHandler(_req: Request, res: Response): Promise<void> {
+  // A single-use ticket good for 60 seconds, kept in the shared short-lived store so it still works across a restart
   const ticket = randomUUID();
-  adminStreamTickets.set(ticket, now + 60_000);
-  const cleanupTimer = setTimeout(() => {
-    adminStreamTickets.delete(ticket);
-  }, 60_000);
-  cleanupTimer.unref?.();
-
+  await ephemeral().set(ticketName(ticket), '1', TICKET_TTL_MS);
   res.status(200).json({ success: true, ticket });
 }
 
-export function isValidAdminStreamTicket(ticket?: string): boolean {
+/** Uses the ticket up: it answers true once, and only within its 60 seconds. */
+export async function isValidAdminStreamTicket(ticket?: string): Promise<boolean> {
   if (!ticket || typeof ticket !== 'string') return false;
-  const expiresAt = adminStreamTickets.get(ticket);
-  if (!expiresAt) return false;
-  adminStreamTickets.delete(ticket); // Single-use consumption
-  return Date.now() <= expiresAt;
+  return (await ephemeral().getdel(ticketName(ticket))) !== null;
 }
 
 export function toggleWindowHandler(req: Request, res: Response): void {

@@ -5,7 +5,7 @@
  */
 
 import type { Request, Response } from 'express';
-import { roomManager } from '../services/roomManager.js';
+import { roomManager, OutOfSyncError } from '../services/roomManager.js';
 import { windowManager } from '../services/windowManager.js';
 
 function parseSubmittedAnswer(val: unknown): number | null {
@@ -55,6 +55,16 @@ export function submitAnswerHandler(req: Request, res: Response): void {
       ...result
     });
   } catch (err: unknown) {
+    if (err instanceof OutOfSyncError) {
+      // The player is ahead of where the server has them: say where the server is, so the client can step back to that question
+      res.status(409).json({
+        error: err.message,
+        errorCode: 'OUT_OF_SYNC',
+        expectedIndex: err.expectedIndex,
+        isFinished: false
+      });
+      return;
+    }
     const message = err instanceof Error ? err.message : 'Submission failed';
     const isFinished = /already finished|deadline expired|already completed/i.test(message);
     const errorCode = isFinished ? 'SPRINT_FINISHED' : 'SUBMISSION_ERROR';

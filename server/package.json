@@ -5,11 +5,15 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "test": "tsx --import ./tests/setup.ts --test --test-concurrency=1 tests/databaseService.test.ts tests/mathEngine.test.ts tests/servicesUnit.test.ts tests/roomManager.test.ts tests/authProvider.test.ts tests/adminGovernance.test.ts tests/rosterService.test.ts tests/smokeTest.ts tests/qaRegression.test.ts tests/chaosNetworkTest.ts tests/loadTest.ts",
-    "test:unit": "tsx --import ./tests/setup.ts --test --test-concurrency=1 tests/databaseService.test.ts tests/mathEngine.test.ts tests/servicesUnit.test.ts tests/roomManager.test.ts tests/authProvider.test.ts tests/adminGovernance.test.ts tests/rosterService.test.ts tests/smokeTest.ts tests/qaRegression.test.ts",
+    "test": "tsx --import ./tests/setup.ts --test --test-concurrency=1 tests/databaseService.test.ts tests/mathEngine.test.ts tests/servicesUnit.test.ts tests/roomManager.test.ts tests/authProvider.test.ts tests/adminGovernance.test.ts tests/rosterService.test.ts tests/smokeTest.ts tests/qaRegression.test.ts tests/rateLimit.test.ts tests/idempotentSubmit.test.ts tests/redisAuthState.test.ts tests/gameStateMirror.test.ts tests/outbox.test.ts tests/chaosNetworkTest.ts tests/loadTest.ts",
+    "test:unit": "tsx --import ./tests/setup.ts --test --test-concurrency=1 tests/databaseService.test.ts tests/mathEngine.test.ts tests/servicesUnit.test.ts tests/roomManager.test.ts tests/authProvider.test.ts tests/adminGovernance.test.ts tests/rosterService.test.ts tests/smokeTest.ts tests/qaRegression.test.ts tests/rateLimit.test.ts tests/idempotentSubmit.test.ts tests/redisAuthState.test.ts tests/gameStateMirror.test.ts tests/outbox.test.ts",
     "test:db": "tsx --import ./tests/setup.ts --test tests/databaseService.test.ts",
     "test:admin": "tsx --import ./tests/setup.ts --test tests/adminGovernance.test.ts",
     "test:smoke": "tsx --import ./tests/setup.ts --test tests/smokeTest.ts",
+    "test:ratelimit": "tsx --import ./tests/setup.ts --test tests/rateLimit.test.ts",
+    "state:clear": "tsx src/bootstrap/clearState.ts",
+    "test:redis": "tsx --import ./tests/setup.ts --test tests/redisAuthState.test.ts tests/gameStateMirror.test.ts tests/outbox.test.ts",
+    "test:idempotent": "tsx --import ./tests/setup.ts --test tests/idempotentSubmit.test.ts",
     "test:qa": "tsx --import ./tests/setup.ts --test tests/qaRegression.test.ts",
     "test:services": "tsx --import ./tests/setup.ts --test tests/servicesUnit.test.ts",
     "test:auth": "tsx --import ./tests/setup.ts --test tests/authProvider.test.ts",
@@ -41,6 +45,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.4.1",
+    "@upstash/redis": "^1.39.0",
     "cors": "^2.8.6",
     "express": "^5.3.0",
     "prisma": "^6.4.1"

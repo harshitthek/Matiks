@@ -20,6 +20,7 @@ import { roomManager } from '../services/roomManager.js';
 import { windowManager } from '../services/windowManager.js';
 import { isAllowedClientOrigin, getAllowedOrigins } from '../config/corsOrigins.js';
 import { rosterService } from '../services/rosterService.js';
+import { ephemeral, hashed } from '../store/ephemeralStore.js';
 
 
 
@@ -51,17 +52,10 @@ function extractCookie(req: Request, name: string): string | null {
 }
 
 
-const stateClientOrigins = new Map<string, { origin: string; expiresAt: number }>();
+const STATE_ORIGIN_TTL_MS = 10 * 60 * 1000;
+const stateOriginName = (state: string) => `oidc:origin:${hashed(state)}`;
 
-function pruneExpiredStateOrigins(now: number): void {
-  for (const [k, v] of stateClientOrigins.entries()) {
-    if (now > v.expiresAt) {
-      stateClientOrigins.delete(k);
-    }
-  }
-}
-
-export function getAuthConfigHandler(req: Request, res: Response): void {
+export async function getAuthConfigHandler(req: Request, res: Response): Promise<void> {
   const primaryProvider = getAuthProvider();
   const forceOidc =
     req.query['oidc'] === 'true' ||
@@ -113,11 +107,8 @@ export function getAuthConfigHandler(req: Request, res: Response): void {
 
   const embeddedOrigin = state && urlProvider.extractOriginFromState ? urlProvider.extractOriginFromState(state) : null;
   if (state && trustedOrigin && embeddedOrigin !== trustedOrigin) {
-    const now = Date.now();
-    pruneExpiredStateOrigins(now);
-    if (stateClientOrigins.size < 5000) {
-      stateClientOrigins.set(state, { origin: trustedOrigin, expiresAt: now + 10 * 60 * 1000 });
-    }
+    // Remembered in the shared short-lived store, so the callback can find it even after a restart
+    await ephemeral().set(stateOriginName(state), trustedOrigin, STATE_ORIGIN_TTL_MS);
   }
 
 
@@ -278,7 +269,7 @@ export async function exchangeOidcCodeHandler(req: Request, res: Response): Prom
       return;
     }
 
-    if (!state || typeof state !== 'string' || !provider.validateState(state)) {
+    if (!state || typeof state !== 'string' || !(await provider.validateState(state))) {
       res.status(400).json({
         error: 'INVALID_OIDC_STATE',
         message: 'Valid OIDC state parameter is required and must not be expired.'
@@ -371,7 +362,7 @@ function resolveClientBaseUrl(req?: Request): string {
   return 'http://localhost:5173';
 }
 
-export function redirectOidcCallbackHandler(req: Request, res: Response): void {
+export async function redirectOidcCallbackHandler(req: Request, res: Response): Promise<void> {
   try {
     const rawState = req.query['state'];
     const state = typeof rawState === 'string' ? rawState.trim() : undefined;
@@ -391,12 +382,11 @@ export function redirectOidcCallbackHandler(req: Request, res: Response): void {
         }
       }
 
-      // 2. In-memory fallback if state was generated without embedded origin
-      if (!boundOrigin && stateClientOrigins.has(state)) {
-        const record = stateClientOrigins.get(state);
-        stateClientOrigins.delete(state);
-        if (record && Date.now() <= record.expiresAt && isAllowedClientOrigin(record.origin)) {
-          boundOrigin = record.origin;
+      // 2. Fallback if the state was generated without an embedded origin: the one remembered when it was issued (read once, then gone)
+      if (!boundOrigin) {
+        const remembered = await ephemeral().getdel(stateOriginName(state));
+        if (remembered && isAllowedClientOrigin(remembered)) {
+          boundOrigin = remembered;
         }
       }
     }
