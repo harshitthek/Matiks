@@ -226,6 +226,10 @@ describe('Matiks Hackathon — End-to-End Smoke Test Suite', () => {
       assert.equal(finishedSnap.status, 'FINISHED');
 
       // Step E: Rematch Reset via POST /api/team/reset
+      // A new contest window is required to grant another attempt per ADR-23 rules
+      windowManager.closeWindow();
+      windowManager.openWindow(120);
+
       const resetRes = await fetch(`${baseUrl}/api/team/reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-member-token': token1 },
