@@ -8,6 +8,16 @@ import { InviteQrModal } from './InviteQrModal.jsx';
 import { toggleReady, getTeamSnapshot, resetTeamSprint, lockRoster } from '../../services/api.js';
 import { connectTeamStream } from '../../services/sse.js';
 
+function findMatchingRollKey(map, cleanRoll, targetRoll) {
+  if (!map || typeof map !== 'object') return null;
+  const keys = Object.keys(map);
+  const found = keys.find((k) => (k || '').trim().toUpperCase() === cleanRoll);
+  if (found) return found;
+  if (!cleanRoll && keys.length === 1) return keys[0];
+  if (targetRoll && map[targetRoll]) return targetRoll;
+  return null;
+}
+
 /**
  * Team & Student Lobby panel (Showcase Mode).
  * Displays live member roster, connection radar pings, atomic ready lock,
@@ -39,6 +49,7 @@ export function TeamLobby({
   const copyTimerRef = useRef(null);
   const linkTimerRef = useRef(null);
   const suppressedResumeRef = useRef(suppressedResumeSessionId);
+  const resolvedRollRef = useRef(currentRoll);
 
   useEffect(() => {
     suppressedResumeRef.current = suppressedResumeSessionId;
@@ -145,8 +156,11 @@ export function TeamLobby({
       onMemberReady: (data) => {
         setSnapshot((prev) => {
           if (!prev) return prev;
+          const cleanEventRoll = (data.rollNumber || '').trim().toUpperCase();
           const updatedMembers = prev.members.map((m) =>
-            m.rollNumber === data.rollNumber ? { ...m, isReady: data.isReady } : m
+            (m.rollNumber || '').trim().toUpperCase() === cleanEventRoll
+              ? { ...m, isReady: data.isReady }
+              : m
           );
           return {
             ...prev,
@@ -159,8 +173,9 @@ export function TeamLobby({
       onTeammateProgress: (data) => {
         setSnapshot((prev) => {
           if (!prev || !Array.isArray(prev.members)) return prev;
+          const cleanEventRoll = (data.rollNumber || '').trim().toUpperCase();
           const updatedMembers = prev.members.map((m) =>
-            m.rollNumber === data.rollNumber
+            (m.rollNumber || '').trim().toUpperCase() === cleanEventRoll
               ? {
                   ...m,
                   completedQuestions: data.questionIndex,
@@ -181,7 +196,11 @@ export function TeamLobby({
         });
       },
       onSprintStart: (data) => {
-        const sessionId = data.sessions?.[currentRoll];
+        const targetRoll = resolvedRollRef.current || currentRoll;
+        const cleanRoll = (targetRoll || '').trim().toUpperCase();
+
+        const sessionKey = findMatchingRollKey(data.sessions, cleanRoll, targetRoll);
+        const sessionId = sessionKey ? data.sessions[sessionKey] : null;
         if (!sessionId) {
           setCountdown(null);
           setError('Failed to launch sprint: Missing player session identifier.');
@@ -189,7 +208,13 @@ export function TeamLobby({
         }
 
         setCountdown({ secondsRemaining: 0, message: 'START!' });
-        const playerQuestions = data.questionsByRollNumber?.[currentRoll];
+        const questionKey = findMatchingRollKey(data.questionsByRollNumber, cleanRoll, targetRoll) || sessionKey;
+        const playerQuestions = questionKey ? data.questionsByRollNumber?.[questionKey] : null;
+        if (!playerQuestions || !Array.isArray(playerQuestions)) {
+          setCountdown(null);
+          setError('Failed to launch sprint: Missing player question set.');
+          return;
+        }
         if (sprintLaunchTimer) clearTimeout(sprintLaunchTimer);
         sprintLaunchTimer = setTimeout(() => {
           onStartSprint({
@@ -324,32 +349,51 @@ export function TeamLobby({
   }, [teamCode, copyTextWithFallback]);
 
   // Toggle ready status
-  const currentMember = snapshot?.members?.find((m) => m.rollNumber === currentRoll);
+  const cleanCurrentRoll = (currentRoll || '').trim().toUpperCase();
+  const currentMember =
+    snapshot?.members?.find(
+      (m) => (m.rollNumber || '').trim().toUpperCase() === cleanCurrentRoll
+    ) || (snapshot?.members?.length === 1 && !cleanCurrentRoll ? snapshot.members[0] : null);
   const isCurrentlyReady = currentMember?.isReady ?? false;
   const isCaptain = Boolean(currentMember?.isCaptain);
   const [lockRosterLoading, setLockRosterLoading] = useState(false);
+  resolvedRollRef.current = currentMember?.rollNumber || currentRoll;
 
   const handleLockRoster = useCallback(async () => {
     if (!isCaptain || lockRosterLoading) return;
     setError(null);
     setLockRosterLoading(true);
+    const targetRoll = currentMember?.rollNumber || currentRoll;
     try {
-      const res = await lockRoster(teamCode, currentRoll, memberToken);
+      const res = await lockRoster(teamCode, targetRoll, memberToken);
       if (res?.snapshot) {
         setSnapshot(res.snapshot);
+      }
+      const normalizedTarget = (targetRoll || '').trim().toUpperCase();
+      const lockedMember = res?.snapshot?.members?.find(
+        (m) => (m.rollNumber || '').trim().toUpperCase() === normalizedTarget
+      );
+      const alreadyReady = lockedMember ? lockedMember.isReady : isCurrentlyReady;
+      if (!alreadyReady) {
+        try {
+          await toggleReady(teamCode, targetRoll, true, memberToken);
+        } catch (readyErr) {
+          setError(readyErr.message || 'Roster locked, but marking ready failed. Press READY.');
+        }
       }
     } catch (err) {
       setError(err.message || 'Failed to lock squad roster.');
     } finally {
       setLockRosterLoading(false);
     }
-  }, [isCaptain, lockRosterLoading, teamCode, currentRoll, memberToken]);
+  }, [isCaptain, lockRosterLoading, teamCode, currentMember?.rollNumber, currentRoll, memberToken, isCurrentlyReady]);
 
   const handleToggleReady = async () => {
     setReadyLoading(true);
     setError(null);
+    const targetRoll = currentMember?.rollNumber || currentRoll;
     try {
-      await toggleReady(teamCode, currentRoll, !isCurrentlyReady, memberToken);
+      await toggleReady(teamCode, targetRoll, !isCurrentlyReady, memberToken);
     } catch (err) {
       setError(err.message || 'Failed to update ready state.');
     } finally {
@@ -630,7 +674,9 @@ export function TeamLobby({
         {/* Members List */}
         <div className="space-y-3">
           {members.map((member) => {
-            const isMe = member.rollNumber === currentRoll;
+            const isMe =
+              (member.rollNumber || '').trim().toUpperCase() === cleanCurrentRoll ||
+              (members.length === 1 && !cleanCurrentRoll);
             return (
               <div
                 key={member.rollNumber}
@@ -814,50 +860,86 @@ export function TeamLobby({
               )}
             </div>
           </div>
-        ) : !isRosterFull ? (
-          <div className="p-4 border-2 border-[#f5a623] bg-[#f5a623]/15 text-[#f5a623] font-mono text-xs font-bold tracking-wider flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div>
-              SQUAD INCOMPLETE: SHARE CODE #{teamCode} OR INVITE LINK WITH TEAMMATES TO FILL ROSTER ({members.length}/{snapshot.targetSize})
-            </div>
-            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+        ) : (
+          <div className="space-y-4">
+            {/* Squad Incomplete Warning Banner with Lock Roster Controls */}
+            {!isRosterFull && (
+              <div className="p-4 border-2 border-[#f5a623] bg-[#f5a623]/15 text-[#f5a623] font-mono text-xs font-bold tracking-wider flex flex-col sm:flex-row items-center justify-between gap-3 text-left shadow-[3px_3px_0_#090c0a]">
+                <div>
+                  <div className="text-sm font-black text-[#ffe36e] mb-0.5">
+                    ⚠️ SQUAD INCOMPLETE ({members.length}/{snapshot.targetSize} JOINED)
+                  </div>
+                  Share code <strong className="text-[#2ee58f]">#{teamCode}</strong> or invite link with teammates. Sprint countdown begins once all {snapshot.targetSize} members join and lock READY.
+                </div>
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setShowQrModal(true)}
+                    className="px-2.5 py-1.5 bg-[#090c0a] text-[#2ee58f] border border-[#2ee58f] hover:bg-[#2ee58f] hover:text-[#090c0a] font-mono font-bold text-[11px] uppercase tracking-wider transition-colors cursor-pointer shadow-[2px_2px_0_#2ee58f]"
+                  >
+                    SHOW QR 📱
+                  </button>
+                  {isCaptain && members.length >= 1 && (
+                    <button
+                      type="button"
+                      onClick={handleLockRoster}
+                      disabled={lockRosterLoading}
+                      className="px-3 py-1.5 bg-[#090c0a] text-[#ffe36e] border border-[#ffe36e] hover:bg-[#ffe36e] hover:text-[#090c0a] font-mono font-bold text-[11px] uppercase tracking-wider transition-colors shrink-0 cursor-pointer shadow-[2px_2px_0_#ffe36e] disabled:opacity-50"
+                    >
+                      {lockRosterLoading
+                        ? 'LOCKING...'
+                        : members.length === 1
+                        ? 'LOCK AT 1 PLAYER (SOLO) 🔒'
+                        : `LOCK AT ${members.length} PLAYERS 🔒`}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Contest Window Closed Notice */}
+            {!isContestWindowOpen && (
+              <div className="p-3 border-2 border-[#f5a623] bg-[#f5a623]/15 text-[#f5a623] font-mono text-xs font-bold tracking-wider text-left shadow-[3px_3px_0_#090c0a]">
+                ⏳ CONTEST WINDOW CURRENTLY CLOSED: You can lock READY now! The 3-2-1 countdown triggers automatically once the hackathon organizer opens the competition window.
+              </div>
+            )}
+
+            {/* Main Tactile Ready Button */}
+            <TactileButton
+              variant={isCurrentlyReady ? 'ghost' : 'signal'}
+              onClick={handleToggleReady}
+              disabled={readyLoading}
+              className="w-full py-4 text-base md:text-lg shadow-[6px_6px_0_#090c0a]"
+            >
+              {readyLoading
+                ? 'UPDATING READY STATE...'
+                : isCurrentlyReady
+                ? isContestWindowOpen
+                  ? '✓ READY LOCKED (CLICK TO CANCEL)'
+                  : '✓ READY LOCKED (WAITING FOR WINDOW TO OPEN)'
+                : 'I AM READY NOW! ↵'}
+            </TactileButton>
+
+            {/* Dedicated One-Click Solo / Roster Lock Button for Captain when Squad is Underfilled */}
+            {isCaptain && !isRosterFull && members.length >= 1 && (
               <button
                 type="button"
-                onClick={() => setShowQrModal(true)}
-                className="px-2.5 py-1.5 bg-[#090c0a] text-[#2ee58f] border border-[#2ee58f] hover:bg-[#2ee58f] hover:text-[#090c0a] font-mono font-bold text-[11px] uppercase tracking-wider transition-colors cursor-pointer shadow-[2px_2px_0_#2ee58f]"
+                onClick={handleLockRoster}
+                disabled={lockRosterLoading}
+                className="w-full py-3 px-4 border-2 border-[#090c0a] bg-[#ffe36e] text-[#090c0a] font-mono font-bold text-xs sm:text-sm uppercase tracking-wider shadow-[4px_4px_0_#090c0a] hover:translate-x-0.5 hover:translate-y-0.5 transition-transform cursor-pointer disabled:opacity-50"
               >
-                SHOW QR 📱
+                {lockRosterLoading
+                  ? 'LOCKING ROSTER...'
+                  : isContestWindowOpen
+                  ? members.length === 1
+                    ? '⚡ RACE SOLO NOW (LOCK SQUAD AT 1 PLAYER & START) 🔒'
+                    : `⚡ RACE NOW WITH ${members.length} JOINED PLAYERS (LOCK ROSTER & START) 🔒`
+                  : members.length === 1
+                  ? '🔒 LOCK SQUAD AT 1 PLAYER (WAIT FOR CONTEST WINDOW)'
+                  : `🔒 LOCK AT ${members.length} PLAYERS (WAIT FOR CONTEST WINDOW)`}
               </button>
-              {isCaptain && members.length >= 1 && (
-                <button
-                  type="button"
-                  onClick={handleLockRoster}
-                  disabled={lockRosterLoading}
-                  className="px-3 py-1.5 bg-[#090c0a] text-[#ffe36e] border border-[#ffe36e] hover:bg-[#ffe36e] hover:text-[#090c0a] font-mono font-bold text-[11px] uppercase tracking-wider transition-colors shrink-0 cursor-pointer shadow-[2px_2px_0_#ffe36e] disabled:opacity-50"
-                >
-                  {lockRosterLoading
-                    ? 'LOCKING...'
-                    : `LOCK AT ${members.length} PLAYER${members.length > 1 ? 'S' : ''} 🔒`}
-                </button>
-              )}
-            </div>
+            )}
           </div>
-        ) : !isContestWindowOpen ? (
-          <div className="p-4 border-2 border-[#f5a623] bg-[#f5a623]/15 text-[#f5a623] font-mono text-xs font-bold tracking-wider">
-            CONTEST WINDOW CURRENTLY CLOSED: WAIT FOR HACKATHON ORGANIZER TO OPEN THE SPRINT WINDOW
-          </div>
-        ) : (
-          <TactileButton
-            variant={isCurrentlyReady ? 'ghost' : 'signal'}
-            onClick={handleToggleReady}
-            disabled={readyLoading}
-            className="w-full py-4 text-base md:text-lg shadow-[6px_6px_0_#090c0a]"
-          >
-            {readyLoading
-              ? 'COMMUNICATING WITH SQUAD...'
-              : isCurrentlyReady
-              ? '✓ READY LOCKED (CLICK TO CANCEL)'
-              : 'I AM READY NOW! ↵'}
-          </TactileButton>
         )}
       </div>
 
