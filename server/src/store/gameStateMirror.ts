@@ -417,6 +417,8 @@ export class GameStateMirror {
 
   /** Saves everything now and gives the lease up. For a clean shutdown. */
   async shutdown(timeoutMs = 3_000): Promise<void> {
+    // A recent blip may have paused Redis. This is the last chance to save, so make one real attempt regardless.
+    redisGuard.reset();
     if (this.enabled) {
       await Promise.race([this.flushNow(), new Promise((resolve) => setTimeout(resolve, timeoutMs))]);
     }

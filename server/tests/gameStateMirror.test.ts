@@ -131,6 +131,26 @@ describe('Matiks Hackathon — Game state in Redis', () => {
     assert.equal(mirror.status.lastError, '');
   });
 
+  test('3b. A clean shutdown saves even when a recent failure has paused Redis, so the newest changes are not lost', async () => {
+    const { teamCode } = roomManager.createTeam('Pause Squad', 2, 'MR34001', 'Asha');
+    await mirror.acquireLease(0);
+    mirror.enable();
+    await mirror.flushNow();
+
+    // A blip opens the breaker; Redis is back straight away but the breaker is still paused
+    redis.failWith = new Error('timeout');
+    roomManager.joinTeam(teamCode, 'MR34002', 'Bilal');
+    await mirror.flushNow();
+    redis.failWith = null;
+    roomManager.logSystemAudit({ action: 'TEST_ENTRY', adminId: 'tester', teamCode, details: { n: 2 } });
+    assert.equal(redisGuard.isHealthy(), false, 'the breaker is paused');
+
+    await mirror.shutdown();
+    const saved = JSON.parse((await redis.get(key('room', teamCode)))!);
+    assert.equal(saved.members.length, 2, 'the member who joined during the pause was saved on the way out');
+    assert.ok((await redis.lrange(key('audit'), 0, -1)).some((line) => line.includes('TEST_ENTRY')), 'and so was the audit entry');
+  });
+
   test('4. A second server cannot take over while the first holds the lease', async () => {
     await mirror.acquireLease(0);
     const intruder = new GameStateMirror();
